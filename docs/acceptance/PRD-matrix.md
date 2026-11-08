@@ -4,7 +4,7 @@
 
 | 编号 | 验收路径 | 证明场景数 | macOS 可运行命令 |
 |---|---|---|---|
-| **A1** | 空库首次启动 | 152 | `cargo test -p echo-desktop --lib runtime::startup_supervisor && cargo test -p echo-core --all-features root_switch::` |
+| **A1** | 空库首次启动 | 157 | `cargo test -p echo-desktop --lib runtime::startup_supervisor && cargo test -p echo-core --all-features root_switch::` |
 | **A2** | 10,000 首混合曲库扫描 | 44 | `node scripts/verify/checks/task-12.5.mjs && cargo test -p echo-core --all-features scan::` |
 | **A3** | 外部改名/移动 | 44 | `cargo test -p echo-core --all-features relink` |
 | **A4** | 多文件安全导入 | 40 | `cargo test -p echo-core --all-features recover::` |
@@ -15,9 +15,9 @@
 | **A9** | 歌词与沉浸模式 | 32 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
 | **A10** | 系统双击文件 | 40 | `cargo test -p echo-core --all-features watch:: && node scripts/verify/checks/task-9.2.mjs` |
 | **A11** | 删除与撤销 | 40 | `cargo test -p echo-core --all-features recover::` |
-| **A12** | 关窗与托盘 | 108 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
-| **A13** | 无障碍与窄屏 | 250 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
-| **A14** | 范围保护 | 218 | `node scripts/verify/checks/task-13.8.mjs` |
+| **A12** | 关窗与托盘 | 113 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
+| **A13** | 无障碍与窄屏 | 255 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
+| **A14** | 范围保护 | 223 | `node scripts/verify/checks/task-13.8.mjs` |
 
 ## 逐场景归属
 
@@ -172,6 +172,11 @@
 | A1 | `LL-R11-S02` | SQLite 投影可替换且不能独占用户数据 |
 | A1 | `DAS-R24-S01` | 封面缩略图必须解码已声明的图片格式 |
 | A1 | `DAS-R24-S02` | 封面缩略图必须解码已声明的图片格式 |
+| A1 | `DAS-R25-S01` | 封面选图预览必须使用受控尺寸的缩略图 |
+| A1 | `DAS-R25-S02` | 封面选图预览必须使用受控尺寸的缩略图 |
+| A1 | `DAS-R25-S03` | 封面选图预览必须使用受控尺寸的缩略图 |
+| A1 | `DAS-R25-S04` | 封面选图预览必须使用受控尺寸的缩略图 |
+| A1 | `DAS-R25-S05` | 封面选图预览必须使用受控尺寸的缩略图 |
 | A1 | `LL-R12-S01` | 内嵌封面 MIME 声明必须与解码能力一致 |
 | A1 | `LL-R12-S02` | 内嵌封面 MIME 声明必须与解码能力一致 |
 | A1 | `LL-R12-S03` | 内嵌封面 MIME 声明必须与解码能力一致 |
@@ -363,6 +368,11 @@
 | A12 | `DAS-R23-S03` | 封面预览的临时资源必须被回收 |
 | A12 | `DAS-R24-S01` | 封面缩略图必须解码已声明的图片格式 |
 | A12 | `DAS-R24-S02` | 封面缩略图必须解码已声明的图片格式 |
+| A12 | `DAS-R25-S01` | 封面选图预览必须使用受控尺寸的缩略图 |
+| A12 | `DAS-R25-S02` | 封面选图预览必须使用受控尺寸的缩略图 |
+| A12 | `DAS-R25-S03` | 封面选图预览必须使用受控尺寸的缩略图 |
+| A12 | `DAS-R25-S04` | 封面选图预览必须使用受控尺寸的缩略图 |
+| A12 | `DAS-R25-S05` | 封面选图预览必须使用受控尺寸的缩略图 |
 | A13 | `DAS-R01-S01` | 首次启动必须建立本机工作区 |
 | A13 | `DAS-R01-S02` | 首次启动必须建立本机工作区 |
 | A13 | `DAS-R01-S03` | 首次启动必须建立本机工作区 |
@@ -613,6 +623,11 @@
 | A13 | `LE-R21-S05` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A13 | `DAS-R24-S01` | 封面缩略图必须解码已声明的图片格式 |
 | A13 | `DAS-R24-S02` | 封面缩略图必须解码已声明的图片格式 |
+| A13 | `DAS-R25-S01` | 封面选图预览必须使用受控尺寸的缩略图 |
+| A13 | `DAS-R25-S02` | 封面选图预览必须使用受控尺寸的缩略图 |
+| A13 | `DAS-R25-S03` | 封面选图预览必须使用受控尺寸的缩略图 |
+| A13 | `DAS-R25-S04` | 封面选图预览必须使用受控尺寸的缩略图 |
+| A13 | `DAS-R25-S05` | 封面选图预览必须使用受控尺寸的缩略图 |
 | A14 | `DAS-R01-S01` | 首次启动必须建立本机工作区 |
 | A14 | `DAS-R01-S02` | 首次启动必须建立本机工作区 |
 | A14 | `DAS-R01-S03` | 首次启动必须建立本机工作区 |
@@ -831,6 +846,11 @@
 | A14 | `LE-R21-S05` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A14 | `DAS-R24-S01` | 封面缩略图必须解码已声明的图片格式 |
 | A14 | `DAS-R24-S02` | 封面缩略图必须解码已声明的图片格式 |
+| A14 | `DAS-R25-S01` | 封面选图预览必须使用受控尺寸的缩略图 |
+| A14 | `DAS-R25-S02` | 封面选图预览必须使用受控尺寸的缩略图 |
+| A14 | `DAS-R25-S03` | 封面选图预览必须使用受控尺寸的缩略图 |
+| A14 | `DAS-R25-S04` | 封面选图预览必须使用受控尺寸的缩略图 |
+| A14 | `DAS-R25-S05` | 封面选图预览必须使用受控尺寸的缩略图 |
 | A2 | `LL-R01-S01` | 单一资料库根目录与本地持久化 |
 | A2 | `LL-R01-S02` | 单一资料库根目录与本地持久化 |
 | A2 | `LL-R01-S03` | 单一资料库根目录与本地持久化 |

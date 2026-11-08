@@ -88,6 +88,8 @@ interface BridgeCommandArguments extends SyncCommandArguments {
       mime?: string | null;
     },
   ];
+  /** Base64 of the picked original; returns base64 of a bounded JPEG preview. */
+  preview_cover: [args: { bytes: string; mime: string }];
   delete_playlist: [args: { id: string }];
   add_to_playlists: [args: { song: string; targets: string[] }];
   remove_playlist_song: [args: { playlist: string; song: string }];

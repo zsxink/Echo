@@ -97,6 +97,7 @@ pub(super) fn bootstrap_main() {
             commands::create_playlist,
             commands::rename_playlist,
             commands::set_playlist_cover,
+            cover_preview::preview_cover,
             commands::delete_playlist,
             commands::add_to_playlists,
             commands::remove_playlist_song,

@@ -311,6 +311,7 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly create_playlist: string;\n");
     out.push_str("  readonly rename_playlist: void;\n");
     out.push_str("  readonly set_playlist_cover: void;\n");
+    out.push_str("  readonly preview_cover: string;\n");
     out.push_str("  readonly delete_playlist: void;\n");
     out.push_str("  readonly add_to_playlists: void;\n");
     out.push_str("  readonly remove_playlist_song: void;\n");

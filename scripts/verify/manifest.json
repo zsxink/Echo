@@ -2623,7 +2623,7 @@
         {
           "kind": "vitest",
           "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
-          "name": "renders a saved cover at detail size and passes blob previews through"
+          "name": "renders a saved cover at detail size and passes data URL previews through"
         }
       ]
     },
@@ -2827,7 +2827,7 @@
         {
           "kind": "vitest",
           "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
-          "name": "releases the previous preview blob when another cover is picked"
+          "name": "releases the previous preview when another cover is picked"
         }
       ]
     },
@@ -2839,7 +2839,7 @@
         {
           "kind": "vitest",
           "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
-          "name": "releases the preview blob when the dialog unmounts"
+          "name": "clears the preview when the dialog unmounts or the automatic cover is restored"
         }
       ]
     },
@@ -2851,7 +2851,7 @@
         {
           "kind": "vitest",
           "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
-          "name": "renders a saved cover at detail size and passes blob previews through"
+          "name": "renders the picked cover preview as a bounded data URL instead of a blob"
         }
       ]
     },
@@ -2874,6 +2874,62 @@
         {
           "kind": "rust",
           "target": "infrastructure::metadata::cover::tests::cover_cache_thumbnail_decodes_webp_original"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R25-S01",
+      "title": "大像素图片预览只解码受控尺寸缩略图",
+      "command": "cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "cover_preview::tests::preview_thumbnail_caps_the_longest_edge_at_detail_tier"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R25-S02",
+      "title": "预览生成不写磁盘",
+      "command": "cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "cover_preview::tests::preview_thumbnail_returns_jpeg_bytes_without_touching_disk"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R25-S03",
+      "title": "超出像素分配上限的图片被拒绝",
+      "command": "cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "cover_preview::tests::preview_thumbnail_rejects_oversized_pixel_allocation_before_decoding"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R25-S04",
+      "title": "缩略图生成失败可恢复",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
+          "name": "keeps the saved cover and name when preview generation fails"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R25-S05",
+      "title": "小图不被放大",
+      "command": "cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "cover_preview::tests::preview_thumbnail_caps_the_longest_edge_at_detail_tier"
         }
       ]
     },

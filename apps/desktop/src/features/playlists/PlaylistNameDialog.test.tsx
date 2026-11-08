@@ -2,10 +2,14 @@
  * Task 10.9 — the shared `.playlist-name-dialog`: 40-grapheme rule, the
  * prototype's own blank / 竖线 / 同名 rules, and the create / rename command
  * contract. A rejected name never calls the mutation.
+ *
+ * Cover picks go through `preview_cover`: the WebView only ever sees the
+ * shell's bounded JPEG as a `data:` URL, never a blob URL or the original
+ * image (DAS-R23 / DAS-R25).
  */
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PlaylistNameDialog } from "./PlaylistNameDialog";
 
@@ -21,11 +25,42 @@ import { bridge } from "../../bridge";
 
 const call = vi.mocked(bridge.call);
 
+/** A fixed stand-in for the shell's bounded JPEG (jsdom never decodes it). */
+const PREVIEW_JPEG_BASE64 = "cHJldmlldy1qcGVn";
+const PREVIEW_DATA_URL = `data:image/jpeg;base64,${PREVIEW_JPEG_BASE64}`;
+
+const defaultCall = (command: string) =>
+  Promise.resolve(command === "preview_cover" ? PREVIEW_JPEG_BASE64 : undefined);
+
+beforeEach(() => {
+  call.mockReset();
+  call.mockImplementation(defaultCall as never);
+  assetUrl.mockClear();
+});
+
+function renderEdit(extra: Record<string, unknown> = {}) {
+  return render(
+    <PlaylistNameDialog
+      mode="edit"
+      playlistId="pl-1"
+      initialName="深夜"
+      existingNames={[]}
+      onClose={vi.fn()}
+      onDone={vi.fn()}
+      {...extra}
+    />,
+  );
+}
+
 function pickCover(name: string, content: string) {
   const input = document.querySelector('input[type="file"]') as HTMLInputElement;
   fireEvent.change(input, {
     target: { files: [new File([content], name, { type: "image/png" })] },
   });
+}
+
+function previewSrc() {
+  return screen.getByAltText("当前歌单封面").getAttribute("src");
 }
 
 function renderCreate(existingNames: readonly string[] = [], root?: string) {
@@ -42,7 +77,6 @@ function renderCreate(existingNames: readonly string[] = [], root?: string) {
 
 describe("PlaylistNameDialog (task 10.9)", () => {
   it("rejects a name longer than 40 graphemes without calling create_playlist", async () => {
-    call.mockReset();
     renderCreate();
 
     fireEvent.change(screen.getByLabelText("新歌单名称"), { target: { value: "春".repeat(41) } });
@@ -53,7 +87,6 @@ describe("PlaylistNameDialog (task 10.9)", () => {
   });
 
   it("rejects a blank name and a duplicate name with the prototype's copy", async () => {
-    call.mockReset();
     renderCreate(["深夜"]);
 
     fireEvent.click(screen.getByText("创建歌单"));
@@ -66,7 +99,6 @@ describe("PlaylistNameDialog (task 10.9)", () => {
   });
 
   it("rejects a create when no active root is available", async () => {
-    call.mockReset();
     renderCreate();
     fireEvent.change(screen.getByLabelText("新歌单名称"), { target: { value: "通勤" } });
     fireEvent.click(screen.getByText("创建歌单"));
@@ -75,7 +107,6 @@ describe("PlaylistNameDialog (task 10.9)", () => {
   });
 
   it("creates the playlist with the active root and trimmed name", async () => {
-    call.mockReset();
     call.mockResolvedValueOnce("playlist-new" as never);
     const onDone = vi.fn();
     const onClose = vi.fn();
@@ -100,7 +131,6 @@ describe("PlaylistNameDialog (task 10.9)", () => {
   });
 
   it("edit mode renames through rename_playlist and may keep its own name", async () => {
-    call.mockReset();
     call.mockResolvedValueOnce(undefined as never);
     const onDone = vi.fn();
     render(
@@ -123,19 +153,9 @@ describe("PlaylistNameDialog (task 10.9)", () => {
   });
 
   it("surfaces a read-only backend failure instead of the generic save error", async () => {
-    call.mockReset();
     const error = Object.assign(new Error("permission"), { code: "permission" });
     call.mockRejectedValueOnce(error);
-    render(
-      <PlaylistNameDialog
-        mode="edit"
-        playlistId="pl-1"
-        initialName="深夜"
-        existingNames={[]}
-        onClose={vi.fn()}
-        onDone={vi.fn()}
-      />,
-    );
+    renderEdit();
 
     fireEvent.click(screen.getByText("保存"));
 
@@ -143,7 +163,6 @@ describe("PlaylistNameDialog (task 10.9)", () => {
   });
 
   it("keeps the committed name and retries the same create instead of creating twice", async () => {
-    call.mockReset();
     // 已保存待更新: the directory committed the playlist, the view lags.
     call.mockRejectedValueOnce(
       Object.assign(new Error("saved"), {
@@ -195,7 +214,6 @@ describe("PlaylistNameDialog (task 10.9)", () => {
   });
 
   it("says the saved rename is still in the library when its retry fails", async () => {
-    call.mockReset();
     call.mockRejectedValueOnce(
       Object.assign(new Error("saved"), {
         code: "library_saved_pending_recovery",
@@ -235,26 +253,16 @@ describe("PlaylistNameDialog (task 10.9)", () => {
   });
 
   it("sends the picked cover as a base64 payload instead of a byte array", async () => {
-    call.mockReset();
-    call.mockResolvedValue(undefined as never);
-    render(
-      <PlaylistNameDialog
-        mode="edit"
-        playlistId="pl-1"
-        initialName="深夜"
-        existingNames={[]}
-        onClose={vi.fn()}
-        onDone={vi.fn()}
-      />,
-    );
+    renderEdit();
 
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    fireEvent.change(input, {
-      target: { files: [new File(["cover-bytes"], "cover.png", { type: "image/png" })] },
-    });
+    pickCover("cover.png", "cover-bytes");
     await waitFor(() =>
-      expect(screen.getByAltText("当前歌单封面").getAttribute("src")).toMatch(/^blob:/),
+      expect(call).toHaveBeenCalledWith(
+        "preview_cover",
+        expect.objectContaining({ mime: "image/png" }),
+      ),
     );
+    await waitFor(() => expect(previewSrc()).toBe(PREVIEW_DATA_URL));
 
     fireEvent.click(screen.getByText("保存"));
     await waitFor(() =>
@@ -271,18 +279,7 @@ describe("PlaylistNameDialog (task 10.9)", () => {
   });
 
   it("rejects a picked cover larger than the size limit", async () => {
-    call.mockReset();
-    render(
-      <PlaylistNameDialog
-        mode="edit"
-        playlistId="pl-1"
-        initialName="深夜"
-        initialCoverKey="cv1-saved"
-        existingNames={[]}
-        onClose={vi.fn()}
-        onDone={vi.fn()}
-      />,
-    );
+    renderEdit({ initialCoverKey: "cv1-saved" });
 
     const oversized = new File(["x"], "huge.png", { type: "image/png" });
     Object.defineProperty(oversized, "size", { value: 5 * 1024 * 1024 + 1 });
@@ -290,102 +287,147 @@ describe("PlaylistNameDialog (task 10.9)", () => {
     fireEvent.change(input, { target: { files: [oversized] } });
 
     expect(await screen.findByText("封面图片不能超过 5 MB。")).toBeInTheDocument();
+    expect(call).not.toHaveBeenCalledWith("preview_cover", expect.anything());
     expect(call).not.toHaveBeenCalledWith("set_playlist_cover", expect.anything());
     // The saved cover preview is untouched by the rejected pick.
-    expect(screen.getByAltText("当前歌单封面")).toHaveAttribute(
-      "src",
-      "cover://cv1-saved?s=detail",
-    );
+    expect(previewSrc()).toBe("cover://cv1-saved?s=detail");
   });
 
-  it("releases the previous preview blob when another cover is picked", async () => {
-    const create = vi.mocked(URL.createObjectURL);
-    const revoke = vi.mocked(URL.revokeObjectURL);
-    create.mockClear();
-    revoke.mockClear();
-    render(
-      <PlaylistNameDialog
-        mode="edit"
-        playlistId="pl-1"
-        initialName="深夜"
-        existingNames={[]}
-        onClose={vi.fn()}
-        onDone={vi.fn()}
-      />,
-    );
+  it("renders the picked cover preview as a bounded data URL instead of a blob", async () => {
+    // jsdom 25 has no `URL.createObjectURL` at all (the setup-level stub was
+    // removed with the blob path). Define a local spy purely to prove the new
+    // path never calls it, then restore the environment.
+    const create = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: create });
+    try {
+      renderEdit({ initialCoverKey: "cv1-saved" });
+      expect(previewSrc()).toBe("cover://cv1-saved?s=detail");
+      expect(assetUrl).toHaveBeenCalledWith("cv1-saved", "detail");
+
+      assetUrl.mockClear();
+      pickCover("cover.png", "cover");
+      await waitFor(() => expect(previewSrc()).toBe(PREVIEW_DATA_URL));
+      // A picked image is not an asset key: it must never go through assetUrl.
+      expect(assetUrl).not.toHaveBeenCalled();
+      expect(create).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(URL, "createObjectURL");
+    }
+  });
+
+  it("releases the previous preview when another cover is picked", async () => {
+    let sequence = 0;
+    call.mockImplementation((async (command: string) => {
+      if (command === "preview_cover") return `preview-${++sequence}`;
+      return undefined;
+    }) as never);
+    renderEdit();
 
     pickCover("first.png", "first");
-    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
-    const first = create.mock.results[0]?.value as string;
-
+    await waitFor(() => expect(previewSrc()).toBe("data:image/jpeg;base64,preview-1"));
     pickCover("second.png", "second");
-    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
-    const second = create.mock.results[1]?.value as string;
-
-    expect(revoke).toHaveBeenCalledWith(first);
-    expect(revoke).not.toHaveBeenCalledWith(second);
+    await waitFor(() => expect(previewSrc()).toBe("data:image/jpeg;base64,preview-2"));
+    // Only one live preview: the first data URL is no longer referenced.
+    expect(document.body.innerHTML).not.toContain("preview-1");
+    expect(screen.getAllByAltText("当前歌单封面")).toHaveLength(1);
   });
 
-  it("releases the preview blob when the dialog unmounts", async () => {
-    const create = vi.mocked(URL.createObjectURL);
-    const revoke = vi.mocked(URL.revokeObjectURL);
-    create.mockClear();
-    revoke.mockClear();
-    const { unmount } = render(
-      <PlaylistNameDialog
-        mode="edit"
-        playlistId="pl-1"
-        initialName="深夜"
-        existingNames={[]}
-        onClose={vi.fn()}
-        onDone={vi.fn()}
-      />,
-    );
+  it("clears the preview when the dialog unmounts or the automatic cover is restored", async () => {
+    const { unmount } = renderEdit({
+      initialCoverKey: "cv1-saved",
+      automaticCoverKey: "cv1-auto",
+      hasCustomCover: true,
+    });
 
     pickCover("cover.png", "cover");
-    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
-    const url = create.mock.results[0]?.value as string;
+    await waitFor(() => expect(previewSrc()).toBe(PREVIEW_DATA_URL));
 
+    fireEvent.click(screen.getByText("自动封面"));
+    expect(previewSrc()).toBe("cover://cv1-auto?s=detail");
+    expect(document.body.innerHTML).not.toContain("data:image/jpeg");
+
+    pickCover("again.png", "again");
+    await waitFor(() => expect(previewSrc()).toBe(PREVIEW_DATA_URL));
     unmount();
-    expect(revoke).toHaveBeenCalledWith(url);
+    expect(document.querySelector('img[src^="data:image/jpeg;base64,"]')).toBeNull();
+    // Closing never writes a cover.
+    expect(call).not.toHaveBeenCalledWith("set_playlist_cover", expect.anything());
   });
 
-  it("renders a saved cover at detail size and passes blob previews through", async () => {
-    assetUrl.mockClear();
-    render(
-      <PlaylistNameDialog
-        mode="edit"
-        playlistId="pl-1"
-        initialName="深夜"
-        initialCoverKey="cv1-saved"
-        existingNames={[]}
-        onClose={vi.fn()}
-        onDone={vi.fn()}
-      />,
+  it("keeps the saved cover and name when preview generation fails", async () => {
+    // Each refined rejection must name its own reason (DAS-R25-S03/S04), and
+    // none of them may replace the saved cover or add a submit-time rejection.
+    const cases: readonly (readonly [string | undefined, string])[] = [
+      ["error.cover.previewTooLarge", "封面图片尺寸过大，请换一张小一些的图片。"],
+      ["error.cover.previewUnsupported", "仅支持 PNG、JPEG 或 WebP 图片，请换一张图片。"],
+      ["error.cover.previewDecodeFailed", "无法读取封面图片，请换一张图片。"],
+      [undefined, "预览暂时不可用，请重试或换一张图片。"],
+    ];
+    for (const [messageKey, hint] of cases) {
+      call.mockReset();
+      call.mockImplementation((async (command: string) => {
+        if (command === "preview_cover") {
+          throw Object.assign(new Error("validation"), { code: "validation", messageKey });
+        }
+        return undefined;
+      }) as never);
+      const view = renderEdit({ initialCoverKey: "cv1-saved" });
+
+      pickCover("broken.png", "broken");
+      expect(await screen.findByText(hint)).toBeInTheDocument();
+      expect(previewSrc()).toBe("cover://cv1-saved?s=detail");
+      expect(screen.getByLabelText("歌单新名称")).toHaveValue("深夜");
+      expect(screen.getByRole("button", { name: "选择歌单封面图片" })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText("保存"));
+      await waitFor(() =>
+        expect(call).toHaveBeenCalledWith("rename_playlist", { id: "pl-1", name: "深夜" }),
+      );
+      expect(call).not.toHaveBeenCalledWith("set_playlist_cover", expect.anything());
+      view.unmount();
+    }
+  });
+
+  it("limits the picker to the shared cover MIME whitelist", () => {
+    renderEdit();
+    expect(document.querySelector('input[type="file"]')).toHaveAttribute(
+      "accept",
+      "image/png,image/jpeg,image/webp",
     );
+  });
+
+  it("does not upscale a small picked cover", async () => {
+    renderEdit();
+
+    pickCover("small.png", "x");
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith(
+        "preview_cover",
+        expect.objectContaining({ mime: "image/png" }),
+      ),
+    );
+    await waitFor(() => expect(previewSrc()).toBe(PREVIEW_DATA_URL));
+    // The UI never builds an original-size URL; the shell owns the bounded
+    // dimensions (and its own no-upscale assertion) in cover_preview.rs.
+    expect(previewSrc()).not.toMatch(/^blob:/);
+    expect(previewSrc()).not.toContain("data:image/png");
+  });
+
+  it("renders a saved cover at detail size and passes data URL previews through", async () => {
+    renderEdit({ initialCoverKey: "cv1-saved" });
 
     // The playlist preview is the one 512 px surface; a saved key must ask for
     // the detail tier rather than the list default.
-    expect(screen.getByAltText("当前歌单封面")).toHaveAttribute(
-      "src",
-      "cover://cv1-saved?s=detail",
-    );
+    expect(previewSrc()).toBe("cover://cv1-saved?s=detail");
     expect(assetUrl).toHaveBeenCalledWith("cv1-saved", "detail");
 
-    // A just-picked image is a local blob URL, not a cover-asset key: it must
-    // bypass `assetUrl` entirely (no `?s=` appended to an object URL).
     assetUrl.mockClear();
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    fireEvent.change(input, {
-      target: { files: [new File(["cover"], "cover.png", { type: "image/png" })] },
-    });
-    await waitFor(() =>
-      expect(screen.getByAltText("当前歌单封面").getAttribute("src")).toMatch(/^blob:/),
-    );
+    pickCover("cover.png", "cover");
+    await waitFor(() => expect(previewSrc()).toBe(PREVIEW_DATA_URL));
     expect(assetUrl).not.toHaveBeenCalled();
 
     // What reaches the bridge is the base64 string — no byte array is kept in
-    // this dialog's UI state (DAS-R23-S03's second half).
+    // this dialog's UI state.
     call.mockClear();
     fireEvent.click(screen.getByText("保存"));
     await waitFor(() =>

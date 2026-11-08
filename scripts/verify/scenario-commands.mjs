@@ -1,6 +1,6 @@
 // Scenario → executable-command + evidence map for the 0.1.0 gate (task 13.9).
 //
-// 572 scenarios (spec-derived id set). A scenario's command is aggregated by
+// 577 scenarios (spec-derived id set). A scenario's command is aggregated by
 // domain; `evidence` names the tests/files the scenario actually depends on,
 // and run-scenario.mjs asserts each target was observed in the command output.
 // `manifest.json.scenarios[]` is generated from this table
@@ -609,7 +609,7 @@ export const SCENARIOS = {
   vitest("src/features/library/CollectionDirectory.test.tsx", "shows artist cards and reuses the library song table with selection in the detail"),
   vitest("src/features/library/SongMenu.test.tsx", "renders the menu thumbnail through the list tier"),
 ], },
-"DAS-R20-S02": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "renders a saved cover at detail size and passes blob previews through")], },
+"DAS-R20-S02": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "renders a saved cover at detail size and passes data URL previews through")], },
 "DAS-R20-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx", "puts the embedded artwork on the record label (内置优先)")], },
 "DAS-R20-S04": { command: DESK_ALL, evidence: [
   rust("cover_uri_defaults_to_list_for_unknown_or_missing_size"),
@@ -643,9 +643,14 @@ export const SCENARIOS = {
 "DAS-R22-S04": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "rejects a picked cover larger than the size limit")], },
 "DAS-R22-S05": { command: DESK_ALL, evidence: [rust("playlist_cover_rejects_unsupported_mime_without_replacing_the_saved_cover")], },
 "DAS-R22-S06": { command: APP_ALL, evidence: [rust("cover_payload::tests::rejects_malformed_base64_as_a_validation_error")], },
-"DAS-R23-S01": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "releases the previous preview blob when another cover is picked")], },
-"DAS-R23-S02": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "releases the preview blob when the dialog unmounts")], },
-"DAS-R23-S03": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "renders a saved cover at detail size and passes blob previews through")], },
+"DAS-R23-S01": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "releases the previous preview when another cover is picked")], },
+"DAS-R23-S02": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "clears the preview when the dialog unmounts or the automatic cover is restored")], },
+"DAS-R23-S03": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "renders the picked cover preview as a bounded data URL instead of a blob")], },
+"DAS-R25-S01": { command: APP_ALL, evidence: [rust("cover_preview::tests::preview_thumbnail_caps_the_longest_edge_at_detail_tier")], },
+"DAS-R25-S02": { command: APP_ALL, evidence: [rust("cover_preview::tests::preview_thumbnail_returns_jpeg_bytes_without_touching_disk")], },
+"DAS-R25-S03": { command: APP_ALL, evidence: [rust("cover_preview::tests::preview_thumbnail_rejects_oversized_pixel_allocation_before_decoding")], },
+"DAS-R25-S04": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "keeps the saved cover and name when preview generation fails")], },
+"DAS-R25-S05": { command: APP_ALL, evidence: [rust("cover_preview::tests::preview_thumbnail_caps_the_longest_edge_at_detail_tier")], },
 "DAS-R24-S01": { command: CORE_ALL, evidence: [rust("infrastructure::metadata::cover::tests::cover_cache_thumbnail_decodes_webp_original")], },
 "DAS-R24-S02": { command: CORE_ALL, evidence: [rust("infrastructure::metadata::cover::tests::cover_cache_thumbnail_decodes_webp_original")], },
 

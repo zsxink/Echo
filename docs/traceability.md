@@ -5,7 +5,7 @@
 - 本表逐项覆盖 specs 中的全部 Scenario；稳定 ID 不得复用，标题调整时保留原 ID。
 - 场景 ID 由 spec 标题派生；每行必须给出可执行验收命令，且该场景在 `scripts/verify/scenario-commands.mjs` 的 `SCENARIOS` 中声明非空 `evidence`（命令可执行 + 证据可观测）。人工举证由 `docs/native-attestation-playbook.md` 与 `artifacts/native-attestations/<ID>.log` 承担，字段与判定见 `check-native-attestation.mjs`。
 - 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表与场景清单的 ID 集合完全相等，并逐项执行；命令按域聚合后逐条断言 evidence 目标在输出中被观测到，缺失、重复、无命令、无证据、证据未观测或失败均返回非零。
-- 当前基线：147 个 Requirement，572 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16、封面载荷受控与预览回收 9、内嵌封面解码与 MIME 约束 5、封面原件内容真实性校验 8）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
+- 当前基线：148 个 Requirement，577 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16、封面载荷受控与预览回收 9、内嵌封面解码与 MIME 约束 5、封面原件内容真实性校验 8、封面选图预览受控缩略图 5）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
 
 ## ci-release-pipeline
 
@@ -136,6 +136,11 @@
 | DAS-R23-S03 | 封面预览的临时资源必须被回收 | 预览展示用户所选封面 | issue-113 | React | `pnpm verify:scenario -- DAS-R23-S03` |
 | DAS-R24-S01 | 封面缩略图必须解码已声明的图片格式 | WebP 内嵌封面生成列表缩略图 | issue-134 | Core | `pnpm verify:scenario -- DAS-R24-S01` |
 | DAS-R24-S02 | 封面缩略图必须解码已声明的图片格式 | WebP 内嵌封面生成详情缩略图 | issue-134 | Core | `pnpm verify:scenario -- DAS-R24-S02` |
+| DAS-R25-S01 | 封面选图预览必须使用受控尺寸的缩略图 | 大像素图片预览只解码受控尺寸缩略图 | issue-133 | Rust | `pnpm verify:scenario -- DAS-R25-S01` |
+| DAS-R25-S02 | 封面选图预览必须使用受控尺寸的缩略图 | 预览生成不写磁盘 | issue-133 | Rust | `pnpm verify:scenario -- DAS-R25-S02` |
+| DAS-R25-S03 | 封面选图预览必须使用受控尺寸的缩略图 | 超出像素分配上限的图片被拒绝 | issue-133 | Rust | `pnpm verify:scenario -- DAS-R25-S03` |
+| DAS-R25-S04 | 封面选图预览必须使用受控尺寸的缩略图 | 缩略图生成失败可恢复 | issue-133 | React | `pnpm verify:scenario -- DAS-R25-S04` |
+| DAS-R25-S05 | 封面选图预览必须使用受控尺寸的缩略图 | 小图不被放大 | issue-133 | Rust | `pnpm verify:scenario -- DAS-R25-S05` |
 
 ## desktop-playback
 

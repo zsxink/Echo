@@ -436,6 +436,7 @@ export interface IpcCommandResultMap {
   readonly create_playlist: string;
   readonly rename_playlist: void;
   readonly set_playlist_cover: void;
+  readonly preview_cover: string;
   readonly delete_playlist: void;
   readonly add_to_playlists: void;
   readonly remove_playlist_song: void;
