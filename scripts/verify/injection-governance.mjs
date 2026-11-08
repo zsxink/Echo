@@ -313,6 +313,21 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       },
     },
     {
+      id: "licensing/stale-dependency-inventory",
+      guard: "a lockfile-generated third-party inventory drifting without regeneration (issue #144: LICENSES.md used to list only 43 of 594 crates and miss two production npm dependencies)",
+      check: ["node", ["scripts/verify/checks/task-18.1.mjs"]],
+      expect: /FAIL 18\.1: [\s\S]*are stale/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, "LICENSES.md"),
+          "# Echo — Third-Party Notices & License Inventory",
+          "# Echo — Third-Party Notices & License Inventory (stale probe)",
+        );
+        return {};
+      },
+    },
+    {
       id: "scenario-evidence/missing-target",
       guard: "a scenario whose evidence names a test that does not exist",
       check: ["node", ["scripts/verify/check-scenario-evidence.mjs"]],

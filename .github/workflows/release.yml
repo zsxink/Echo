@@ -197,6 +197,14 @@ jobs:
           fi
           cp "$NOTICE" "${{ matrix.bundle_dir }}/NOTICE-libmpv-${{ matrix.platform }}.md"
           echo "staged NOTICE-libmpv-${{ matrix.platform }}.md"
+          # The Linux vendor manifest (checksums, pinned source commits and the
+          # license table) is generated at release time and never lives in the
+          # repository. Stage it so the exact published build stays auditable.
+          MANIFEST="apps/desktop/src-tauri/vendor/libmpv/${{ matrix.platform }}/manifest.json"
+          if [ -f "$MANIFEST" ]; then
+            cp "$MANIFEST" "${{ matrix.bundle_dir }}/manifest-libmpv-${{ matrix.platform }}.json"
+            echo "staged manifest-libmpv-${{ matrix.platform }}.json"
+          fi
 
       - name: Generate SHA256SUMS
         shell: bash
@@ -249,5 +257,6 @@ jobs:
             artifacts/**/*.AppImage
             artifacts/**/SHA256SUMS-*
             artifacts/**/NOTICE*.md
+            artifacts/**/manifest-libmpv-*.json
           generate_release_notes: true
           fail_on_unmatched_files: true

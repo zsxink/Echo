@@ -42,9 +42,11 @@ Echo 是**本地优先**的音乐播放器：它扫描、管理、播放**你自
 面向公众的正式发布前逐项核对：
 
 1. **律师复核**：由熟悉软件许可/版权的律师复核项目许可证（`LICENSE`，Echo 个人学习使用许可）与依赖分发方案（各平台 `vendor/libmpv/*/manifest.json`、`NOTICE.md` 与随包的 `THIRD-PARTY-LICENSES.txt`；Rust/npm 依赖清单 `LICENSES.md`）。**未完成不得发布。**
-2. **许可文本随包**：确认三个平台的安装包内均可获取 `THIRD-PARTY-LICENSES.txt` 与对应平台 `NOTICE.md`（macOS `Contents/Resources/third-party/libmpv/`；Windows 安装根目录；Linux `/usr/share/doc/echo/`）。
-3. **对应源码可获取**：确认各平台 NOTICE 指向的对应源码链接在发布时仍然可访问。
+2. **许可文本与依赖清单随包**：确认三个平台的安装包内均可获取 `THIRD-PARTY-LICENSES.txt`、完整依赖清单 `THIRD-PARTY-NOTICES.txt` 与对应平台 `NOTICE.md`（macOS `Contents/Resources/third-party/libmpv/`；Windows 安装根目录；Linux `/usr/share/doc/echo/`）；三份材料 MUST 由本次构建的锁文件生成。
+3. **对应源码可获取**：确认各平台 NOTICE 指向的对应源码链接在发布时仍然可访问；若 Windows 等平台记录的固定来源链接已失效，MUST 如实记录并按第 6 项处置，不得以不可访问的链接冒充已履行对应源码义务。
 4. **文档一致**：本文档、双语 README 的「用户媒体权利与隐私」章节与实际行为一致；若本版本新增了数据外发能力，确认第三节的前置义务已履行。
+5. **发布资产核验**：确认本次 tag 的 Release 资产确实包含第 2 项的三份随包材料、三平台 NOTICE 与逐平台 `manifest-libmpv-<platform>.json`（校验和、固定源码提交、许可表），且 NOTICE 的许可记录与本次构建一致（Windows/Linux 为 GPL-2.0-or-later、macOS 为 LGPL-2.1-or-later），没有沿用修复前的旧 NOTICE；仓库已修而发布产物仍旧 MUST NOT 发布。
+6. **法律复核待决项**：确认「GPL-2.0 完整对应源码归档或三年书面要约」等需项目方/律师决定的事项已在发布前闭环；未闭环不得发布。
 
 ---
 
@@ -90,6 +92,8 @@ If a future version introduces **any capability that moves data off the local ma
 ## 4. Pre-release checklist
 
 1. **Legal review:** have the project license (`LICENSE`, Echo Personal Study License) and the dependency distribution plan (per-platform `vendor/libmpv/*/manifest.json`, `NOTICE.md`, the bundled `THIRD-PARTY-LICENSES.txt`; `LICENSES.md` for Cargo/npm dependencies) reviewed by a lawyer familiar with software licensing and copyright. **Do not release without this.**
-2. **License texts in packages:** confirm `THIRD-PARTY-LICENSES.txt` and the platform `NOTICE.md` are reachable inside all three installers (macOS `Contents/Resources/third-party/libmpv/`; Windows install root; Linux `/usr/share/doc/echo/`).
-3. **Corresponding source reachable:** confirm the source links in each platform's NOTICE resolve at release time.
+2. **License texts and notices in packages:** confirm `THIRD-PARTY-LICENSES.txt`, the full dependency inventory `THIRD-PARTY-NOTICES.txt`, and the platform `NOTICE.md` are reachable inside all three installers (macOS `Contents/Resources/third-party/libmpv/`; Windows install root; Linux `/usr/share/doc/echo/`), all generated from this build's lockfiles.
+3. **Corresponding source reachable:** confirm the source links in each platform's NOTICE resolve at release time; if a pinned source URL is unreachable, record that fact in the NOTICE and handle it under item 6. An unreachable link must not be presented as satisfaction of the corresponding-source obligation.
 4. **Docs consistency:** this document and the "Media rights & privacy" sections of both READMEs match actual behavior; if this release adds any data-egress capability, confirm section 3's obligation was met.
+5. **Release assets:** confirm this tag's Release assets actually contain the three bundled materials from item 2, the per-platform NOTICE files and each `manifest-libmpv-<platform>.json` (checksums, pinned source commits, license table), and that the NOTICE license records match this build (Windows/Linux GPL-2.0-or-later, macOS LGPL-2.1-or-later) rather than a pre-fix NOTICE. Do not ship a fixed repository with stale release artifacts.
+6. **Pending legal decisions:** confirm items requiring the maintainer or counsel — such as archiving the complete GPL-2.0 corresponding source or providing a three-year written offer — are closed before release. Do not release while they are open.

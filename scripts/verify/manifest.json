@@ -1491,11 +1491,15 @@
     },
     {
       "id": "18.1",
-      "title": "许可与隐私告知契约（issue #66）：SPDX/License 定性一致（不回归 BUSL-1.1）、三平台播放库许可记录与构建配置一致（Windows/Linux GPL、macOS LGPL）、THIRD-PARTY-LICENSES.txt 覆盖 manifest 许可并随三平台安装包分发、双语 README 媒体权利与隐私章节、发布前律师复核门槛",
+      "title": "许可与隐私告知契约（issue #66 / #144）：SPDX/License 定性一致（不回归 BUSL-1.1）、三平台播放库许可记录与构建配置一致（Windows/Linux GPL、macOS LGPL）、合并许可全文覆盖依赖图全部 SPDX 许可、THIRD-PARTY-LICENSES.txt 与 THIRD-PARTY-NOTICES.txt 随三平台安装包分发、锁文件清单不漂移、双语 README 媒体权利与隐私章节、发布前律师复核与发行材料核验门槛",
       "commands": [
         {
           "desc": "licensing & privacy notices static contract: Cargo LicenseRef, per-platform GPL/LGPL records, installer license-text wiring, README/media docs",
           "cmd": "node scripts/verify/checks/task-18.1.mjs"
+        },
+        {
+          "desc": "dependency inventory generated from lockfiles is not stale (LICENSES.md + THIRD-PARTY-NOTICES.txt)",
+          "cmd": "node scripts/release/generate-third-party-notices.mjs --check"
         }
       ]
     }

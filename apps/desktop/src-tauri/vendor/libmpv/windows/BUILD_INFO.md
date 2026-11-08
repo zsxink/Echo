@@ -14,6 +14,11 @@ Echo 的 Windows 播放后端由两个固定来源的构件组成，均在构建
 | mpv build   | `mpv 20260814 git-7b8915bc1d`（静态链接 FFmpeg，单文件运行时） |
 | Redistribution | GPL-2.0-or-later（shinchiro 构建以 `--enable-gpl` 链接 x264/x265，静态 FFmpeg 使 DLL 为 GPL，非 LGPL） |
 
+> 注（2026-11-08 复核）：`https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20260814`
+> 与资产下载链接当前返回 **404**。本表的资产名与 SHA-256 仍是 vendored DLL 的固定溯源记录
+> （本地文件校验和已核对一致），但不可访问的链接**不得**视为已满足 GPL-2.0 对应源码义务；
+> 发布前须按 `NOTICE.md`「Source URL availability」章节的待决项处置。
+>
 > 注：此资产是 shinchiro 的 **dev** 包，提供一个静态链接 FFmpeg 的 `libmpv-2.dll`
 > （导出完整 `mpv_*` C API，ABI 与 Echo 的 `MpvSys` 符号集一致）。不包含
 > `mpv.exe` / `libav*.dll`。来源固定，不追最新。

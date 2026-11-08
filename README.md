@@ -155,4 +155,4 @@ node scripts/verify/reconcile-scenarios.mjs         # specs↔traceability↔man
 
 Echo 采用**「Echo 个人学习使用许可」（Echo Personal Study License）**——一份独立定制的源码可用许可：仅限个人学习与研究用途，禁止任何商业用途、销售/转卖与再分发；Change Date（2099-12-31）后按 GPL-2.0-or-later 提供。该许可借鉴了 Business Source License 1.1 的 Change Date 结构，但**不是** BUSL-1.1。详见根目录 [`LICENSE`](LICENSE)。
 
-第三方依赖的许可清单见 [`LICENSES.md`](LICENSES.md)（由 `cargo deny` 与前端 prod 依赖审计维护）；各平台打包的 libmpv 及关联库的许可、来源、对应源码与随包许可全文见各平台 `vendor/libmpv/*/NOTICE.md` 与 `vendor/libmpv/THIRD-PARTY-LICENSES.txt`（随安装包分发）。
+第三方依赖的许可清单见 [`LICENSES.md`](LICENSES.md)：由 `scripts/release/generate-third-party-notices.mjs` 从 `cargo metadata` 与 `pnpm-lock.yaml` 生成（Cargo 锁文件全图的保守超集 + 前端生产依赖），并由 `task-18.1` 校验未漂移；`cargo deny` 另行执行 Rust 依赖许可策略。三平台安装包同时携带完整依赖清单 `THIRD-PARTY-NOTICES.txt` 与合并许可全文 `THIRD-PARTY-LICENSES.txt`；各平台打包的 libmpv 及关联库的许可、来源与对应源码见 `vendor/libmpv/*/NOTICE.md`。

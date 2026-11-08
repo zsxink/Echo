@@ -50,9 +50,37 @@ The [shinchiro release asset](https://github.com/shinchiro/mpv-winbuild-cmake/re
 itself (`mpv-dev-x86_64-20260814-git-7b8915bc1d.7z`) is the pinned binary this
 directory vendors; its SHA-256 is recorded above and in `manifest.json`.
 
+## Source URL availability (release-blocking / 发布前待决项)
+
+**The pinned shinchiro release URL is currently NOT reachable.** Verified on
+2026-11-08: `https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20260814`
+and the asset download URL both return **HTTP 404**, and
+`gh api repos/shinchiro/mpv-winbuild-cmake/releases/tags/20260814` returns 404.
+The release name, asset filename and SHA-256 above remain the pinned provenance
+record for the vendored `libmpv-2.dll` (whose local digest matches
+`manifest.json`), but an unreachable link MUST NOT be presented as satisfying
+GPL-2.0 §3's corresponding-source obligation.
+
+Verified reachable upstream references for this build: mpv
+<https://github.com/mpv-player/mpv> (commit `7b8915bc1d`), FFmpeg
+<https://github.com/FFmpeg/FFmpeg>, and the shinchiro build-recipe repository
+<https://github.com/shinchiro/mpv-winbuild-cmake> (`packages/ffmpeg.cmake`
+records `--enable-gpl --enable-libx264 --enable-libx265`). These are pointers,
+not a complete machine-readable corresponding-source package for the exact
+binary.
+
+**Pending pre-release decision (待决项):** before any public release, the
+maintainer and counsel MUST either (a) archive and publish the complete
+corresponding source for this exact build, including the pinned FFmpeg/x264/x265
+revisions and build scripts, or (b) provide a GPL-2.0 §3(b) written offer valid
+for at least three years to supply that source. That choice is a legal
+commitment and is deliberately NOT made by this repository on the maintainer's
+behalf. Do not release while this item is open; see
+`docs/media-rights-and-privacy.md` checklist item 6.
+
 ## Provenance
 
-- <https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20260814>
+- <https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20260814> (currently 404 — see above)
 - <https://sdk.lunarg.com/sdk/download/1.4.304.0/windows/VulkanRT-1.4.304.0-Components.zip>
 
 The Windows distribution requirement (NOTICE files uploaded with each
