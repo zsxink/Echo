@@ -145,58 +145,20 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .desktop {
   position: relative; height: 400px; margin-top: 16px; overflow: hidden;
   border-radius: var(--radius-md);
-  background: radial-gradient(900px 380px at 22% -10%, #3c4763 0%, transparent 62%),
-              linear-gradient(155deg, #1d2436 0%, #312338 52%, #111827 100%);
+  background:
+    radial-gradient(520px 260px at 18% 22%, rgba(94, 132, 214, 0.30) 0%, transparent 68%),
+    radial-gradient(460px 240px at 82% 12%, rgba(196, 96, 150, 0.26) 0%, transparent 66%),
+    radial-gradient(620px 300px at 62% 88%, rgba(60, 190, 190, 0.16) 0%, transparent 70%),
+    linear-gradient(155deg, #1d2436 0%, #312338 52%, #111827 100%);
   --menu-fg: rgba(255, 255, 255, 0.88);
-  /* 演示用背景窗口（仅为让液态玻璃有东西可模糊，不属于产品界面） */
-  --mock-surface: rgba(255, 255, 255, 0.03);
-  --mock-line: rgba(255, 255, 255, 0.10);
-  --mock-block: rgba(255, 255, 255, 0.055);
-  --mock-tint: rgba(196, 122, 158, 0.20);
 }
 .desktop[data-wallpaper="light"] {
-  background: radial-gradient(900px 380px at 22% -10%, #ffffff 0%, transparent 62%),
-              linear-gradient(155deg, #dce5f1 0%, #f1e9e7 55%, #d9e2ec 100%);
+  background:
+    radial-gradient(520px 260px at 18% 22%, rgba(150, 180, 235, 0.55) 0%, transparent 68%),
+    radial-gradient(460px 240px at 82% 12%, rgba(236, 176, 196, 0.50) 0%, transparent 66%),
+    radial-gradient(620px 300px at 62% 88%, rgba(168, 220, 214, 0.45) 0%, transparent 70%),
+    linear-gradient(155deg, #dce5f1 0%, #f1e9e7 55%, #d9e2ec 100%);
   --menu-fg: oklch(0.32 0.01 19.38);
-  --mock-surface: rgba(255, 255, 255, 0.62);
-  --mock-line: rgba(15, 20, 30, 0.10);
-  --mock-block: rgba(15, 20, 30, 0.06);
-  --mock-tint: rgba(196, 90, 120, 0.20);
-}
-
-/* 演示背景窗口：低对比、半遮在面板后面，只用来交代玻璃后面的内容 */
-.mock-window {
-  position: absolute; top: 46px; left: 50%; transform: translateX(-50%);
-  width: 660px; height: 208px;
-  border-radius: 12px; overflow: hidden;
-  background: var(--mock-surface);
-  box-shadow: inset 0 0 0 1px var(--mock-line), 0 18px 40px rgba(0, 0, 0, 0.18);
-}
-.mock-titlebar { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 12px; box-shadow: inset 0 -1px 0 var(--mock-line); }
-.mock-titlebar i { display: block; width: 7px; height: 7px; border-radius: 50%; background: var(--mock-line); }
-.mock-body { display: flex; flex-direction: column; gap: 8px; padding: 16px 16px; }
-.mock-line { display: block; height: 7px; border-radius: 4px; background: var(--mock-line); }
-.mock-line.w72 { width: 62%; }
-.mock-line.w46 { width: 38%; }
-.mock-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 6px; }
-.mock-cards i { display: block; height: 84px; border-radius: 8px; background: var(--mock-block); }
-.mock-cards i:nth-child(2) { background: var(--mock-tint); }
-.menubar {
-  position: absolute; top: 0; right: 0; left: 0; height: 32px;
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 16px; color: var(--menu-fg); font-size: var(--text-xs);
-}
-.menu-items, .menu-right { display: flex; align-items: center; gap: 16px; }
-.menu-items b { font-weight: 650; }
-.menu-status { display: flex; align-items: center; gap: 10px; opacity: 0.9; }
-.menu-status svg { width: 13px; height: 13px; display: block; }
-.desktop-hint {
-  position: absolute; bottom: 18px; left: 0; right: 0; text-align: center;
-  color: var(--menu-fg); font-size: var(--text-xs); opacity: 0.72;
-}
-.desktop-hint kbd {
-  padding: 1px 6px; border: 1px solid currentColor; border-radius: 4px;
-  font: inherit; opacity: 0.9;
 }
 
 /* ── 刘海播放器主体 ─────────────────────────────────────────────────────── */
@@ -267,7 +229,9 @@ body,
    不是发灰的毛玻璃。顶部两角**不内收**，由外侧的外翻角（下方 ::before/::after）
    接到屏幕顶边，读作面板从屏幕边缘「长出来」。 */
 .notch-player[data-expanded="true"] .notch-surface {
-  background: rgba(11, 13, 19, 0.86);
+  /* 玻璃感做在面板本体上：上亮下暗的薄层 + 背景模糊 + 内描边，没有任何额外的
+     背景层。渐变同时交代「厚度」，比单一色块更像玻璃。 */
+  background: linear-gradient(180deg, rgba(22, 25, 34, 0.78) 0%, rgba(9, 11, 16, 0.84) 100%);
   border-radius: 0 0 24px 24px;
   -webkit-backdrop-filter: blur(26px) saturate(160%);
   backdrop-filter: blur(26px) saturate(160%);
@@ -275,6 +239,22 @@ body,
     inset 0 -1px 0 rgba(255, 255, 255, 0.10),
     0 24px 52px rgba(0, 0, 0, 0.52);
 }
+/* 玻璃内描边：只画在顶边以下（顶部 26px 是外翻角的接缝区，画了会露一条竖线），
+   给面板一条真正的玻璃边，而不是靠背景层。 */
+.notch-surface::after {
+  content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0 26px, #000 26px);
+  mask-image: linear-gradient(180deg, transparent 0 26px, #000 26px);
+  opacity: 0;
+  transition: opacity 200ms var(--ease-standard);
+}
+.notch-player[data-expanded="true"] .notch-surface::after {
+  opacity: 1;
+  transition: opacity 300ms var(--ease-standard) 60ms;
+}
+
 /* 外翻圆角（liquid glass 的「液体挂边」）：面板左右两侧各多出一块 26×26 的
    方形，用 radial-gradient mask 挖掉靠内下角的一个圆，剩下靠外的部分就是从
    顶边向外拱出的凹圆角。
@@ -314,12 +294,14 @@ body,
 .notch-surface::before {
   content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
   border-radius: inherit; opacity: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.16) 0%,
-    rgba(255, 255, 255, 0.05) 18%,
-    rgba(255, 255, 255, 0) 42%
-  );
+  background:
+    radial-gradient(140% 80% at 16% 0%, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0) 58%),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.16) 0%,
+      rgba(255, 255, 255, 0.05) 18%,
+      rgba(255, 255, 255, 0) 42%
+    );
   transition: opacity 200ms var(--ease-standard);
 }
 .notch-player[data-expanded="true"] .notch-surface::before {
@@ -590,15 +572,6 @@ code { padding: 1px 4px; border-radius: 4px; background: var(--surface); font: 4
             </div>
           </div>
 
-          <div class="mock-window" aria-hidden="true">
-            <div class="mock-titlebar"><i></i><i></i><i></i></div>
-            <div class="mock-body">
-              <span class="mock-line w72"></span>
-              <span class="mock-line w46"></span>
-              <div class="mock-cards"><i></i><i></i><i></i></div>
-            </div>
-          </div>
-
           <!-- 刘海播放器：纯黑表面 + 纯黑硬件凹口 -->
           <div class="notch-player" id="notch-player" data-playing="true" data-expanded="false" data-empty="false" data-temporary="false" role="group" aria-label="Echo 刘海播放器">
             <div class="notch-surface">
@@ -657,7 +630,7 @@ code { padding: 1px 4px; border-radius: 4px; background: var(--surface); font: 4
         </div>
 
         <p class="state-readout" id="state-readout" aria-live="polite"></p>
-        <p class="stage-caption">纯黑表面与硬件刘海连成一体，收缩态只比刘海宽左右各 26 px（刚好放一张 16 px 小封面与一组 12 px 跳动音符），整条区域（含刘海本体）都是悬浮展开命中区；展开时向右拓宽、向下展开，并切到液态玻璃（半透明 + 背景模糊 + 顶部高光）。面板<strong>顶部两角不内收</strong>，而是向屏幕外翻出 26 px 凹圆角，像从屏幕边缘长出来；底部两角仍为 24 px 圆角。桌面上的窗口只是给玻璃提供背景参照，不属于产品界面。</p>
+        <p class="stage-caption">纯黑表面与硬件刘海连成一体，收缩态只比刘海宽左右各 26 px（刚好放一张 16 px 小封面与一组 12 px 跳动音符），整条区域（含刘海本体）都是悬浮展开命中区；展开时向右拓宽、向下展开，面板本体切到液态玻璃（半透明 + 背景模糊 + 顶部高光）。面板<strong>顶部两角不内收</strong>，而是向屏幕外翻出 26 px 凹圆角，像从屏幕边缘长出来；底部两角仍为 24 px 圆角。面板本身即玻璃：半透明 + 背景模糊 + 顶部高光，没有额外的背景层。</p>
       </section>
 
       <section class="notes" aria-label="原型说明与验收清单">
