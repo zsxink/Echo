@@ -22,7 +22,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 
-import { assetUrl, bridge } from "../../bridge";
+import { assetUrl, bridge, subscribe } from "../../bridge";
 import { useCoverKeys } from "../../app/coverArt";
 import { Icon } from "../../app/Icon";
 import { usePlayerSnapshot, useSmoothPosition } from "../../player/playerStore";
@@ -135,6 +135,34 @@ export function NotchPlayer() {
   }, []);
 
   useEffect(() => clearTimers, [clearTimers]);
+
+  // Hover arrives from the shell, not (only) from the DOM: `WKWebView`'s own
+  // tracking areas are active only while Echo is the front app, so a hover from
+  // another app used to do nothing until the user clicked first. The window's
+  // `.activeAlways` tracking area reports "inside / outside" regardless of
+  // activation; the DOM handlers stay as the browser/dev fallback.
+  useEffect(() => {
+    let dispose: (() => void) | undefined;
+    let cancelled = false;
+    void subscribe<boolean>("notch://hover", (inside) => {
+      if (inside) void expand();
+      else collapse();
+    })
+      .then((unlisten) => {
+        if (cancelled) {
+          unlisten();
+          return;
+        }
+        dispose = unlisten;
+      })
+      .catch(() => {
+        // Without the shell event the DOM handlers still drive the bar.
+      });
+    return () => {
+      cancelled = true;
+      dispose?.();
+    };
+  }, [expand, collapse]);
 
   // A pointer released outside the window must not leave the panel pinned.
   useEffect(() => {

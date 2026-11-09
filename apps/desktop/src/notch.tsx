@@ -16,6 +16,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import { startPlayerEvents } from "./player/playerStore";
+import { startLibraryEvents } from "./features/library";
 import { NotchPlayer } from "./features/notch/NotchPlayer";
 
 import "./styles/tokens.css";
@@ -29,6 +30,9 @@ if (!root) {
 // The queue projection travels on its own event and is only published when it
 // changes, so the listener has to exist before anything else asks for state.
 void startPlayerEvents().catch(() => undefined);
+// Same cross-window signal as the main window: the heart must confirm from the
+// authoritative value after any window toggles it.
+startLibraryEvents();
 
 ReactDOM.createRoot(root).render(
   <React.StrictMode>

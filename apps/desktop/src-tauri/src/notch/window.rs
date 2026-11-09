@@ -18,7 +18,7 @@
 // Audited `AppKit` FFI island: only window chrome is configured here.
 #![allow(unsafe_code)]
 
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 use super::detect;
 use super::geometry::{self, WindowGeometry};
@@ -26,6 +26,14 @@ use super::geometry::{self, WindowGeometry};
 /// The companion window's label. Also the capability scope in
 /// `capabilities/notch.json`.
 pub const LABEL: &str = "notch";
+
+/// Emitted when the pointer enters or leaves the bar.
+///
+/// The webview's own tracking areas only fire while Echo is the active app, so
+/// a hover from another app would do nothing until the user clicked first. This
+/// event comes from an `.activeAlways` tracking area on the window, which is
+/// independent of activation.
+pub const HOVER_EVENT: &str = "notch://hover";
 
 /// Create the window if it does not exist, then position it for `expanded`.
 ///
@@ -59,8 +67,9 @@ pub fn ensure(app: &AppHandle, expanded: bool) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
 
     let app_for_main = app.clone();
+    let app_for_native = app.clone();
     app.run_on_main_thread(move || {
-        if let Err(error) = configure_native(&window, &target, expanded) {
+        if let Err(error) = configure_native(&app_for_native, &window, &target, expanded) {
             tracing::warn!(%error, "notch window native configuration failed");
         }
         // `show` after the frame is set: the window must never flash at the
@@ -122,6 +131,7 @@ fn apply_frame(
 }
 
 fn configure_native(
+    app: &AppHandle,
     window: &WebviewWindow,
     target: &WindowGeometry,
     expanded: bool,
@@ -160,8 +170,86 @@ fn configure_native(
     );
 
     install_vibrancy(mtm, ns_window);
+    install_hover_catcher(mtm, ns_window, app);
     sync_vibrancy(ns_window, expanded);
     Ok(())
+}
+
+// --- hover capture -----------------------------------------------------------
+//
+// `WKWebView`'s tracking areas are active only while the app is active, so a
+// pointer hovering the bar while another app is frontmost produced no event and
+// the user had to click Echo first. An `.activeAlways` tracking area on a view
+// we own fires regardless of activation; it only reports "inside / outside" and
+// the renderer keeps owning the animation.
+
+use objc2::{
+    define_class, msg_send, rc::Retained, runtime::NSObjectProtocol, AllocAnyThread, DefinedClass,
+    MainThreadOnly,
+};
+use objc2_app_kit::{NSEvent, NSTrackingArea, NSTrackingAreaOptions, NSView};
+use objc2_foundation::{NSObject, NSRect};
+
+struct HoverIvars {
+    app: AppHandle,
+}
+
+define_class!(
+    #[unsafe(super = NSView)]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = HoverIvars]
+    struct HoverCatcher;
+
+    unsafe impl NSObjectProtocol for HoverCatcher {}
+
+    impl HoverCatcher {
+        #[unsafe(method(mouseEntered:))]
+        fn entered(&self, _event: &NSEvent) {
+            let _ = self.ivars().app.emit(HOVER_EVENT, true);
+        }
+
+        #[unsafe(method(mouseExited:))]
+        fn exited(&self, _event: &NSEvent) {
+            let _ = self.ivars().app.emit(HOVER_EVENT, false);
+        }
+    }
+);
+
+/// Install the hover catcher under the web view. Tracking is position based, so
+/// sitting below the web view does not stop it from firing, and it can never
+/// swallow a click meant for the panel.
+fn install_hover_catcher(
+    mtm: objc2_foundation::MainThreadMarker,
+    ns_window: &objc2_app_kit::NSWindow,
+    app: &AppHandle,
+) {
+    use objc2_app_kit::{NSAutoresizingMaskOptions, NSWindowOrderingMode};
+
+    let Some(content) = ns_window.contentView() else {
+        return;
+    };
+    let this = HoverCatcher::alloc(mtm).set_ivars(HoverIvars { app: app.clone() });
+    // SAFETY: `initWithFrame:` is NSView's designated initializer for this subclass.
+    let catcher: Retained<HoverCatcher> =
+        unsafe { msg_send![super(this), initWithFrame: content.bounds()] };
+    catcher.setAutoresizingMask(
+        NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
+    );
+    // SAFETY: the area's owner is the catcher, which outlives it (retained by the
+    // view hierarchy), and `.inVisibleRect` keeps the rect in sync with the view.
+    let area = unsafe {
+        NSTrackingArea::initWithRect_options_owner_userInfo(
+            NSTrackingArea::alloc(),
+            NSRect::ZERO,
+            NSTrackingAreaOptions::MouseEnteredAndExited
+                | NSTrackingAreaOptions::ActiveAlways
+                | NSTrackingAreaOptions::InVisibleRect,
+            Some(&catcher),
+            None,
+        )
+    };
+    catcher.addTrackingArea(&area);
+    content.addSubview_positioned_relativeTo(&catcher, NSWindowOrderingMode::Below, None);
 }
 
 /// The panel's width when expanded: the 360 pt body inside the 412 pt window.
@@ -280,11 +368,8 @@ fn install_vibrancy(mtm: objc2_foundation::MainThreadMarker, ns_window: &objc2_a
 
 use std::cell::RefCell;
 
-use objc2::{
-    define_class, msg_send, rc::Retained, runtime::NSObjectProtocol, DefinedClass, MainThreadOnly,
-};
 use objc2_app_kit::NSApplicationDidChangeScreenParametersNotification;
-use objc2_foundation::{NSNotification, NSNotificationCenter, NSObject};
+use objc2_foundation::{NSNotification, NSNotificationCenter};
 
 thread_local! {
     static OBSERVER: RefCell<Option<Retained<ScreenObserver>>> = const { RefCell::new(None) };

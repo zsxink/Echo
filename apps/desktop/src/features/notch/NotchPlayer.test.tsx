@@ -71,6 +71,10 @@ function renderNotch(overrides: Partial<UiPlayerSnapshot> = {}) {
 
 const root = () => screen.getByTestId("notch-player");
 
+const echoTest = (
+  globalThis as unknown as { __echoTest: { emit(event: string, payload: unknown): void } }
+).__echoTest;
+
 describe("collapsed and expanded content", () => {
   it("shows the temporary item's own display name", () => {
     renderNotch();
@@ -186,6 +190,31 @@ describe("window growth protocol", () => {
 
     await waitFor(() => expect(root()).toHaveAttribute("data-expanded", "true"));
     expect(capturedInvoke).toHaveBeenCalledWith("notch_player_set_expanded", { expanded: true });
+  });
+
+  it("expands from the shell's hover event, which works while Echo is inactive", async () => {
+    // The webview's tracking areas only fire while Echo is the front app, so the
+    // shell reports hover from an `.activeAlways` tracking area instead.
+    renderNotch();
+    act(() => {
+      echoTest.emit("notch://hover", true);
+    });
+
+    await waitFor(() => expect(root()).toHaveAttribute("data-expanded", "true"));
+    expect(capturedInvoke).toHaveBeenCalledWith("notch_player_set_expanded", { expanded: true });
+  });
+
+  it("collapses when the shell reports the pointer left", async () => {
+    renderNotch();
+    act(() => {
+      echoTest.emit("notch://hover", true);
+    });
+    await waitFor(() => expect(root()).toHaveAttribute("data-expanded", "true"));
+
+    act(() => {
+      echoTest.emit("notch://hover", false);
+    });
+    await waitFor(() => expect(root()).toHaveAttribute("data-expanded", "false"));
   });
 
   it("expands when the pointer is over the housing strip itself", async () => {

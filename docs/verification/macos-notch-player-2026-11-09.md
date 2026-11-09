@@ -82,6 +82,8 @@ cargo build -p echo-app
 | 7 | 全屏应用下可见且不遮挡菜单栏状态项 | 全屏应用与菜单栏 |
 | 8 | 展开态窗口四角透明区不吞掉下方应用的点击 | Risks：鼠标事件穿透 |
 | 9 | 设置「应用行为」出现「刘海播放器」开关，可切换且即时生效；重启后保持 | 偏好 / 关闭并重启 |
+| 9b | **在其它应用前台时**把指针移到刘海区域即展开，不需要先点一下 Echo | Echo 不是前台应用 |
+| 9c | 在刘海播放器点喜欢 → 常驻播放栏心形与「喜欢的音乐」立即刷新（无需切窗口） | 从刘海播放器修改喜欢 |
 | 10 | 合盖或断开内建屏后窗口消失、开关置灰但不清空已保存值；重新打开内建屏后恢复 | 没有刘海屏时置灰 / 屏幕参数变化 |
 | 11 | 与主播放栏、菜单栏状态项、系统媒体键双向同步 | 从刘海播放器控制播放 / 从其它入口控制播放 |
 | 12 | 播放模式三态只换图标、不变色 | 播放模式不使用强调色 |
@@ -119,9 +121,10 @@ cargo build -p echo-app
 | 减少动画 | `notch.css` 的 `@media (prefers-reduced-motion)` 把动画时长/延迟归零 | 原型验收台实测 `animation: none` |
 | 悬浮展开 | 根容器 `onPointerEnter`（整条，含刘海本体）→ `await notch_player_set_expanded(true)` → 置 `data-expanded` | `NotchPlayer.test`「awaits the resize before showing」 |
 | 移出收起 | `onPointerLeave` → 90 ms 后收起动画，420 ms 后缩窗 | `NotchPlayer.test`「collapses on leave …」 |
-| 指针经过硬件刘海 | 根容器 `onPointerEnter`：整条收缩态（含刘海本体）都是命中区；`.hardware-notch` 为 `pointer-events: none`，事件落到容器 | `NotchPlayer.test`「expands when the pointer is over the housing strip itself」；真机 #2 |
+| 指针经过硬件刘海 | 根容器 `onPointerEnter` + 壳层 `notch://hover`（`.activeAlways` 跟踪区）：整条收缩态都是命中区 | `NotchPlayer.test`「expands when the pointer is over the housing strip itself」「expands from the shell's hover event」；真机 #2/#9b |
 | 拖动进度条 | `onPointerDown` 置 `draggingRef`，`collapse` 直接返回 | `NotchPlayer.test`「stays open while dragging」 |
 | 从刘海播放器控制播放 | `player_control` / `seek` / `set_favorite` 与播放栏同命令 | `NotchPlayer.test`「sends the same transport actions」 |
+| 从刘海播放器修改喜欢 | `set_favorite` 成功后壳层广播 `library://invalidated`，各窗口 `startLibraryEvents()` 转成 `invalidateLibrary()` 重读 | `libraryInvalidation.test` 两项；真机 #9c |
 | 从其它入口控制播放 | 同一 `player://snapshot` 流 | `playerStore` 单一边界；真机 #11 |
 | 播放模式不使用强调色 | `playbackModes.ts` 只含 label/next/icon；`notch.css` 无 `#btn-mode` 颜色声明 | `NotchPlayer.test`「never gives the mode control a theme-accent colour rule」 |
 | 临时播放项 | `data-temporary` + 喜欢禁用 | `NotchPlayer.test`「disables the favourite control for a temporary item」 |

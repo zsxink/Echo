@@ -4,6 +4,7 @@ import { App } from "./app/App";
 import { applyPlatform } from "./app/platform";
 import { bridge } from "./bridge";
 import { startPlayerEvents } from "./player/playerStore";
+import { startLibraryEvents } from "./features/library";
 // Visual layer: the extracted prototype stylesheet (see scripts/extract-prototype-css.mjs).
 import "./styles/tokens.css";
 import "./styles/shell.css";
@@ -32,6 +33,10 @@ void (async () => {
     await bridge.call("restore_playback_session", {}).catch(() => undefined);
   }
 })();
+
+// Cross-window catalog changes (e.g. a favorite toggled in the notch player)
+// arrive as an event; this window re-reads its own authoritative views.
+startLibraryEvents();
 
 // Platform detection (issue #76): `applyPlatform()` decides once whether this
 // is the macOS / Windows / Linux WebView or a plain browser preview and
