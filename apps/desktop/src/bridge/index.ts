@@ -104,6 +104,11 @@ interface BridgeCommandArguments extends SyncCommandArguments {
   report_library_view: [args: { view: string }];
   set_theme: [args: { theme: string }];
   set_close_behavior: [args: { behavior: string }];
+  /** The macOS notch player: hardware availability + persisted preference. */
+  get_notch_player_state: EmptyArgs;
+  set_notch_player_enabled: [args: { enabled: boolean }];
+  /** Grow/shrink the macOS notch window before/after its CSS transition. */
+  notch_player_set_expanded: [args: { expanded: boolean }];
   get_close_behavior: EmptyArgs;
   play_playlist_context: [args: { playlist: string; selectedSong: string; query?: string | null }];
   play_library_context: [

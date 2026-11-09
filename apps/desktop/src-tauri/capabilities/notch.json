@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "notch",
+  "description": "Echo macOS notch player window — the smallest possible surface. It draws one panel and calls the same typed commands as the main window (`player_control` / `seek` / `set_favorite` / `notch_player_set_expanded`), so it needs the core defaults for event subscription and nothing else: no shell, fs, sql, opener, dialog, process or network permission family, and no window-control permission (the window is positioned and resized by the Rust side, never by the renderer).",
+  "windows": ["notch"],
+  "permissions": ["core:default"]
+}

@@ -19,6 +19,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { bridge } from "../../bridge";
+import { detectPlatform } from "../../app/platform";
 import { invalidateCovers } from "../../app/coverArt";
 import { Icon } from "../../app/Icon";
 import { LibraryRecoveryStatus } from "./LibraryRecoveryStatus";
@@ -86,6 +87,12 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
   const [choosing, setChoosing] = useState(false);
   const [rescanning, setRescanning] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // The macOS notch player: `available` is a runtime hardware fact, so the row
+  // renders disabled (and cannot be toggled) on a Mac without a camera housing.
+  const [notchPlayer, setNotchPlayer] = useState<{
+    available: boolean;
+    enabled: boolean;
+  } | null>(null);
   const [scanIssues, setScanIssues] = useState<readonly ScanIssueDto[]>([]);
   const [activeModule, setActiveModule] =
     useState<(typeof SETTINGS_MODULES)[number]["id"]>("general");
@@ -107,6 +114,25 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
     media.addEventListener("change", updateOrientation);
     return () => media.removeEventListener("change", updateOrientation);
   }, []);
+
+  const isMacos = detectPlatform() === "macos";
+
+  useEffect(() => {
+    if (!isMacos) return;
+    let current = true;
+    void bridge
+      .call("get_notch_player_state")
+      .then((state) => {
+        if (current) setNotchPlayer(state);
+      })
+      .catch(() => {
+        // A failure here must not block the settings dialog: the row simply
+        // stays unavailable, which is the same visual state as "no notch".
+      });
+    return () => {
+      current = false;
+    };
+  }, [isMacos]);
 
   useEffect(() => {
     let current = true;
@@ -139,6 +165,18 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
     } catch {
       setCloseBehavior(previous);
       setNotice("关闭行为保存失败，已恢复原设置");
+    }
+  }
+
+  async function toggleNotchPlayer(next: boolean) {
+    if (!notchPlayer?.available) return;
+    const previous = notchPlayer;
+    setNotchPlayer({ ...notchPlayer, enabled: next });
+    try {
+      setNotchPlayer(await bridge.call("set_notch_player_enabled", { enabled: next }));
+    } catch {
+      setNotchPlayer(previous);
+      setNotice("刘海播放器设置保存失败，已恢复原设置");
     }
   }
 
@@ -397,6 +435,29 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
                         </label>
                       </div>
                     </div>
+                    {isMacos ? (
+                      <div className="setting-row">
+                        <div className="storage-value">
+                          <strong>刘海播放器</strong>
+                          <span className="setting-help">
+                            {notchPlayer?.available === false
+                              ? "此 Mac 没有刘海屏，无法使用该入口。"
+                              : "在屏幕顶部刘海两侧常驻迷你播放控制：收缩时只占极小宽度，悬浮展开完整控制。"}
+                          </span>
+                        </div>
+                        <label className="setting-choice">
+                          <input
+                            type="checkbox"
+                            name="notch-player"
+                            aria-label="刘海播放器"
+                            checked={notchPlayer?.enabled ?? false}
+                            disabled={notchPlayer?.available !== true}
+                            onChange={(event) => void toggleNotchPlayer(event.target.checked)}
+                          />
+                          显示刘海播放器
+                        </label>
+                      </div>
+                    ) : null}
                   </section>
                 </section>
                 <section

@@ -41,6 +41,7 @@ import { invalidateLibrary, setSongFavorite } from "../library";
 import { EffectsTrigger } from "./EffectsTrigger";
 import { savedLibraryOperation } from "../../bridge/libraryPersistence";
 import { PlayerProgress } from "./PlayerProgress";
+import { modeFor } from "./playbackModes";
 
 export function PlayerBar({
   root,
@@ -125,7 +126,7 @@ export function PlayerBar({
     }
   }
 
-  const mode = MODES[snapshot.mode];
+  const mode = modeFor(snapshot.mode);
 
   return (
     <footer
@@ -324,15 +325,6 @@ function importResultText(kind: string): string {
   }
 }
 
-/** 播放模式: label, next mode in the cycle, and its solid glyph.
- *  顺序播放的语义是列表循环（播完回到第一条继续，默认模式）——a library is
- *  meant to keep playing, not to stop after its last song. */
-const MODES = {
-  sequential: { label: "列表循环", next: "shuffle", icon: "modeSequence" },
-  shuffle: { label: "随机播放", next: "repeatOne", icon: "modeShuffle" },
-  repeatOne: { label: "单曲循环", next: "sequential", icon: "modeRepeatOne" },
-} as const;
-
 function buildStatusText(snapshot: ReturnType<typeof usePlayerSnapshot>): string {
   const stateText =
     snapshot.state === "playing"
@@ -344,6 +336,6 @@ function buildStatusText(snapshot: ReturnType<typeof usePlayerSnapshot>): string
           : "已停止";
   const parts = [stateText];
   if (snapshot.currentTitle) parts.push(snapshot.currentTitle);
-  parts.push(MODES[snapshot.mode].label + (snapshot.muted ? "，静音" : ""));
+  parts.push(modeFor(snapshot.mode).label + (snapshot.muted ? "，静音" : ""));
   return parts.join("，");
 }

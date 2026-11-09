@@ -643,6 +643,25 @@ pub struct SongIdRef {
     pub id: SongId,
 }
 
+/// The macOS notch player's settings-row contract.
+///
+/// `available` is a runtime hardware fact (does a connected display have a
+/// camera housing?) and `enabled` is the persisted preference. They are
+/// reported together so the settings row can render the disabled state without
+/// a second round trip, and so a Mac without a notch never rewrites the
+/// preference.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotchPlayerStateDto {
+    pub available: bool,
+    pub enabled: bool,
+    /// The camera housing's width in logical points, when one is present.
+    /// The renderer needs it to draw the bezel and to keep the ear content
+    /// clear of it: the housing measures 185 pt on a 16-inch laptop and differs
+    /// between sizes, so it cannot be a stylesheet constant.
+    pub notch_width: Option<f64>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

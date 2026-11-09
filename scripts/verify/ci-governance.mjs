@@ -24,6 +24,9 @@ const checks = [
   // committed-integrity, manifest coverage and the licensing guard.
   ["fixture determinism and licensing", "node", ["scripts/verify/checks/task-1.6.mjs"], "static"],
   ["lint inheritance", "node", ["scripts/verify/check-lint-inheritance.mjs"], "static"],
+  // apps/desktop/src/styles/*.css are generated from the prototypes; a hand
+  // edit would silently diverge the app from its visual source of truth.
+  ["prototype css drift", "node", ["scripts/verify/checks/prototype-css-drift.mjs"], "static"],
   ["toolchain pin", "node", ["scripts/verify/check-toolchain.mjs"], "static"],
   ["verification validity", "node", ["scripts/verify/check-verification-validity.mjs"], "static"],
   ["scenario evidence coverage", "node", ["scripts/verify/check-scenario-evidence.mjs"], "rust-static"],

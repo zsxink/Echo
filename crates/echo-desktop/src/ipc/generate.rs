@@ -249,6 +249,15 @@ pub fn generated_typescript() -> String {
 
     out.push_str("export type Theme = 'coral' | 'cobalt' | 'turquoise';\n");
     out.push_str("export type CloseBehavior = 'exit' | 'background';\n");
+    // The macOS notch player: `available` is a runtime hardware fact, `enabled`
+    // is the persisted preference. A Mac without a notch reports available=false
+    // and never rewrites `enabled`.
+    out.push('\n');
+    out.push_str("export interface NotchPlayerState {\n");
+    out.push_str("  readonly available: boolean;\n");
+    out.push_str("  readonly enabled: boolean;\n");
+    out.push_str("  readonly notchWidth: number | null;\n");
+    out.push_str("}\n");
     out.push('\n');
     out.push_str("/** Generated command name → successful return DTO contract. */\n");
     out.push_str("export interface IpcCommandResultMap {\n");
@@ -325,6 +334,9 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly set_theme: void;\n");
     out.push_str("  readonly set_close_behavior: void;\n");
     out.push_str("  readonly get_close_behavior: CloseBehavior;\n");
+    out.push_str("  readonly get_notch_player_state: NotchPlayerState;\n");
+    out.push_str("  readonly set_notch_player_enabled: NotchPlayerState;\n");
+    out.push_str("  readonly notch_player_set_expanded: void;\n");
     out.push_str("  readonly play_playlist_context: void;\n");
     out.push_str("  readonly play_library_context: void;\n");
     out.push_str("  readonly restore_playback_session: string;\n");

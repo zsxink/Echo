@@ -1,12 +1,22 @@
 #!/usr/bin/env node
-// One-off helper: lift the prototype's <style> block verbatim into the desktop
-// app's stylesheet layer, split by region so each file stays reviewable.
+// Lift the prototypes' <style> blocks verbatim into the desktop app's
+// stylesheet layer, split by region so each file stays reviewable.
 //
-// The prototype (`docs/prototype/echo-desktop-player.html`) is the visual
-// source of truth; this script guarantees the app ships the *same declarations*
-// (no hand transcription drift). Re-run it after editing the prototype.
+// Two visual sources of truth:
+//   · `docs/prototype/echo-desktop-player.html` → tokens/shell/library/player/
+//     responsive, sliced by anchor selectors.
+//   · `docs/prototype/echo-macos-notch-player.html` → the macOS notch player
+//     window (`notch.css`). That prototype also carries an acceptance harness
+//     and a simulated desktop, so only the block between its
+//     `@notch-product:start` / `@notch-product:end` markers is copied.
 //
-//   node scripts/extract-prototype-css.mjs
+// This script guarantees the app ships the *same declarations* (no hand
+// transcription drift). Re-run it after editing either prototype.
+//
+//   node scripts/extract-prototype-css.mjs [--out=<dir>]
+//
+// `--out` exists for the drift gate (`scripts/verify/checks/prototype-css-
+// drift.mjs`), which regenerates into a temporary directory and compares.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -14,7 +24,11 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const SRC = resolve(ROOT, "docs", "prototype", "echo-desktop-player.html");
-const OUT_DIR = resolve(ROOT, "apps", "desktop", "src", "styles");
+const NOTCH_SRC = resolve(ROOT, "docs", "prototype", "echo-macos-notch-player.html");
+const outArg = process.argv.find((arg) => arg.startsWith("--out="));
+const OUT_DIR = outArg
+  ? resolve(outArg.slice("--out=".length))
+  : resolve(ROOT, "apps", "desktop", "src", "styles");
 
 const html = readFileSync(SRC, "utf8");
 const open = html.indexOf("<style>");
@@ -123,6 +137,38 @@ const write = (name, body) => {
   return body.split("\n").length;
 };
 
+// --- notch player -----------------------------------------------------------
+// The notch prototype holds product CSS plus a demo page; only the marked block
+// ships. Missing markers are a hard error rather than an empty file, so a
+// prototype edit cannot silently drop the window's stylesheet.
+const NOTCH_HEADER = [
+  "/* macOS notch player window",
+  " *",
+  " * Verbatim from docs/prototype/echo-macos-notch-player.html (the visual source",
+  " * of truth) — only the block between its @notch-product markers. Do not",
+  " * hand-edit declarations here: change the prototype and re-run",
+  " * `node scripts/extract-prototype-css.mjs` so the app cannot drift from it.",
+  " *",
+  " * Application tokens (--bg / --accent / --focus-ring …) come from tokens.css;",
+  " * this file only adds the window's own --notch-* variables and rules.",
+  " */",
+  "",
+].join("\n");
+
+function notchRegion() {
+  const html = readFileSync(NOTCH_SRC, "utf8");
+  const start = html.indexOf("/* ══ @notch-product:start");
+  const end = html.indexOf("/* ══ @notch-product:end");
+  if (start < 0 || end < 0 || end <= start) {
+    throw new Error(
+      "notch prototype is missing the @notch-product:start / @notch-product:end markers",
+    );
+  }
+  // Drop the marker comments themselves; keep everything between them verbatim.
+  const startLineEnd = html.indexOf("\n", html.indexOf("*/", start));
+  return html.slice(startLineEnd + 1, end).replace(/\s+$/, "") + "\n";
+}
+
 const counts = {
   "tokens.css": write("tokens.css", tokens + ALIASES),
   "shell.css": write("shell.css", shell),
@@ -130,6 +176,10 @@ const counts = {
   "player.css": write("player.css", player),
   "responsive.css": write("responsive.css", responsive),
 };
+
+const notchBody = notchRegion();
+writeFileSync(resolve(OUT_DIR, "notch.css"), NOTCH_HEADER + notchBody);
+counts["notch.css"] = notchBody.split("\n").length;
 
 const total = Object.entries(counts)
   .map(([name, n]) => `${name} (${n} lines)`)

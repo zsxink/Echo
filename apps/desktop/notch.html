@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Echo</title>
+    <!--
+      The macOS notch player window (openspec `macos-notch-player`).
+
+      A second, tiny renderer entry: the window is transparent, sits over the
+      desktop's top edge and only ever draws the notch panel. It subscribes to
+      the same `player://` events as the main window, so it never owns a player
+      or queue of its own.
+    -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/notch.tsx"></script>
+  </body>
+</html>

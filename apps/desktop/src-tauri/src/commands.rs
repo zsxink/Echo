@@ -627,6 +627,80 @@ fn lib_entry(song: SongId) -> QueueEntry {
 /// song — never a song-id list — so a paged or partial client-side list cannot
 /// truncate the queue (spec: 视图播放重建队列数量). The queue is atomically
 /// replaced: any previous queue and manual "play next" lane are discarded.
+/// The macOS notch player's settings-row state: hardware availability plus the
+/// persisted preference. Pure read — never rewrites the preference.
+#[tauri::command]
+pub fn get_notch_player_state(
+    notch: State<'_, crate::notch::NotchPlayer>,
+) -> echo_desktop::ipc::dto::NotchPlayerStateDto {
+    echo_desktop::ipc::dto::NotchPlayerStateDto {
+        available: notch.available(),
+        enabled: notch.enabled(),
+        notch_width: crate::notch::notch_width(),
+    }
+}
+
+/// Persist the notch player preference and reconcile the window with it.
+///
+/// When the current Mac has no camera housing the preference is deliberately
+/// **not** written: a closed lid or a different display must not erase the
+/// user's choice. The response still reports `available = false` so the
+/// settings row stays disabled and in sync.
+#[tauri::command]
+pub fn set_notch_player_enabled(
+    app: tauri::AppHandle,
+    local_state: State<'_, Arc<echo_desktop::platform::local_state::DesktopStateStore>>,
+    notch: State<'_, crate::notch::NotchPlayer>,
+    enabled: bool,
+) -> Result<echo_desktop::ipc::dto::NotchPlayerStateDto, IpcErrorDto> {
+    if !notch.available() {
+        return Ok(echo_desktop::ipc::dto::NotchPlayerStateDto {
+            available: false,
+            enabled: notch.enabled(),
+            notch_width: None,
+        });
+    }
+    local_state.set_show_notch_player(enabled).map_err(|_| {
+        IpcErrorDto::from(&echo_core::error::Error::unavailable(
+            "preferences",
+            "write failed",
+        ))
+    })?;
+    notch.set_enabled(enabled);
+    let available = notch.sync(&app);
+    Ok(echo_desktop::ipc::dto::NotchPlayerStateDto {
+        available,
+        enabled: notch.enabled(),
+        notch_width: crate::notch::notch_width(),
+    })
+}
+
+/// Grow or shrink the companion window. The renderer awaits this before it
+/// plays the expand animation, so the panel is never clipped by the old frame.
+#[tauri::command]
+pub fn notch_player_set_expanded(
+    app: tauri::AppHandle,
+    notch: State<'_, crate::notch::NotchPlayer>,
+    expanded: bool,
+) -> Result<(), IpcErrorDto> {
+    if !notch.available() || !notch.enabled() {
+        return Err(IpcErrorDto::from(&echo_core::error::Error::unavailable(
+            "notch-player",
+            "the notch player is not open",
+        )));
+    }
+    // Record the state only after the window actually resized: a failed resize
+    // must not leave the flag claiming a size the window does not have.
+    crate::notch::set_expanded(&app, expanded).map_err(|_| {
+        IpcErrorDto::from(&echo_core::error::Error::unavailable(
+            "notch-player",
+            "the notch window could not be resized",
+        ))
+    })?;
+    notch.set_expanded(expanded);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn play_playlist_context(
     services: State<'_, AppServices>,

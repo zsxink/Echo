@@ -1,0 +1,1090 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Echo · macOS 刘海播放器原型</title>
+  <meta name="description" content="Echo macOS 刘海播放器交互原型：收缩态封面缩略图与跳动音符，悬浮展开后的完整播放控制。">
+  <style>
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Echo macOS 刘海播放器 · 独立原型（issue #147 验收稿）
+ *
+ * 定位：只用于视觉与交互验收的设计稿，**不是** CSS 生成物来源。
+ *   · 视觉基准沿用 docs/prototype/echo-desktop-player.html 的 :root token
+ *     与 docs/prototype/brand-spec.md；色值逐字复制，便于对照。
+ *   · 不接入 scripts/extract-prototype-css.mjs：主原型的 <style> 是按锚点
+ *     行号切片的，往里面追加规则会污染 apps/desktop/src/styles/*.css。
+ *     独立原型文件是否纳入生成器，见 #147 的 Q8，验收后再定。
+ *   · 封面为脚本生成的原创抽象 SVG（data URI），不引用外部图片或用户素材。
+ *   · 演示曲目沿用主原型的示例数据，不读取资料库、不接触任何文件路径。
+ *
+ * 中文排版：分寸 Measure 基础样式内联于 @layer measure（T02/T04/T08），
+ * 字体栈只调用系统字体，不自托管 webfont（F03）。
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+/* measure.css · 分寸基础样式，整层优先级为 0，不覆盖产品样式 */
+@layer measure {
+  :where(:lang(zh)) {
+    line-break: strict;
+    font-synthesis-style: none;
+    text-emphasis-position: under right;
+  }
+  :where(:lang(zh)) :where(p, li) { line-height: 1.75; }
+  :where(:lang(zh)) :where(h1, h2, h3) { line-height: 1.3; }
+  .measure-prose { max-width: 36em; }
+  @supports (text-autospace: normal) {
+    :where(:lang(zh)) { text-autospace: normal; }
+  }
+}
+
+/* ── Echo 设计 token（复制自 echo-desktop-player.html 的 :root） ─────────── */
+:root {
+  --bg: oklch(1 0 89.88);
+  --surface: oklch(0.9642 0 89.88);
+  --surface-warm: oklch(0.9460 0.0160 19.38);
+  --fg: oklch(0.2134 0 89.88);
+  --fg-2: oklch(0.4180 0.0250 19.38);
+  --muted: oklch(0.5100 0.0160 19.38);
+  --accent: oklch(0.6528 0.2219 19.38);
+  --accent-strong: oklch(0.53 0.2219 19.38);
+  --accent-hover: color-mix(in oklab, var(--accent), black 8%);
+  --border: oklch(0.8940 0.0090 19.38);
+  --border-soft: oklch(0.9300 0.0050 19.38);
+  --danger: #cf1322;
+  --success: #22a06b;
+  --font-body: Inter, "Ant Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-lg: 18px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 9999px;
+  --focus-ring: 0 0 0 4px color-mix(in oklab, var(--accent-strong), transparent 76%);
+  --motion-fast: 140ms;
+  --motion-base: 220ms;
+  /* 刘海展开/收起：比常规浮层慢、尾巴更长，读作「液体洒开」而不是弹窗弹出 */
+  --motion-silk: 520ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-silk: cubic-bezier(0.32, 1.08, 0.4, 1);
+}
+/* 主题只改强调色；刘海表面固定纯黑（--notch-bg），不随主题变白 */
+:root[data-echo-theme="cobalt"] {
+  --accent: oklch(0.3787 0.1953 263.35);
+  --accent-strong: oklch(0.3100 0.1850 263.35);
+  --surface-warm: oklch(0.9460 0.0140 263.35);
+}
+:root[data-echo-theme="green"] {
+  --accent: oklch(0.54 0.1330 159.56);
+  --accent-strong: oklch(0.44 0.1330 159.56);
+  --surface-warm: oklch(0.9460 0.0180 159.56);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+/* 演示页的底色画在 html 上：产品段会把 body 置为透明（伴随窗口需要）。 */
+html { background: #f3f4f6; }
+body {
+  color: var(--fg);
+  font: 400 var(--text-sm)/1.7 var(--font-body);
+}
+button, input, select { font: inherit; }
+button { color: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ── 页面框架 ───────────────────────────────────────────────────────────── */
+.page { max-width: 1080px; margin: 0 auto; padding: 48px 24px 80px; }
+.page-head { margin-bottom: 28px; }
+.eyebrow { margin: 0; color: var(--muted); font-size: var(--text-xs); }
+.page-head h1 { margin: 8px 0 12px; font-size: 30px; font-weight: 650; }
+.lede { margin: 0; max-width: 36em; color: var(--fg-2); }
+.badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.badge {
+  padding: 3px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill);
+  background: var(--bg); color: var(--fg-2); font-size: var(--text-xs);
+}
+
+/* ── 验收台（仅演示，不属于产品界面） ───────────────────────────────────── */
+.stage { padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); }
+.stage-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+  padding: 0 4px 14px; border-bottom: 1px solid var(--border-soft);
+}
+.stage-label { margin: 0; color: var(--muted); font-size: var(--text-xs); }
+.demo-group { display: flex; align-items: center; gap: 6px; }
+.demo-group > span { color: var(--muted); font-size: var(--text-xs); }
+.demo-btn {
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg); color: var(--fg-2); font-size: var(--text-xs); cursor: pointer;
+}
+.demo-btn:hover { background: var(--surface); color: var(--fg); }
+.demo-btn[aria-pressed="true"] {
+  border-color: var(--accent); background: var(--surface-warm); color: var(--fg);
+}
+.demo-select {
+  padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg); color: var(--fg-2); font-size: var(--text-xs); cursor: pointer;
+}
+.demo-check { display: inline-flex; align-items: center; gap: 5px; color: var(--fg-2); font-size: var(--text-xs); cursor: pointer; }
+.demo-check input { accent-color: var(--accent-strong); }
+
+/* ── 模拟屏幕顶部 ───────────────────────────────────────────────────────── */
+.desktop {
+  position: relative; height: 400px; margin-top: 16px; overflow: hidden;
+  border-radius: var(--radius-md);
+  background: radial-gradient(900px 380px at 22% -10%, #3c4763 0%, transparent 62%),
+              linear-gradient(155deg, #1d2436 0%, #312338 52%, #111827 100%);
+  --menu-fg: rgba(255, 255, 255, 0.88);
+  /* 演示用背景窗口（仅为让液态玻璃有东西可模糊，不属于产品界面） */
+  --mock-surface: rgba(255, 255, 255, 0.03);
+  --mock-line: rgba(255, 255, 255, 0.10);
+  --mock-block: rgba(255, 255, 255, 0.055);
+  --mock-tint: rgba(196, 122, 158, 0.20);
+}
+.desktop[data-wallpaper="light"] {
+  background: radial-gradient(900px 380px at 22% -10%, #ffffff 0%, transparent 62%),
+              linear-gradient(155deg, #dce5f1 0%, #f1e9e7 55%, #d9e2ec 100%);
+  --menu-fg: oklch(0.32 0.01 19.38);
+  --mock-surface: rgba(255, 255, 255, 0.62);
+  --mock-line: rgba(15, 20, 30, 0.10);
+  --mock-block: rgba(15, 20, 30, 0.06);
+  --mock-tint: rgba(196, 90, 120, 0.20);
+}
+
+/* 演示背景窗口：低对比、半遮在面板后面，只用来交代玻璃后面的内容 */
+.mock-window {
+  position: absolute; top: 46px; left: 50%; transform: translateX(-50%);
+  width: 660px; height: 208px;
+  border-radius: 12px; overflow: hidden;
+  background: var(--mock-surface);
+  box-shadow: inset 0 0 0 1px var(--mock-line), 0 18px 40px rgba(0, 0, 0, 0.18);
+}
+.mock-titlebar { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 12px; box-shadow: inset 0 -1px 0 var(--mock-line); }
+.mock-titlebar i { display: block; width: 7px; height: 7px; border-radius: 50%; background: var(--mock-line); }
+.mock-body { display: flex; flex-direction: column; gap: 8px; padding: 16px 16px; }
+.mock-line { display: block; height: 7px; border-radius: 4px; background: var(--mock-line); }
+.mock-line.w72 { width: 62%; }
+.mock-line.w46 { width: 38%; }
+.mock-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 6px; }
+.mock-cards i { display: block; height: 84px; border-radius: 8px; background: var(--mock-block); }
+.mock-cards i:nth-child(2) { background: var(--mock-tint); }
+.menubar {
+  position: absolute; top: 0; right: 0; left: 0; height: 32px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px; color: var(--menu-fg); font-size: var(--text-xs);
+}
+.menu-items, .menu-right { display: flex; align-items: center; gap: 16px; }
+.menu-items b { font-weight: 650; }
+.menu-status { display: flex; align-items: center; gap: 10px; opacity: 0.9; }
+.menu-status svg { width: 13px; height: 13px; display: block; }
+.desktop-hint {
+  position: absolute; bottom: 18px; left: 0; right: 0; text-align: center;
+  color: var(--menu-fg); font-size: var(--text-xs); opacity: 0.72;
+}
+.desktop-hint kbd {
+  padding: 1px 6px; border: 1px solid currentColor; border-radius: 4px;
+  font: inherit; opacity: 0.9;
+}
+
+/* ── 刘海播放器主体 ─────────────────────────────────────────────────────── */
+/* ══ @notch-product:start ═════════════════════════════════════════════════
+ * 以下到 @notch-product:end 之间的声明会被 scripts/extract-prototype-css.mjs
+ * 逐字写入 apps/desktop/src/styles/notch.css（伴随窗口用），因此这一段只能
+ * 包含产品样式：不得出现验收台、页面框架或模拟桌面的选择器。
+ * 应用级 token（--bg / --accent / --focus-ring …）来自 styles/tokens.css。
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* 刘海播放器自身的设计变量：纯黑表面，与硬件刘海连成一体；文字用白色层级
+   而非主题色，强调色只留给进度填充与播放键两个位置。播放模式任何状态都不
+   上色，只靠图标区分。 */
+/* 伴随窗口是透明窗口：body 与根容器必须透明，窗口背后的
+   NSVisualEffectView（真实背景模糊）才能透出来。只覆盖 body / #root 而不碰
+   html，是为了让演示页仍能用 html 的底色（tokens.css 也只给 body 上底色）。 */
+body,
+#root {
+  background: transparent;
+}
+
+:root {
+  --notch-bg: #0b0d12;
+  --notch-bezel: #000000;
+  --notch-fg: rgba(255, 255, 255, 0.94);
+  --notch-fg-2: rgba(255, 255, 255, 0.62);
+  --notch-line: rgba(255, 255, 255, 0.14);
+  --notch-track: rgba(255, 255, 255, 0.22);
+  --notch-hover: rgba(255, 255, 255, 0.10);
+  --notch-danger: color-mix(in oklab, var(--danger), white 24%);
+}
+
+.notch-player {
+  --notch-fillet: 26px;
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  /* 收缩态 = 真刘海宽度 + 左右各一只放小封面 / 小音符的窄耳（26px）。
+     刘海宽度由运行时注入（--notch-hw-width）：真机 185 pt，不同机型不同，
+     写死会让封面压到刘海下面。原型没有注入时按 186 兜底。 */
+  width: calc(var(--notch-hw-width, 186px) + 52px); height: 32px; z-index: 5;
+  transition: width var(--motion-silk) var(--ease-silk), height var(--motion-silk) var(--ease-silk);
+}
+.notch-player[data-expanded="true"] { width: 360px; height: 196px; }
+/* 收起比展开略快，回弹感不至于让用户等 */
+.notch-player:not([data-expanded="true"]) {
+  transition-duration: 380ms, 380ms;
+}
+.notch-surface {
+  position: absolute; inset: 0; overflow: hidden;
+  background: rgba(11, 13, 18, 1);
+  border-radius: 0 0 9px 9px;
+  /* 收缩态：与硬件刘海连成一体，靠 1px 内侧高光交代材质 */
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.07), 0 16px 34px rgba(0, 0, 0, 0.42);
+  -webkit-backdrop-filter: blur(0px) saturate(100%);
+  backdrop-filter: blur(0px) saturate(100%);
+  transition:
+    background-color var(--motion-silk) var(--ease-standard),
+    border-radius var(--motion-silk) var(--ease-silk),
+    box-shadow var(--motion-silk) var(--ease-standard),
+    -webkit-backdrop-filter var(--motion-silk) var(--ease-standard),
+    backdrop-filter var(--motion-silk) var(--ease-standard);
+}
+/* 展开态 = 液态玻璃：半透明黑底 + 背景模糊/饱和 + 上亮下暗的高光边 + 外投影。
+   透明度取 .86：既要透出背后的模糊，又要在浅色桌面上仍然是「黑色面板」而
+   不是发灰的毛玻璃。顶部两角**不内收**，由外侧的外翻角（下方 ::before/::after）
+   接到屏幕顶边，读作面板从屏幕边缘「长出来」。 */
+.notch-player[data-expanded="true"] .notch-surface {
+  background: rgba(11, 13, 19, 0.86);
+  border-radius: 0 0 24px 24px;
+  -webkit-backdrop-filter: blur(26px) saturate(160%);
+  backdrop-filter: blur(26px) saturate(160%);
+  box-shadow:
+    inset 0 -1px 0 rgba(255, 255, 255, 0.10),
+    0 24px 52px rgba(0, 0, 0, 0.52);
+}
+/* 外翻圆角（liquid glass 的「液体挂边」）：面板左右两侧各多出一块 26×26 的
+   方形，用 radial-gradient mask 挖掉靠内下角的一个圆，剩下靠外的部分就是从
+   顶边向外拱出的凹圆角。
+   注意两点，否则接缝会露出来：
+   1. 面板展开态不画 1px 内描边（描边会在接缝处留下一道竖线）；
+   2. 这里必须叠上同一条顶部高光渐变（取面板 sheen 的前 26 px），否则外翻角
+      会比面板暗一档。backdrop-filter 采样的是元素后面的背景而不是面板，
+      所以两块玻璃的模糊结果天然连续。 */
+.notch-player::before,
+.notch-player::after {
+  content: ""; position: absolute; top: 0; z-index: 2;
+  width: var(--notch-fillet); height: var(--notch-fillet);
+  background-color: rgba(11, 13, 19, 0.86);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.075));
+  -webkit-backdrop-filter: blur(26px) saturate(160%);
+  backdrop-filter: blur(26px) saturate(160%);
+  opacity: 0; pointer-events: none;
+  transition: opacity 200ms var(--ease-standard);
+}
+.notch-player::before {
+  left: calc(var(--notch-fillet) * -1);
+  -webkit-mask: radial-gradient(circle at 0 100%, transparent calc(var(--notch-fillet) - 0.5px), #000 var(--notch-fillet));
+  mask: radial-gradient(circle at 0 100%, transparent calc(var(--notch-fillet) - 0.5px), #000 var(--notch-fillet));
+}
+.notch-player::after {
+  right: calc(var(--notch-fillet) * -1);
+  -webkit-mask: radial-gradient(circle at 100% 100%, transparent calc(var(--notch-fillet) - 0.5px), #000 var(--notch-fillet));
+  mask: radial-gradient(circle at 100% 100%, transparent calc(var(--notch-fillet) - 0.5px), #000 var(--notch-fillet));
+}
+.notch-player[data-expanded="true"]::before,
+.notch-player[data-expanded="true"]::after {
+  opacity: 1;
+  transition: opacity 320ms var(--ease-standard) 150ms;
+}
+
+/* 玻璃顶部的柔性高光（上亮下透），只随展开出现 */
+.notch-surface::before {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  border-radius: inherit; opacity: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0.05) 18%,
+    rgba(255, 255, 255, 0) 42%
+  );
+  transition: opacity 200ms var(--ease-standard);
+}
+.notch-player[data-expanded="true"] .notch-surface::before {
+  opacity: 1;
+  transition: opacity 420ms var(--ease-standard) 120ms;
+}
+/* 硬件刘海：纯黑凹口与纯黑表面靠色差分层，视觉上把收缩态切成左右两只「耳」 */
+/* 与表面等高的硬件凹口：比表面更黑，靠色差而非描边交代边界。
+   宽度由运行时注入（`--notch-hw-width`）：真机刘海在 16" 上是 185 pt，不同
+   机型不同，写死会让收缩态的封面压到刘海下面。原型没有注入时用 186 兜底。 */
+.hardware-notch {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: var(--notch-hw-width, 186px); height: 32px; z-index: 4; pointer-events: none;
+  border-radius: 0 0 9px 9px; background: var(--notch-bezel);
+}
+.hardware-notch::after {
+  content: ""; position: absolute; top: 11px; right: 22px; width: 7px; height: 7px;
+  border-radius: 50%; background: radial-gradient(circle at 35% 30%, #2d3646, #0b0e15 72%);
+}
+/* 验收辅助（默认关闭）：标出硬件刘海矩形，便于确认收缩态只比它宽一点点 */
+.desktop[data-guide="true"] .hardware-notch {
+  outline: 1px dashed rgba(255, 255, 255, 0.55); outline-offset: -1px;
+}
+
+/* 收缩态：左封面缩略图，右跳动音符 */
+.ears {
+  position: absolute; top: 0; left: 0; right: 0; height: 32px; z-index: 3;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 5px;
+  /* 收起时等面板缩回再出现，避免小封面与小音符在中间穿过 */
+  transition: opacity 160ms var(--ease-standard) 240ms;
+}
+.notch-player[data-expanded="true"] .ears {
+  opacity: 0; pointer-events: none;
+  transition: opacity 140ms var(--ease-standard) 0ms;
+}
+.ear {
+  display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0;
+  border: 0; border-radius: 5px; background: transparent; cursor: pointer;
+}
+.ear:focus-visible { box-shadow: var(--focus-ring); }
+/* 封面容器 + 内部 <img>：无封面时去掉 src，由容器背景画黑胶占位，
+   避免 <img> 无 src 时渲染浏览器的“破图”图标。 */
+.thumb { display: block; width: 16px; height: 16px; border-radius: 4px; overflow: hidden; position: relative; background: repeating-radial-gradient(circle at center, #3a3a3f 0 1px, #56565d 2px 3px); }
+.thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.thumb img:not([src]) { display: none; }
+.thumb::after {
+  content: ""; position: absolute; inset: 5px; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.42); pointer-events: none;
+}
+/* 与产品 .cover.has-image 同一套开关：不用 :has()，macOS 12 的 WKWebView 不支持 */
+.thumb.has-image::after { content: none; }
+
+/* 跳动的音乐符号：逐字复用 library.css 的 .playing-bars 规则 */
+.playing-bars { display: inline-flex; width: 16px; height: 16px; align-items: end; justify-content: center; gap: 2px; vertical-align: middle; }
+.playing-bars i { display: block; width: 3px; height: 7px; border-radius: var(--radius-pill); background: var(--accent); transform-origin: bottom; }
+.playing-bars i:nth-child(2) { height: 13px; }
+.playing-bars i:nth-child(3) { height: 9px; }
+/* 收缩态用同一套 .playing-bars 语义（同 keyframes、同延迟），只缩小尺寸 */
+.playing-bars.compact { width: 12px; height: 12px; gap: 1.5px; }
+.playing-bars.compact i { width: 2px; }
+.playing-bars.compact i:nth-child(1) { height: 5px; }
+.playing-bars.compact i:nth-child(2) { height: 10px; }
+.playing-bars.compact i:nth-child(3) { height: 7px; }
+.notch-player[data-playing="true"] .playing-bars i { animation: playing-bars 700ms var(--ease-standard) infinite alternate; }
+.notch-player[data-playing="true"] .playing-bars i:nth-child(2) { animation-delay: -240ms; }
+.notch-player[data-playing="true"] .playing-bars i:nth-child(3) { animation-delay: -440ms; }
+@keyframes playing-bars { to { transform: scaleY(.38); } }
+
+/* 展开态 */
+.panel {
+  position: absolute; top: 36px; left: 0; right: 0; z-index: 3;
+  padding: 0 16px 14px; opacity: 0; transform: translateY(-10px);
+  pointer-events: none;
+  transition: opacity 150ms var(--ease-standard), transform 260ms var(--ease-standard);
+}
+/* 内容比面板晚一点淡入，先看到玻璃展开、再看到信息 */
+.notch-player[data-expanded="true"] .panel {
+  opacity: 1; transform: none; pointer-events: auto;
+  transition:
+    opacity 280ms var(--ease-standard) 170ms,
+    transform 460ms var(--ease-silk) 130ms;
+}
+.panel-head { display: flex; align-items: center; gap: 12px; min-height: 52px; }
+.panel-actions { flex: none; display: flex; align-items: center; gap: 2px; }
+.panel-cover { flex: none; display: block; width: 48px; height: 48px; border-radius: var(--radius-md); overflow: hidden; position: relative; background: repeating-radial-gradient(circle at center, #3a3a3f 0 3px, #56565d 4px 6px); }
+.panel-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.panel-cover img:not([src]) { display: none; }
+.panel-cover::after { content: ""; position: absolute; inset: 14px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.42); pointer-events: none; }
+.panel-cover.has-image::after { content: none; }
+.panel-meta { min-width: 0; flex: 1; }
+.panel-title { display: block; color: var(--notch-fg); font-size: var(--text-sm); font-weight: 650; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-title.is-empty { color: var(--notch-fg-2); }
+.panel-sub { display: block; color: var(--notch-fg-2); font-size: var(--text-xs); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-tag {
+  display: none; margin-left: 6px; padding: 0 5px; border: 1px solid var(--notch-line);
+  border-radius: 4px; color: var(--notch-fg-2); font-size: var(--text-xs); font-weight: 400;
+}
+.notch-player[data-temporary="true"] .panel-tag { display: inline-block; }
+.panel-bars { flex: none; display: flex; align-items: center; padding-right: 2px; }
+
+/* 可拖动的播放进度条（复用 PlayerProgress 的结构与样式） */
+.panel-progress { margin-top: 14px; }
+.panel-progress .progress-line {
+  --slider-track-height: 4px; position: relative; z-index: 1; inset: auto;
+  width: 100%; height: 8px;
+}
+.panel-progress .progress-line::before, .panel-progress .progress-fill {
+  content: ""; position: absolute; top: calc((8px - var(--slider-track-height)) / 2);
+  height: var(--slider-track-height); border-radius: var(--radius-pill); pointer-events: none;
+}
+.panel-progress .progress-line::before { right: 0; left: 0; background: var(--notch-track); }
+.panel-progress .progress-fill { left: 0; width: 100%; background: var(--accent); transform: scaleX(0); transform-origin: left center; }
+.panel-progress .progress {
+  position: relative; z-index: 2; display: block; width: 100%; height: 8px; margin: 0;
+  appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer;
+}
+.panel-progress .progress::-webkit-slider-runnable-track { height: 8px; background: transparent; }
+.panel-progress .progress::-webkit-slider-thumb {
+  width: 12px; height: 12px; margin-top: -2px; appearance: none; -webkit-appearance: none;
+  border: 2px solid var(--notch-bg); border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent), white 30%);
+  transition: transform var(--motion-fast) var(--ease-standard);
+}
+.panel-progress .progress::-moz-range-track { height: 8px; background: transparent; }
+.panel-progress .progress::-moz-range-thumb {
+  width: 8px; height: 8px; border: 2px solid var(--notch-bg); border-radius: 50%;
+  background: var(--accent);
+}
+.panel-progress .progress:hover::-webkit-slider-thumb { transform: scale(1.16); }
+.panel-progress .progress:focus-visible { border-radius: var(--radius-pill); box-shadow: var(--focus-ring); outline: none; }
+.panel-progress .progress:disabled { cursor: default; }
+.panel-progress .progress:disabled::-webkit-slider-thumb { background: var(--notch-line); box-shadow: none; }
+.panel-progress .progress:disabled::-moz-range-thumb { background: var(--notch-line); box-shadow: none; }
+.progress-times { display: flex; justify-content: space-between; margin-top: 4px; color: var(--notch-fg-2); font: 400 var(--text-xs)/1.5 var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* 传输控制区：喜欢 / 上一首 / 播放·暂停 / 下一首 / 播放模式 */
+.panel-controls { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding: 0 6px; }
+.notch-control {
+  display: grid; place-items: center; width: 34px; height: 34px; padding: 0;
+  border: 0; border-radius: 50%; background: transparent; color: var(--notch-fg-2); cursor: pointer;
+}
+.notch-control:hover { background: var(--notch-hover); color: var(--notch-fg); }
+.notch-control svg { width: 18px; height: 18px; display: block; }
+.notch-control.is-favorite { color: var(--notch-danger); }
+/* 播放模式任何状态都不使用主题色：只靠图标区分列表循环 / 随机 / 单曲，
+   颜色与上一首、下一首一致；aria-pressed 仅保留语义，不驱动视觉。 */
+.notch-control.control-play { width: 40px; height: 40px; color: var(--accent); }
+.notch-control.control-play svg { width: 28px; height: 28px; }
+.notch-control.control-play:hover { color: var(--accent-hover); background: transparent; }
+.notch-control:disabled { color: var(--notch-fg-2); opacity: 0.38; cursor: default; background: transparent; }
+.notch-collapse {
+  display: grid; place-items: center; width: 26px; height: 26px; padding: 0;
+  border: 0; border-radius: 50%; background: transparent; color: var(--notch-fg-2); cursor: pointer;
+}
+.notch-collapse:hover { background: var(--notch-hover); color: var(--notch-fg); }
+.notch-collapse svg { width: 14px; height: 14px; }
+.notch-collapse:focus-visible { box-shadow: var(--focus-ring); }
+
+/* 空播放态 / 临时播放项 */
+.notch-player[data-empty="true"] .thumb { opacity: 0.5; }
+.notch-player[data-empty="true"] .playing-bars i { background: var(--notch-line); }
+/* 减少动画：音符静止、面板即时出现，但仍保留状态变化 */
+.desktop[data-reduce-motion="true"] .notch-player *,
+.desktop[data-reduce-motion="true"] .notch-player {
+  animation: none !important; transition-duration: 1ms !important; transition-delay: 0ms !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .notch-player, .notch-player * {
+    animation: none !important; transition-duration: 1ms !important; transition-delay: 0ms !important;
+  }
+}
+
+/* ══ @notch-product:end ═══════════════════════════════════════════════════ */
+
+/* ── 验收说明 ───────────────────────────────────────────────────────────── */
+.stage-caption { margin: 14px 4px 0; color: var(--fg-2); font-size: var(--text-xs); }
+.state-readout { margin: 8px 4px 0; color: var(--muted); font-size: var(--text-xs); }
+.notes { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 32px; }
+@media (max-width: 960px) { .notes { grid-template-columns: 1fr; } }
+/* 窄视口下模拟桌面不够宽，隐藏装饰性菜单项与状态图标，避免与刘海播放器重叠造成误判 */
+@media (max-width: 960px) { .menu-items span, .menu-status { display: none; } }
+.note-card { padding: 20px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); }
+.note-card h2 { margin: 0 0 14px; font-size: var(--text-lg); font-weight: 650; }
+.note-card p { margin: 0 0 12px; color: var(--fg-2); }
+.note-card ul, .note-card ol { margin: 0; padding-left: 22px; color: var(--fg-2); }
+.note-card li { margin-bottom: 8px; }
+.spec-table { width: 100%; border-collapse: collapse; font-size: var(--text-xs); }
+.spec-table th, .spec-table td { padding: 8px 6px; border-bottom: 1px solid var(--border-soft); text-align: left; vertical-align: top; }
+.spec-table th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+.accept-list { list-style: none; padding: 0; }
+.accept-list li { display: flex; gap: 10px; align-items: flex-start; }
+.accept-list input { margin-top: 5px; accent-color: var(--accent-strong); }
+.pending { margin-top: 16px; padding: 14px; border: 1px dashed var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.pending h3 { margin: 0 0 8px; font-size: var(--text-sm); font-weight: 650; }
+.pending ul { margin: 0; padding-left: 20px; }
+.page-foot { margin-top: 28px; color: var(--muted); font-size: var(--text-xs); }
+code { padding: 1px 4px; border-radius: 4px; background: var(--surface); font: 400 var(--text-xs)/1.5 var(--font-mono); }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="page-head">
+      <p class="eyebrow">Echo / 原型验收稿</p>
+      <h1>macOS 刘海播放器</h1>
+      <p class="lede">纯黑表面与硬件刘海连成一体。收缩态只比刘海宽一点点：左为小封面缩略图，右为跳动的音乐符号；鼠标悬浮后向右拓宽并向下展开，补齐歌曲信息、可拖动进度条与完整播放控制。本页模拟带刘海屏幕的顶部区域，用于交互与视觉验收。</p>
+      <div class="badges">
+        <span class="badge">issue #147</span>
+        <span class="badge">独立原型 · 不接入 CSS 生成器</span>
+        <span class="badge">纯黑表面</span>
+        <span class="badge">收缩态 = 刘海 + 两只小耳</span>
+        <span class="badge">展开态液态玻璃</span>
+        <span class="badge">顶部两角向外翻</span>
+        <span class="badge">音符复用 .playing-bars</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="stage" aria-labelledby="stage-title">
+        <h2 id="stage-title" class="sr-only">刘海播放器交互演示</h2>
+        <div class="stage-toolbar">
+          <p class="stage-label">验收台（仅演示，不属于产品界面）</p>
+          <div class="demo-group">
+            <span>快捷操作</span>
+            <button class="demo-btn" type="button" id="demo-play">播放 / 暂停</button>
+            <button class="demo-btn" type="button" id="demo-prev">上一首</button>
+            <button class="demo-btn" type="button" id="demo-next">下一首</button>
+          </div>
+          <div class="demo-group">
+            <label class="demo-check"><input type="checkbox" id="demo-empty">空播放态</label>
+            <label class="demo-check"><input type="checkbox" id="demo-temporary">临时播放项</label>
+            <label class="demo-check"><input type="checkbox" id="demo-reduce">减少动画</label>
+            <label class="demo-check"><input type="checkbox" id="demo-guide">刘海边界辅助线</label>
+          </div>
+          <div class="demo-group">
+            <span>主题</span>
+            <select class="demo-select" id="demo-theme" aria-label="原型主题">
+              <option value="coral">珊瑚玫红</option>
+              <option value="cobalt">深钴蓝</option>
+              <option value="green">松石绿</option>
+            </select>
+          </div>
+          <div class="demo-group">
+            <span>桌面</span>
+            <button class="demo-btn" type="button" id="demo-wallpaper" aria-pressed="false">深色 / 浅色</button>
+          </div>
+          <div class="demo-group">
+            <span>展开方式</span>
+            <button class="demo-btn" type="button" id="demo-expand-mode" aria-pressed="false">悬浮 / 点击锁定</button>
+          </div>
+        </div>
+
+        <div class="desktop" id="desktop" data-wallpaper="dark" data-reduce-motion="false">
+          <div class="menubar" aria-hidden="true">
+            <div class="menu-items">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16.3 6.25v12.1c-1.62-.94-3.7-1.28-5.65-.76-3.9 1.02-6.02 4.58-4.76 7.42 1.2 2.75 5.27 3.3 8.82 1.2 2.65-1.57 4.35-4.08 4.79-6.36V9.1c3.45-.3 5.95-1.7 7.2-4.05V1.45C24.6 4.14 21.05 5.75 16.3 6.25Z"/></svg>
+              <b>Echo</b><span>文件</span><span>编辑</span><span>播放</span><span>视图</span><span>窗口</span><span>帮助</span>
+            </div>
+            <div class="menu-right">
+              <div class="menu-status" title="菜单栏状态行（#37）示意">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.53 5.8A0.9 0.9 0 0 0 9.99 5.17L4.87 10.43A2.25 2.25 0 0 0 4.87 13.57L9.99 18.83A0.9 0.9 0 0 0 11.53 18.2L11.53 5.8ZM19.73 5.8A0.9 0.9 0 0 0 18.19 5.17L13.07 10.43A2.25 2.25 0 0 0 13.07 13.57L18.19 18.83A0.9 0.9 0 0 0 19.73 18.2L19.73 5.8Z"/></svg>
+                <svg viewBox="0 0 24 24" fill="currentColor"><rect x="5.76" y="3.6" width="5.07" height="16.8" rx="2.2"/><rect x="13.17" y="3.6" width="5.07" height="16.8" rx="2.2"/></svg>
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.27 5.8A0.9 0.9 0 0 1 5.81 5.17L10.93 10.43A2.25 2.25 0 0 1 10.93 13.57L5.81 18.83A0.9 0.9 0 0 1 4.27 18.2L4.27 5.8ZM12.47 5.8A0.9 0.9 0 0 1 14.01 5.17L19.13 10.43A2.25 2.25 0 0 1 19.13 13.57L14.01 18.83A0.9 0.9 0 0 1 12.47 18.2L12.47 5.8Z"/></svg>
+                <svg viewBox="0 0 32 32" fill="currentColor"><path d="M16.3 6.25v12.1c-1.62-.94-3.7-1.28-5.65-.76-3.9 1.02-6.02 4.58-4.76 7.42 1.2 2.75 5.27 3.3 8.82 1.2 2.65-1.57 4.35-4.08 4.79-6.36V9.1c3.45-.3 5.95-1.7 7.2-4.05V1.45C24.6 4.14 21.05 5.75 16.3 6.25Z"/></svg>
+              </div>
+              <span>11 月 9 日 周日 09:41</span>
+            </div>
+          </div>
+
+          <div class="mock-window" aria-hidden="true">
+            <div class="mock-titlebar"><i></i><i></i><i></i></div>
+            <div class="mock-body">
+              <span class="mock-line w72"></span>
+              <span class="mock-line w46"></span>
+              <div class="mock-cards"><i></i><i></i><i></i></div>
+            </div>
+          </div>
+
+          <!-- 刘海播放器：纯黑表面 + 纯黑硬件凹口 -->
+          <div class="notch-player" id="notch-player" data-playing="true" data-expanded="false" data-empty="false" data-temporary="false" role="group" aria-label="Echo 刘海播放器">
+            <div class="notch-surface">
+              <div class="ears" id="ears">
+                <button class="ear ear-left" type="button" id="ear-left" aria-label="展开刘海播放器" aria-expanded="false">
+                  <span class="thumb" id="thumb"><img id="thumb-img" alt=""></span>
+                </button>
+                <button class="ear ear-right" type="button" id="ear-right" aria-label="展开刘海播放器" aria-expanded="false">
+                  <span class="playing-bars compact" aria-hidden="true"><i></i><i></i><i></i></span>
+                </button>
+              </div>
+
+              <div class="panel" id="panel" aria-hidden="true" inert>
+                <div class="panel-head">
+                  <span class="panel-cover" id="panel-cover"><img id="panel-cover-img" alt=""></span>
+                  <div class="panel-meta">
+                    <b class="panel-title" id="panel-title">心房</b>
+                    <span class="panel-sub" id="panel-sub">陈婧霏</span>
+                  </div>
+                  <span class="panel-tag">临时</span>
+                  <div class="panel-actions">
+                    <div class="panel-bars">
+                      <span class="playing-bars" aria-hidden="true"><i></i><i></i><i></i></span>
+                    </div>
+                    <button class="notch-collapse" type="button" id="btn-collapse" aria-label="收起刘海播放器">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="panel-progress">
+                  <div class="progress-line">
+                    <span class="progress-fill" id="progress-fill" aria-hidden="true"></span>
+                    <input class="progress" id="progress" type="range" role="slider" aria-label="播放进度" min="0" max="257" step="any" value="72">
+                  </div>
+                  <div class="progress-times"><span id="time-current">1:12</span><span id="time-total">4:17</span></div>
+                </div>
+
+                <div class="panel-controls">
+                  <button class="notch-control" type="button" id="btn-favorite" aria-label="喜欢当前歌曲" aria-pressed="false"></button>
+                  <button class="notch-control" type="button" id="btn-prev" aria-label="上一首">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.53 5.8A0.9 0.9 0 0 0 9.99 5.17L4.87 10.43A2.25 2.25 0 0 0 4.87 13.57L9.99 18.83A0.9 0.9 0 0 0 11.53 18.2L11.53 5.8ZM19.73 5.8A0.9 0.9 0 0 0 18.19 5.17L13.07 10.43A2.25 2.25 0 0 0 13.07 13.57L18.19 18.83A0.9 0.9 0 0 0 19.73 18.2L19.73 5.8Z"/></svg>
+                  </button>
+                  <button class="notch-control control-play" type="button" id="btn-play" aria-label="暂停"></button>
+                  <button class="notch-control" type="button" id="btn-next" aria-label="下一首">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4.27 5.8A0.9 0.9 0 0 1 5.81 5.17L10.93 10.43A2.25 2.25 0 0 1 10.93 13.57L5.81 18.83A0.9 0.9 0 0 1 4.27 18.2L4.27 5.8ZM12.47 5.8A0.9 0.9 0 0 1 14.01 5.17L19.13 10.43A2.25 2.25 0 0 1 19.13 13.57L14.01 18.83A0.9 0.9 0 0 1 12.47 18.2L12.47 5.8Z"/></svg>
+                  </button>
+                  <button class="notch-control" type="button" id="btn-mode" aria-label="列表循环" title="列表循环" aria-pressed="false"></button>
+                </div>
+              </div>
+            </div>
+            <div class="hardware-notch" aria-hidden="true"></div>
+          </div>
+
+          <p class="desktop-hint">把鼠标移到刘海两侧的小耳展开 · 移出收起 · <kbd>Tab</kbd> 可聚焦 · <kbd>Esc</kbd> 收起</p>
+        </div>
+
+        <p class="state-readout" id="state-readout" aria-live="polite"></p>
+        <p class="stage-caption">纯黑表面与硬件刘海连成一体，收缩态只比刘海宽左右各 26 px（刚好放一张 16 px 小封面与一组 12 px 跳动音符）；展开时向右拓宽、向下展开，并切到液态玻璃（半透明 + 背景模糊 + 顶部高光）。面板<strong>顶部两角不内收</strong>，而是向屏幕外翻出 26 px 凹圆角，像从屏幕边缘长出来；底部两角仍为 24 px 圆角。桌面上的窗口只是给玻璃提供背景参照，不属于产品界面。</p>
+      </section>
+
+      <section class="notes" aria-label="原型说明与验收清单">
+        <div class="note-card">
+          <h2>两态结构与复用点</h2>
+          <table class="spec-table">
+            <tbody>
+              <tr><th>收缩态</th><td>238 × 32 px 纯黑表面 = 186 px 硬件刘海 + 左右各 26 px。左：16 × 16 封面缩略图；右：12 × 12 跳动音符。播放中跳动，暂停即静止。</td></tr>
+              <tr><th>展开态</th><td>360 × 196 px 面板，底部两角 24 px 圆角，顶部两角向屏幕外翻 26 px 凹圆角（与面板同材质的两个 <code>mask</code> 方块）。液态玻璃：半透明黑底 <code>rgba(11,13,19,.86)</code> + <code>backdrop-filter: blur(26px) saturate(160%)</code> + 顶部高光渐变 + 外投影。内容：48 × 48 封面 + 歌曲名称 + 歌手 + 跳动音符；4 px 轨道、12 px 拖动点的进度条；喜欢 / 上一首 / 播放·暂停 / 下一首 / 播放模式。</td></tr>
+              <tr><th>动效</th><td>展开 520 ms <code>cubic-bezier(.32,1.08,.4,1)</code>（轻微回弹），收起 380 ms；面板内容延后 170 ms 淡入；窄耳收起时延后 240 ms 再出现。减少动画下全部退化为即时。</td></tr>
+              <tr><th>音符</th><td>逐字复用 <code>.playing-bars</code> 三根条与 <code>.is-playing</code> 门控（<code>library.css:75-83</code>）；减少动画下静止但保留状态。</td></tr>
+              <tr><th>进度条</th><td>复用 <code>PlayerProgress.tsx</code> 的 range + <code>seek</code> 语义；拖动期间保持展开，不误收起。</td></tr>
+              <tr><th>控制</th><td>复用 <code>PlayerBar.tsx</code> 的 <code>player_control</code> / <code>set_favorite</code> 与 <code>MODES</code> 三态：列表循环 → 随机播放 → 单曲循环。</td></tr>
+              <tr><th>封面</th><td>演示用原创抽象 SVG，实际实现走 <code>assetUrl(key, "list")</code> 尺寸受控档与按 key 缓存，不读取原图。</td></tr>
+            </tbody>
+          </table>
+          <div class="pending">
+            <h3>需要你给结论（对应 #147）</h3>
+            <ul>
+              <li><strong>Q3</strong>：表面改为纯黑（与硬件刘海连成一体），深色壁纸下几乎不可见、浅色壁纸下边界清楚。是否需要在深色壁纸下补一条极淡的边缘提示（当前只靠顶部高光渐变 + 外投影，展开态已刻意不画 1 px 内描边，否则会在外翻角接缝处留一道竖线）。</li>
+              <li><strong>Q4</strong>：仅悬浮展开，还是允许点击锁定；展开后右上角的「︿」是收起入口，两种模式下都可用。</li>
+              <li><strong>Q2</strong>：与菜单栏状态行（#37，右上示意）并存的间距与让位规则。</li>
+              <li><strong>Q6</strong>：空播放态、临时播放项（「临时」标签 + 喜欢禁用）的展示口径。</li>
+              <li><strong>Q8</strong>：独立原型文件是否纳入 <code>extract-prototype-css.mjs</code> 的样式生成流程；面板的玻璃参数（透明度 / 模糊半径 / 高光）要不要反过来作为 #74 liquid glass 的 L2 浮层基准。</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="note-card">
+          <h2>验收清单</h2>
+          <p>勾选项只在浏览器内生效，不写入文件；结论请回复在 issue #147。</p>
+          <ul class="accept-list">
+            <li><input type="checkbox" id="a1"><label for="a1">收缩态为纯黑窄条，只比刘海宽一点；左封面缩略图、右跳动音符；暂停后音符立即静止。</label></li>
+            <li><input type="checkbox" id="a2"><label for="a2">悬浮展开显示封面、歌曲名称、歌手与跳动音符；移出自动收起。</label></li>
+            <li><input type="checkbox" id="a3"><label for="a3">进度条可拖动定位，时间随之变化，拖动中不收起。</label></li>
+            <li><input type="checkbox" id="a4"><label for="a4">喜欢可切换；上一首 / 下一首换曲目、换封面；播放·暂停切换图标与音符状态。</label></li>
+            <li><input type="checkbox" id="a5"><label for="a5">播放模式按列表循环 → 随机播放 → 单曲循环循环，图标与名称同步。</label></li>
+            <li><input type="checkbox" id="a6"><label for="a6">三种主题、深浅桌面、减少动画、空播放态、临时播放项下均无错位与陈旧信息。</label></li>
+            <li><input type="checkbox" id="a7"><label for="a7">键盘可聚焦并用 Enter / Space 操作；Esc 收起；控件有可读名称。</label></li>
+            <li><input type="checkbox" id="a8"><label for="a8">展开态布局、间距与控件顺序符合预期（这是最容易需要返工的一项）。</label></li>
+          </ul>
+          <p style="margin-top:16px">原型只描述视觉与交互，不包含窗口几何、屏幕检测、悬浮命中与权限面；这些留到 OpenSpec propose 的 design。</p>
+        </div>
+      </section>
+
+      <p class="page-foot">文件：<code>docs/prototype/echo-macos-notch-player.html</code>。验收通过并确定 Q2–Q8 后，再创建 OpenSpec change；本原型不产生任何应用代码改动。</p>
+    </main>
+  </div>
+
+  <script>
+  (function () {
+    "use strict";
+
+    /* 演示曲目沿用主原型示例数据；封面为脚本生成的原创抽象 SVG。 */
+    var TRACKS = [
+      { title: "心房", artist: "陈婧霏", album: "猩红", duration: 257, cover: "a", favorite: true },
+      { title: "惊蛰", artist: "裘德", album: "最后的水族馆", duration: 228, cover: "b", favorite: false },
+      { title: "不止一面", artist: "周深", album: "反深代词", duration: 242, cover: "c", favorite: false },
+      { title: "午夜飞行", artist: "新裤子", album: "生命因你而火热", duration: 271, cover: "d", favorite: false },
+      { title: "失落沙洲", artist: "徐佳莹", album: "极限", duration: 307, cover: "e", favorite: false }
+    ];
+    var COVER_PALETTES = {
+      a: ["#c2556b", "#5a2440", "#f0b6a2", "#f7e1cf"],
+      b: ["#3d6f8e", "#17324c", "#a8d5cf", "#f0e3b2"],
+      c: ["#8c6ba8", "#37254f", "#e6b7d2", "#c7e0ef"],
+      d: ["#d08144", "#673021", "#f3cf8e", "#f6e7d2"],
+      e: ["#4f8d72", "#1d4337", "#bfe0c2", "#f2e2b8"]
+    };
+    var MODES = [
+      { key: "sequential", label: "列表循环", icon: "modeSequence" },
+      { key: "shuffle", label: "随机播放", icon: "modeShuffle" },
+      { key: "repeatOne", label: "单曲循环", icon: "modeRepeatOne" }
+    ];
+    var ICONS = {
+      heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20.8 4.6a5.4 5.4 0 0 0-7.6 0L12 5.8l-1.2-1.2a5.4 5.4 0 1 0-7.6 7.6L12 21l8.8-8.8a5.4 5.4 0 0 0 0-7.6Z"/></svg>',
+      heartFilled: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.8 4.6a5.4 5.4 0 0 0-7.6 0L12 5.8l-1.2-1.2a5.4 5.4 0 1 0-7.6 7.6L12 21l8.8-8.8a5.4 5.4 0 0 0 0-7.6Z"/></svg>',
+      play: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4.27 5.8A1.34 1.34 0 0 1 6.23 4.6L18.71 11A1.13 1.13 0 0 1 18.71 13L6.23 19.4A1.34 1.34 0 0 1 4.27 18.2L4.27 5.8Z"/></svg>',
+      pause: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5.76" y="3.6" width="5.07" height="16.8" rx="2.2"/><rect x="13.17" y="3.6" width="5.07" height="16.8" rx="2.2"/></svg>',
+      modeSequence: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M17 3l3 3-3 3M20 6H9a5 5 0 0 0-5 5"/><path d="M7 21l-3-3 3-3M4 18h11a5 5 0 0 0 5-5"/></svg>',
+      modeShuffle: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3.5 6.5H6c2.22 0 3.42 1.72 4.77 3.48l1.05 1.37 1.16-1.42C14.3 8.3 15.5 6.5 17.72 6.5h1.48V4l3.3 3.5-3.3 3.5V8.5h-1.48c-1.24 0-2.1.9-3.28 2.42L13.22 12l1.22 1.58C15.62 15.1 16.48 16 17.72 16h1.48v-2.5l3.3 3.5-3.3 3.5V18h-1.48c-2.22 0-3.42-1.8-4.74-3.43l-1.16-1.44-1.05 1.38C9.42 16.28 8.22 18 6 18H3.5v-2H6c1.24 0 2.1-.9 3.28-2.42L10.5 12 9.28 10.42C8.1 8.9 7.24 8 6 8H3.5V6.5Z"/></svg>',
+      modeRepeatOne: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M17 3l3 3-3 3M20 6H9a5 5 0 0 0-5 5"/><path d="M7 21l-3-3 3-3M4 18h11a5 5 0 0 0 5-5"/><text x="9.4" y="15" fill="currentColor" stroke="none" font-size="8" font-weight="700">1</text></svg>'
+    };
+
+    var state = {
+      index: 0, position: 72, playing: true, mode: 0,
+      expanded: false, pinned: false, hovered: false, focused: false, seeking: false,
+      expandMode: "hover", empty: false, temporary: false, reduceMotion: false
+    };
+
+    function byId(id) { return document.getElementById(id); }
+    var desktop = byId("desktop");
+    var player = byId("notch-player");
+    var ears = byId("ears");
+    var panel = byId("panel");
+    var earLeft = byId("ear-left");
+    var earRight = byId("ear-right");
+    var thumb = byId("thumb");
+    var thumbImg = byId("thumb-img");
+    var panelCover = byId("panel-cover");
+    var panelCoverImg = byId("panel-cover-img");
+    var panelTitle = byId("panel-title");
+    var panelSub = byId("panel-sub");
+    var progress = byId("progress");
+    var progressFill = byId("progress-fill");
+    var timeCurrent = byId("time-current");
+    var timeTotal = byId("time-total");
+    var btnFavorite = byId("btn-favorite");
+    var btnPlay = byId("btn-play");
+    var btnMode = byId("btn-mode");
+    var btnCollapse = byId("btn-collapse");
+    var readout = byId("state-readout");
+
+    function coverUrl(key) {
+      var p = COVER_PALETTES[key];
+      var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">' +
+        '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">' +
+        '<stop offset="0" stop-color="' + p[0] + '"/><stop offset="1" stop-color="' + p[1] + '"/>' +
+        '</linearGradient></defs>' +
+        '<rect width="120" height="120" fill="url(#g)"/>' +
+        '<circle cx="84" cy="33" r="31" fill="' + p[2] + '" opacity="0.72"/>' +
+        '<path d="M-12 98 Q 42 60 132 90" stroke="' + p[3] + '" stroke-width="9" fill="none" opacity="0.85"/>' +
+        '<rect x="14" y="14" width="92" height="92" rx="5" fill="none" stroke="#ffffff" stroke-opacity="0.26"/>' +
+        '</svg>';
+      return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    }
+    function formatTime(seconds) {
+      var s = Math.max(0, Math.floor(seconds));
+      return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+    }
+    function track() { return TRACKS[state.index]; }
+    function announce(message) { readout.textContent = message; }
+
+    function renderMeta() {
+      var t = track();
+      if (state.empty) {
+        thumbImg.removeAttribute("src");
+        panelCoverImg.removeAttribute("src");
+        thumb.classList.remove("has-image");
+        panelCover.classList.remove("has-image");
+        panelTitle.textContent = "—";
+        panelTitle.classList.add("is-empty");
+        panelSub.textContent = "未在播放";
+      } else {
+        var src = coverUrl(t.cover);
+        thumbImg.src = src;
+        panelCoverImg.src = src;
+        thumb.classList.add("has-image");
+        panelCover.classList.add("has-image");
+        panelTitle.textContent = t.title;
+        panelTitle.classList.remove("is-empty");
+        panelSub.textContent = t.artist + " · " + t.album;
+      }
+      player.dataset.empty = String(state.empty);
+      player.dataset.temporary = String(state.temporary && !state.empty);
+      timeTotal.textContent = state.empty ? "0:00" : formatTime(t.duration);
+    }
+
+    function renderProgress() {
+      var duration = state.empty ? 0 : track().duration;
+      var position = state.empty ? 0 : Math.max(0, Math.min(duration, state.position));
+      progress.max = String(duration || 0);
+      progress.value = String(position);
+      progress.disabled = state.empty || duration <= 0;
+      progress.setAttribute("aria-valuetext", formatTime(position) + " / " + formatTime(duration));
+      progressFill.style.transform = "scaleX(" + (duration > 0 ? position / duration : 0) + ")";
+      timeCurrent.textContent = formatTime(position);
+    }
+
+    function renderPlaying() {
+      var live = state.playing && !state.empty;
+      player.dataset.playing = String(live);
+      btnPlay.innerHTML = live ? ICONS.pause : ICONS.play;
+      btnPlay.setAttribute("aria-label", live ? "暂停" : "播放");
+      byId("demo-play").setAttribute("aria-pressed", String(state.playing));
+    }
+
+    function renderFavorite() {
+      var t = track();
+      var active = !state.empty && t.favorite;
+      btnFavorite.innerHTML = active ? ICONS.heartFilled : ICONS.heart;
+      btnFavorite.classList.toggle("is-favorite", active);
+      btnFavorite.setAttribute("aria-pressed", String(active));
+      btnFavorite.setAttribute("aria-label", active ? "取消喜欢当前歌曲" : "喜欢当前歌曲");
+      var disabled = state.empty || state.temporary;
+      btnFavorite.disabled = disabled;
+      btnFavorite.title = state.temporary && !state.empty ? "临时播放项不可收藏" : "";
+    }
+
+    function renderMode() {
+      var mode = MODES[state.mode];
+      btnMode.innerHTML = ICONS[mode.icon];
+      btnMode.setAttribute("aria-label", mode.label);
+      btnMode.setAttribute("title", mode.label);
+      btnMode.setAttribute("aria-pressed", String(mode.key !== "sequential"));
+      btnMode.dataset.mode = mode.key;
+    }
+
+    function renderControls() {
+      var disabled = state.empty;
+      ["btn-prev", "btn-play", "btn-next", "btn-mode"].forEach(function (id) {
+        byId(id).disabled = disabled;
+      });
+    }
+
+    function renderReadout() {
+      var t = track();
+      announce([
+        state.expanded ? "已展开" : "已收缩",
+        state.playing && !state.empty ? "播放中" : "已暂停",
+        state.empty ? "空播放态" : t.title + " · " + t.artist,
+        MODES[state.mode].label,
+        state.temporary && !state.empty ? "临时播放项" : "资料库歌曲",
+        state.reduceMotion ? "减少动画" : "动画开启"
+      ].join(" / "));
+    }
+
+    function renderAll() {
+      renderMeta();
+      renderProgress();
+      renderPlaying();
+      renderFavorite();
+      renderMode();
+      renderControls();
+      renderReadout();
+    }
+
+    function setExpanded(value) {
+      state.expanded = value;
+      player.dataset.expanded = String(value);
+      earLeft.setAttribute("aria-expanded", String(value));
+      earRight.setAttribute("aria-expanded", String(value));
+      ears.inert = value;
+      ears.setAttribute("aria-hidden", String(value));
+      panel.inert = !value;
+      panel.setAttribute("aria-hidden", String(!value));
+      renderReadout();
+    }
+    function maybeCollapse() {
+      if (state.pinned || state.seeking || state.hovered || state.focused) return;
+      setExpanded(false);
+    }
+    function collapse() {
+      state.pinned = false;
+      state.hovered = false;
+      state.focused = false;
+      setExpanded(false);
+    }
+
+    function setTrack(nextIndex) {
+      state.index = (nextIndex + TRACKS.length) % TRACKS.length;
+      state.position = 0;
+      renderAll();
+    }
+    function advance(auto) {
+      if (state.empty) return;
+      if (auto && MODES[state.mode].key === "repeatOne") {
+        state.position = 0;
+        renderProgress();
+        return;
+      }
+      if (MODES[state.mode].key === "shuffle") {
+        var next = state.index;
+        while (TRACKS.length > 1 && next === state.index) {
+          next = Math.floor(Math.random() * TRACKS.length);
+        }
+        setTrack(next);
+        return;
+      }
+      setTrack(state.index + 1);
+    }
+    function previous() { setTrack(state.index - 1); }
+
+    /* ── 播放器交互 ─────────────────────────────────────────────────────── */
+    // 悬浮只在两侧窄耳上触发：凹口是硬件，应用无法在其下方接收指针，
+    // 所以把展开命中区限定为窄耳与展开面板，移出整个播放器才收起。
+    ears.addEventListener("mouseenter", function () {
+      state.hovered = true;
+      if (state.expandMode === "hover") setExpanded(true);
+    });
+    player.addEventListener("mouseleave", function () {
+      state.hovered = false;
+      maybeCollapse();
+    });
+    player.addEventListener("focusin", function () {
+      state.focused = true;
+      setExpanded(true);
+    });
+    player.addEventListener("focusout", function () {
+      window.setTimeout(function () {
+        state.focused = player.contains(document.activeElement);
+        maybeCollapse();
+      }, 0);
+    });
+
+    // 点击锁定只在「点击锁定」模式生效：悬浮模式下点击窄耳不应把面板永久钉住。
+    [earLeft, earRight].forEach(function (ear) {
+      ear.addEventListener("click", function () {
+        if (state.expandMode === "click") state.pinned = true;
+        setExpanded(true);
+      });
+    });
+    btnCollapse.addEventListener("click", collapse);
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") collapse();
+    });
+    document.addEventListener("click", function (event) {
+      if (state.pinned && !player.contains(event.target)) collapse();
+    });
+
+    btnPlay.addEventListener("click", function () {
+      state.playing = !state.playing;
+      renderPlaying();
+      renderReadout();
+    });
+    byId("btn-prev").addEventListener("click", previous);
+    byId("btn-next").addEventListener("click", function () { advance(false); });
+    btnFavorite.addEventListener("click", function () {
+      if (state.empty || state.temporary) return;
+      track().favorite = !track().favorite;
+      renderFavorite();
+    });
+    btnMode.addEventListener("click", function () {
+      state.mode = (state.mode + 1) % MODES.length;
+      renderMode();
+      renderReadout();
+    });
+
+    progress.addEventListener("input", function (event) {
+      state.seeking = true;
+      state.position = Number(event.target.value);
+      renderProgress();
+    });
+    progress.addEventListener("change", function () {
+      state.seeking = false;
+      announce("已定位至 " + formatTime(state.position));
+      renderReadout();
+    });
+    progress.addEventListener("pointerdown", function () { state.seeking = true; });
+    window.addEventListener("pointerup", function () { state.seeking = false; });
+
+    window.setInterval(function () {
+      if (!state.playing || state.empty || state.seeking) return;
+      if (state.position >= track().duration) { advance(true); return; }
+      state.position += 1;
+      renderProgress();
+    }, 1000);
+
+    /* ── 验收台（仅演示） ───────────────────────────────────────────────── */
+    byId("demo-play").addEventListener("click", function () {
+      state.playing = !state.playing;
+      renderPlaying();
+      renderReadout();
+    });
+    byId("demo-prev").addEventListener("click", previous);
+    byId("demo-next").addEventListener("click", function () { advance(false); });
+    byId("demo-empty").addEventListener("change", function (event) {
+      state.empty = event.target.checked;
+      if (state.empty) state.position = 0;
+      renderAll();
+    });
+    byId("demo-temporary").addEventListener("change", function (event) {
+      state.temporary = event.target.checked;
+      renderMeta();
+      renderFavorite();
+      renderReadout();
+    });
+    byId("demo-reduce").addEventListener("change", function (event) {
+      state.reduceMotion = event.target.checked;
+      desktop.dataset.reduceMotion = String(state.reduceMotion);
+      renderReadout();
+    });
+    byId("demo-guide").addEventListener("change", function (event) {
+      desktop.dataset.guide = String(event.target.checked);
+    });
+    byId("demo-theme").addEventListener("change", function (event) {
+      document.documentElement.dataset.echoTheme = event.target.value;
+    });
+    byId("demo-wallpaper").addEventListener("click", function () {
+      var light = desktop.dataset.wallpaper !== "light";
+      desktop.dataset.wallpaper = light ? "light" : "dark";
+      this.setAttribute("aria-pressed", String(light));
+    });
+    byId("demo-expand-mode").addEventListener("click", function () {
+      var clickMode = state.expandMode !== "click";
+      state.expandMode = clickMode ? "click" : "hover";
+      this.setAttribute("aria-pressed", String(clickMode));
+      collapse();
+    });
+
+    /* 截图与直达验收：?state=expanded 固定展开；另可带 theme / wallpaper /
+       empty / temporary / paused / reduce 直接进入对应状态。 */
+    var params = new URLSearchParams(window.location.search);
+    if (params.get("theme")) {
+      document.documentElement.dataset.echoTheme = params.get("theme");
+      byId("demo-theme").value = params.get("theme");
+    }
+    if (params.get("wallpaper")) {
+      desktop.dataset.wallpaper = params.get("wallpaper");
+      byId("demo-wallpaper").setAttribute("aria-pressed", String(params.get("wallpaper") === "light"));
+    }
+    if (params.get("empty") === "1") {
+      state.empty = true;
+      byId("demo-empty").checked = true;
+    }
+    if (params.get("temporary") === "1") {
+      state.temporary = true;
+      byId("demo-temporary").checked = true;
+    }
+    var modeParam = params.get("mode");
+    if (modeParam) {
+      var idx = MODES.findIndex(function (m) { return m.key === modeParam; });
+      if (idx >= 0) state.mode = idx;
+    }
+    if (params.get("paused") === "1") {
+      state.playing = false;
+    }
+    if (params.get("reduce") === "1") {
+      state.reduceMotion = true;
+      desktop.dataset.reduceMotion = "true";
+      byId("demo-reduce").checked = true;
+    }
+    if (params.get("guide") === "1") {
+      desktop.dataset.guide = "true";
+      byId("demo-guide").checked = true;
+    }
+    renderAll();
+    if (params.get("state") === "expanded") {
+      state.pinned = true;
+      setExpanded(true);
+    }
+  }());
+  </script>
+</body>
+</html>

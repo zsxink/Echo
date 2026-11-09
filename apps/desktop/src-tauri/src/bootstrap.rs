@@ -126,6 +126,9 @@ pub(super) fn bootstrap_main() {
             commands::set_theme,
             commands::set_close_behavior,
             commands::get_close_behavior,
+            commands::get_notch_player_state,
+            commands::set_notch_player_enabled,
+            commands::notch_player_set_expanded,
             commands::play_playlist_context,
             commands::play_library_context,
             commands::restore_playback_session,
@@ -310,6 +313,13 @@ pub(super) fn bootstrap_main() {
                 // -----------------------------------------------------------------
                 wire_composition(app, &startup)?;
 
+                // macOS notch player: create the companion window only when a
+                // display reports a camera housing *and* the preference is on.
+                // On every other platform this is a no-op by construction.
+                if let Some(player) = app.try_state::<crate::notch::NotchPlayer>() {
+                    player.sync(app.handle());
+                }
+
                 schedule_gate_exit(app.handle().clone());
 
                 // The shell is fully initialized — but that is *not* the moment to
@@ -355,6 +365,11 @@ pub(super) fn bootstrap_main() {
                 ) {
                     tracing::error!(%error, "failed to observe native fullscreen exit");
                     app.exit(1);
+                }
+                // Plugging a display, changing arrangement/resolution or
+                // closing the lid can add or remove the notch.
+                if let Err(error) = crate::notch::window::install_screen_observer(app) {
+                    tracing::warn!(%error, "failed to observe screen parameter changes");
                 }
             }
             RunEvent::ExitRequested { api, code, .. } => {
