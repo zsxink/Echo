@@ -14,6 +14,9 @@
 //! structural: there is no code path that can create this window elsewhere.
 //! [`NotchPlayer`] is the runtime state the shell and the IPC commands share.
 
+// Only macOS builds and tests have a producer for these values: on other
+// targets the window never exists, so the module would be entirely dead code.
+#[cfg(any(target_os = "macos", test))]
 pub mod geometry;
 
 #[cfg(target_os = "macos")]
@@ -100,6 +103,10 @@ impl NotchPlayer {
     }
 
     /// Re-evaluate the display after a screen-parameter change.
+    ///
+    /// Only the macOS screen observer calls this; other platforms have no
+    /// display to re-evaluate.
+    #[cfg(target_os = "macos")]
     pub fn refresh_screen(&self, app: &AppHandle) -> bool {
         self.sync(app)
     }
@@ -110,6 +117,9 @@ impl NotchPlayer {
     }
 
     #[cfg(not(target_os = "macos"))]
+    // A stub cannot be `const fn` on macOS (it queries NSScreen), so the lint
+    // only ever fires on the platform where the function is a constant.
+    #[cfg_attr(not(target_os = "macos"), allow(clippy::missing_const_for_fn))]
     fn detect_available() -> bool {
         false
     }
@@ -119,6 +129,8 @@ impl NotchPlayer {
 /// renderer draws the bezel at this width, so it must be the measured value and
 /// not a stylesheet constant.
 #[must_use]
+// Same reason as `detect_available`: the macOS branch cannot be `const`.
+#[cfg_attr(not(target_os = "macos"), allow(clippy::missing_const_for_fn))]
 pub fn notch_width() -> Option<f64> {
     #[cfg(target_os = "macos")]
     {
@@ -136,6 +148,12 @@ fn ensure_window(app: &AppHandle, expanded: bool) -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "macos"))]
+// The stub keeps the macOS signature so `sync` has one code path; it can never
+// fail, which is what the two lints below object to.
+#[cfg_attr(
+    not(target_os = "macos"),
+    allow(clippy::missing_const_for_fn, clippy::unnecessary_wraps)
+)]
 fn ensure_window(_app: &AppHandle, _expanded: bool) -> Result<(), String> {
     Ok(())
 }
@@ -146,6 +164,7 @@ fn remove_window(app: &AppHandle) {
 }
 
 #[cfg(not(target_os = "macos"))]
+#[cfg_attr(not(target_os = "macos"), allow(clippy::missing_const_for_fn))]
 fn remove_window(_app: &AppHandle) {}
 
 /// Resize an existing window. Returns an error when the window is not open, so
