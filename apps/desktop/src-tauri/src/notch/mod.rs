@@ -93,7 +93,10 @@ impl NotchPlayer {
             tracing::warn!(%error, "notch player window is unavailable");
             self.available.store(false, Ordering::Relaxed);
         }
-        available
+        // Report the final verdict, not the pre-failure one: a caller that
+        // answers an IPC request from this value must not claim the window is
+        // available when creating it just failed.
+        self.available()
     }
 
     /// Re-evaluate the display after a screen-parameter change.

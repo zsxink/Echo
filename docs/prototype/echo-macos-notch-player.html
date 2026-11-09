@@ -228,7 +228,7 @@ body,
     border-radius var(--motion-silk) var(--ease-silk),
     box-shadow var(--motion-silk) var(--ease-standard);
 }
-/* 展开态 = 液态玻璃：半透明黑底 + 背景模糊/饱和 + 上亮下暗的高光边 + 外投影。
+/* 展开态 = 液态玻璃：半透明黑底 + 上亮下暗的薄层 + 顶部柔光。
    透明度取 .86：既要透出背后的模糊，又要在浅色桌面上仍然是「黑色面板」而
    不是发灰的毛玻璃。顶部两角**不内收**，由外侧的外翻角（下方 ::before/::after）
    接到屏幕顶边，读作面板从屏幕边缘「长出来」。 */
@@ -623,7 +623,7 @@ code { padding: 1px 4px; border-radius: 4px; background: var(--surface); font: 4
           <table class="spec-table">
             <tbody>
               <tr><th>收缩态</th><td>238 × 32 px 纯黑表面 = 186 px 硬件刘海 + 左右各 26 px。左：16 × 16 封面缩略图；右：12 × 12 跳动音符。播放中跳动，暂停即静止。</td></tr>
-              <tr><th>展开态</th><td>360 × 196 px 面板，底部两角 24 px 圆角，顶部两角向屏幕外翻 26 px 凹圆角（与面板同材质的两个 <code>mask</code> 方块）。液态玻璃：半透明黑底 <code>rgba(11,13,19,.86)</code> + <code>backdrop-filter: blur(26px) saturate(160%)</code> + 顶部高光渐变 + 外投影。内容：48 × 48 封面 + 歌曲名称 + 歌手 + 跳动音符；4 px 轨道、12 px 拖动点的进度条；喜欢 / 上一首 / 播放·暂停 / 下一首 / 播放模式。</td></tr>
+              <tr><th>展开态</th><td>360 × 196 px 面板，底部两角 24 px 圆角，顶部两角向屏幕外翻 26 px 凹圆角（与面板共用同一份 <code>--notch-glass</code> 的 <code>mask</code> 方块）。液态玻璃只有一层：半透明薄层渐变 <code>rgba(22,25,34,.78) → rgba(9,11,16,.84)</code> + 顶部竖向高光；无内描边、无外投影、无 <code>backdrop-filter</code>。内容：48 × 48 封面 + 歌曲名称 + 歌手 + 跳动音符；4 px 轨道、12 px 拖动点的进度条；喜欢 / 上一首 / 播放·暂停 / 下一首 / 播放模式。</td></tr>
               <tr><th>动效</th><td>展开 520 ms、收起 420 ms，均用 <code>cubic-bezier(.65,0,.35,1)</code>（两端都缓、无回弹）；面板内容延后 140 ms 交叉淡入；窄耳收起时延后 340 ms 再出现。曲线选择有逐帧依据：<code>easeOutQuint</code> 在 80 ms 内走完约 90% 行程，剩下时间几乎不动，读起来就是「一下弹开」。减少动画下全部退化为即时。</td></tr>
               <tr><th>音符</th><td>逐字复用 <code>.playing-bars</code> 三根条与 <code>.is-playing</code> 门控（<code>library.css:75-83</code>）；减少动画下静止但保留状态。</td></tr>
               <tr><th>进度条</th><td>复用 <code>PlayerProgress.tsx</code> 的 range + <code>seek</code> 语义；拖动期间保持展开，不误收起。</td></tr>
@@ -634,7 +634,7 @@ code { padding: 1px 4px; border-radius: 4px; background: var(--surface); font: 4
           <div class="pending">
             <h3>需要你给结论（对应 #147）</h3>
             <ul>
-              <li><strong>Q3</strong>：表面改为纯黑（与硬件刘海连成一体），深色壁纸下几乎不可见、浅色壁纸下边界清楚。是否需要在深色壁纸下补一条极淡的边缘提示（当前只靠顶部高光渐变 + 外投影，展开态已刻意不画 1 px 内描边，否则会在外翻角接缝处留一道竖线）。</li>
+              <li><strong>Q3</strong>：收缩态是纯黑（与硬件刘海连成一体），深色壁纸下几乎不可见；展开态是半透明玻璃，浅色壁纸下会明显变浅。是否接受这种「同一入口两种明度」，还是让展开态也保持接近纯黑。</li>
               <li><strong>Q4</strong>：已定为「整条收缩态（含刘海本体）都是悬浮命中区」；仍待定的是仅悬浮展开还是允许点击锁定，展开后右上角的「︿」是收起入口。</li>
               <li><strong>Q2</strong>：与菜单栏状态行（#37，右上示意）并存的间距与让位规则。</li>
               <li><strong>Q6</strong>：空播放态、临时播放项（「临时」标签 + 喜欢禁用）的展示口径。</li>
