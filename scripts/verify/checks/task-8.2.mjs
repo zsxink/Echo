@@ -61,14 +61,22 @@ for (const mod of ["ipc/mod.rs", "platform/mod.rs", "runtime/mod.rs"]) {
 }
 
 // The only opt-outs are the libmpv FFI module and the actor that calls into it,
-// plus the three macOS shell modules that call platform Objective-C APIs. The
-// set is pinned exactly so a new opt-out has to be added deliberately.
+// plus the macOS shell modules that call platform Objective-C APIs. The set is
+// pinned exactly so a new opt-out has to be added deliberately.
 const allowedOptOuts = new Set([
   "crates/echo-desktop/src/player/ffi.rs",
   "crates/echo-desktop/src/player/actor/mod.rs",
   "apps/desktop/src-tauri/src/macos_now_playing.rs",
   "apps/desktop/src-tauri/src/macos_status_row.rs",
   "apps/desktop/src-tauri/src/macos_window_lifecycle.rs",
+  // The macOS notch player's two FFI islands (openspec `macos-notch-player`):
+  // `detect.rs` reads `NSScreen.auxiliaryTop*Area` (the only supported way to
+  // measure the camera housing) and `window.rs` configures the companion
+  // window's AppKit chrome (borderless level, tracking area). Both are
+  // macOS-only, read-only or window-chrome only, and never touch audio or the
+  // library.
+  "apps/desktop/src-tauri/src/notch/detect.rs",
+  "apps/desktop/src-tauri/src/notch/window.rs",
 ]);
 const optOuts = [];
 function scanOptOuts(dir) {
