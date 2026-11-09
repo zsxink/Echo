@@ -42,10 +42,19 @@ export function useSongDetail(songId: string | null): SongDetail | null {
     [],
   );
 
+  // Clear only when the *song* changes. A catalog invalidation (a favorite
+  // toggled here or in another window) re-reads in place: clearing would blank
+  // the heart for a round trip, which reads as "the click was slow".
+  useEffect(() => {
+    setDetail(null);
+  }, [songId]);
+
   useEffect(() => {
     let cancelled = false;
-    setDetail(null);
-    if (!songId) return;
+    if (!songId) {
+      setDetail(null);
+      return;
+    }
     bridge
       .call("song_detail", { songId })
       .then((dto) => {

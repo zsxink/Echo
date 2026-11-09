@@ -46,7 +46,7 @@ pub fn ensure(app: &AppHandle, expanded: bool) -> Result<(), String> {
     let target = geometry::window_geometry(detected.screen, detected.notch, expanded);
 
     if let Some(window) = app.get_webview_window(LABEL) {
-        return apply_frame(app, &window, target, expanded);
+        return apply_frame(app, &window, target);
     }
 
     let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("notch.html".into()))
@@ -69,7 +69,7 @@ pub fn ensure(app: &AppHandle, expanded: bool) -> Result<(), String> {
     let app_for_main = app.clone();
     let app_for_native = app.clone();
     app.run_on_main_thread(move || {
-        if let Err(error) = configure_native(&app_for_native, &window, &target, expanded) {
+        if let Err(error) = configure_native(&app_for_native, &window, &target) {
             tracing::warn!(%error, "notch window native configuration failed");
         }
         // `show` after the frame is set: the window must never flash at the
@@ -101,14 +101,13 @@ pub fn set_expanded(app: &AppHandle, expanded: bool) -> Result<(), String> {
     let window = app
         .get_webview_window(LABEL)
         .ok_or_else(|| "notch window is not open".to_owned())?;
-    apply_frame(app, &window, target, expanded)
+    apply_frame(app, &window, target)
 }
 
 fn apply_frame(
     app: &AppHandle,
     window: &WebviewWindow,
     target: WindowGeometry,
-    expanded: bool,
 ) -> Result<(), String> {
     let window = window.clone();
     app.run_on_main_thread(move || {
@@ -122,10 +121,6 @@ fn apply_frame(
             objc2_foundation::NSSize::new(target.width, target.height),
         );
         ns_window.setFrame_display(rect, true);
-        // The window is wider than the panel (the outward fillets need the
-        // extra room), so the material has to follow the panel — otherwise the
-        // blurred band beside it reads as a glass frame around the panel.
-        sync_vibrancy(ns_window, expanded);
     })
     .map_err(|error| error.to_string())
 }
@@ -134,7 +129,6 @@ fn configure_native(
     app: &AppHandle,
     window: &WebviewWindow,
     target: &WindowGeometry,
-    expanded: bool,
 ) -> Result<(), String> {
     use objc2_app_kit::{
         NSColor, NSStatusWindowLevel, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask,
@@ -169,9 +163,7 @@ fn configure_native(
         true,
     );
 
-    install_vibrancy(mtm, ns_window);
     install_hover_catcher(mtm, ns_window, app);
-    sync_vibrancy(ns_window, expanded);
     Ok(())
 }
 
@@ -250,113 +242,6 @@ fn install_hover_catcher(
     };
     catcher.addTrackingArea(&area);
     content.addSubview_positioned_relativeTo(&catcher, NSWindowOrderingMode::Below, None);
-}
-
-/// The panel's width when expanded: the 360 pt body inside the 412 pt window.
-const EXPANDED_PANEL_WIDTH: f64 = 360.0;
-/// Bottom corner radius of the collapsed bar / expanded panel (`notch.css`).
-const COLLAPSED_RADIUS: f64 = 9.0;
-const EXPANDED_RADIUS: f64 = 24.0;
-
-/// Shape the material to the **panel**, not to the window.
-///
-/// The window is deliberately larger than the panel: the expanded state needs
-/// 26 pt of room on each side for the outward fillets. A material that filled
-/// the window would therefore paint a blurred band beside the panel — read as a
-/// glass frame around it. Setting the view's frame to the panel rect and
-/// masking it to the same rounded rect keeps the glass exactly where the body
-/// is; the top corners are square in CSS, so the mask's rounded top corners only
-/// affect an area that is already painted by the panel's own background.
-fn sync_vibrancy(ns_window: &objc2_app_kit::NSWindow, expanded: bool) {
-    use objc2_foundation::{NSRect, NSSize};
-
-    let Some(effect) = vibrancy_view(ns_window) else {
-        return;
-    };
-    let bounds = ns_window
-        .contentView()
-        .map_or_else(|| NSSize::new(0.0, 0.0), |content| content.bounds().size);
-
-    let (width, radius) = if expanded {
-        (EXPANDED_PANEL_WIDTH, EXPANDED_RADIUS)
-    } else {
-        (bounds.width, COLLAPSED_RADIUS)
-    };
-    let x = (bounds.width - width) / 2.0;
-    effect.setFrame(NSRect::new(
-        objc2_foundation::NSPoint::new(x, 0.0),
-        NSSize::new(width, bounds.height),
-    ));
-    effect.setMaskImage(Some(&rounded_mask(width, bounds.height, radius)));
-}
-
-/// Find the material view installed by [`install_vibrancy`].
-fn vibrancy_view(
-    ns_window: &objc2_app_kit::NSWindow,
-) -> Option<objc2::rc::Retained<objc2_app_kit::NSVisualEffectView>> {
-    let content = ns_window.contentView()?;
-    let subviews = content.subviews();
-    for index in 0..subviews.count() {
-        if let Ok(effect) = subviews
-            .objectAtIndex(index)
-            .downcast::<objc2_app_kit::NSVisualEffectView>()
-        {
-            return Some(effect);
-        }
-    }
-    None
-}
-
-/// An alpha mask with a rounded rect: opaque inside, transparent outside.
-///
-/// Uses `+imageWithSize:flipped:drawingHandler:` rather than the deprecated
-/// `lockFocus` pair: the drawing handler is the supported synchronous way to
-/// describe an image without a resolution-dependent focus stack.
-fn rounded_mask(
-    width: f64,
-    height: f64,
-    radius: f64,
-) -> objc2::rc::Retained<objc2_app_kit::NSImage> {
-    use block2::RcBlock;
-    use objc2_app_kit::{NSBezierPath, NSColor, NSImage};
-    use objc2_foundation::{NSPoint, NSRect, NSSize};
-
-    let size = NSSize::new(width, height);
-    let handler = RcBlock::new(move |_dst: NSRect| -> objc2::runtime::Bool {
-        NSColor::blackColor().set();
-        let rect = NSRect::new(NSPoint::new(0.0, 0.0), size);
-        NSBezierPath::bezierPathWithRoundedRect_xRadius_yRadius(rect, radius, radius).fill();
-        objc2::runtime::Bool::YES
-    });
-    NSImage::imageWithSize_flipped_drawingHandler(size, false, &handler)
-}
-
-/// Put a `.behindWindow` vibrancy view under the web view so the expanded
-/// panel's translucent background blurs the actual desktop.
-fn install_vibrancy(mtm: objc2_foundation::MainThreadMarker, ns_window: &objc2_app_kit::NSWindow) {
-    use objc2_app_kit::{
-        NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
-    };
-    use objc2_foundation::NSInteger;
-
-    let Some(content) = ns_window.contentView() else {
-        return;
-    };
-    let effect = NSVisualEffectView::new(mtm);
-    effect.setMaterial(NSVisualEffectMaterial::HUDWindow);
-    effect.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
-    // `Active` keeps the blur steady even when Echo is not the front app, which
-    // is the normal case for this window.
-    effect.setState(NSVisualEffectState::Active);
-    // The frame is driven by [`sync_vibrancy`] (panel-shaped, not window-shaped),
-    // so it must not also be autoresized by AppKit's layout pass.
-    effect.setAutoresizingMask(objc2_app_kit::NSAutoresizingMaskOptions::empty());
-    let _: NSInteger = 0;
-    content.addSubview_positioned_relativeTo(
-        &effect,
-        objc2_app_kit::NSWindowOrderingMode::Below,
-        None,
-    );
 }
 
 // --- screen parameter observer ----------------------------------------------

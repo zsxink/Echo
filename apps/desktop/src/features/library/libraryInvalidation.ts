@@ -1,5 +1,6 @@
 import { ExternalStore } from "../../app/externalStore";
 import { subscribe } from "../../bridge";
+import { publishSongUpdate, type SongUpdate } from "./songUpdates";
 
 /**
  * A feature-local invalidation signal for catalog mutations that complete
@@ -37,7 +38,10 @@ export function resetLibraryInvalidations(): void {
 export function startLibraryEvents(): () => void {
   let dispose: (() => void) | undefined;
   let cancelled = false;
-  void subscribe<{ reason?: string }>("library://invalidated", () => {
+  void subscribe<{ reason?: string; song?: SongUpdate }>("library://invalidated", (payload) => {
+    // Adopt the committed row first: the other window's heart updates in the
+    // same tick as the click instead of one round trip later.
+    if (payload?.song) publishSongUpdate(payload.song);
     invalidateLibrary();
   })
     .then((unlisten) => {

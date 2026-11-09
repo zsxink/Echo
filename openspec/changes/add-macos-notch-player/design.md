@@ -50,15 +50,27 @@
 
 resize 时必须同时重新定位：Tauri 的 `set_size` 保持左上角，而这里要保持「顶边贴屏幕顶、水平以刘海中心对齐」，所以 Rust 侧按新尺寸重算 x。
 
-### D4 液态玻璃用 `NSVisualEffectView`，不用 CSS `backdrop-filter`
+### D4 液态玻璃只有一层：全部由 CSS 画，不放 `NSVisualEffectView`
 
-透明窗口里 WebView 的 `backdrop-filter` 只能模糊窗口内部已合成的内容，模糊不到窗口后面的桌面 —— 原型里能看到模糊，是因为原型页把模拟桌面画在了同一个文档里。真实实现若只写 `backdrop-filter`，展开态会是一块没有模糊的深色半透明块。
+最初实现用 `NSVisualEffectView`（`blendingMode = .behindWindow`）垫在 webview 之下，
+让面板模糊真实桌面。实现后暴露两个无法用参数修掉的缺陷：
 
-因此窗口背景挂一层 `NSVisualEffectView`（`blendingMode = .behindWindow`，`material = .hudWindow`），WebView 背景透明；收缩态 CSS 底色不透明（`rgb(11,13,18)`）自然遮住它，展开态 CSS 底色半透明（`rgba(11,13,19,.86)`）让系统模糊透出来。CSS 侧的顶部高光渐变与外投影保持不变。
+1. **材质跟不上 CSS 过渡**：窗口先 resize 到展开尺寸，材质视图的 frame 是瞬时设置
+   的，而面板是 520ms 的 CSS 过渡。用户看到的是「背后一层已经铺开的蒙版，主体还在
+   长大」，两层不同步。
+2. **材质盖不到外翻角**：材质是面板矩形，两个外翻角在它之外，于是外翻角没有模糊、
+   与主体有色差。
 
-若真机上 vibrancy 表现不达标，退化方案是把展开态底色提到接近不透明（`.94`），只保留高光与外投影 —— 视觉会接近「哑光黑面板」，但不会退化成一块脏灰。
+两者都源于「玻璃是第二个图层」。改成**只有一层**：玻璃完全由 `notch.css` 画（上亮
+下暗的薄层渐变 + 顶部柔光 + `backdrop-filter`），窗口保持透明，主体与两个外翻角共用
+同一份 `--notch-glass` 变量（外翻角取该渐变的前 26px，`background-size` 设成主体
+高度），因此既不会不同步，也不会色差。
 
-实现时确认了一条平台前置：Tauri 在 macOS 上要真正得到透明窗口，必须启用 `tauri` 的 `macos-private-api` feature，并在 `tauri.conf.json` 声明 `app.macOSPrivateApi: true`（构建脚本会校验两者一致，缺一会直接构建失败）。这会让 Tauri 打开私有 API 代码路径，只在本窗口请求透明时生效；Echo 通过 DMG 分发，不涉及 App Store 审核约束。不启用时窗口不透明，vibrancy 会被底色完全遮住，「液态玻璃」退化成纯色面板。
+代价：应用内没有对真实桌面的模糊（透明窗口的 `backdrop-filter` 没有桌面可糊）。面板
+仍是半透明玻璃（约 20% 的桌面色透出），与原型在浏览器里的呈现结构一致。若将来要恢复
+真实模糊，正确做法是让材质与 CSS 共用同一条动画曲线（`NSAnimationContext` +
+匹配的 `CAMediaTimingFunction`），并把外翻角一并纳入遮罩——复杂度显著高于收益，暂不
+做。
 
 ### D5 刘海播放器不承接键盘焦点
 
@@ -98,7 +110,7 @@ resize 时必须同时重新定位：Tauri 的 `set_size` 保持左上角，而�
 - **[透明窗口 + vibrancy 在三平台 WebView 上表现不同]** → 该窗口只在 macOS 创建，Windows/Linux 无此代码路径；macOS 上仍做真机验证并保留退化方案（D4）。
 - **[多显示器/合盖导致窗口留在错误屏幕]** → 监听 `NSApplicationDidChangeScreenParametersNotification`，重新计算可用性、屏幕与几何；不可用时移除窗口而不是留在原地。
 - **[第二个 WebView 的内存与冷启动开销]** → 页面无曲库视图，只在需要时创建；偏好关闭或没有刘海时根本不创建。
-- **[`macos-private-api` 的平台承诺]** → 该 feature 让 Tauri 打开私有 API 路径。仅影响需要透明窗口的代码路径，且 Echo 不经 App Store 分发；若将来需要上架，改用 `NSWindow.setOpaque(false)` + webview `drawsBackground` 的等价实现即可，规格不受影响。
+- **[`macos-private-api` 的平台承诺]** → 该 feature 让 Tauri 打开私有 API 路径，只影响需要透明窗口的代码路径（刘海窗口的半透明玻璃需要它）。Echo 不经 App Store 分发；若将来需要上架，改用 `NSWindow.setOpaque(false)` + webview `drawsBackground` 的等价实现即可，规格不受影响。
 - **[非激活窗口的鼠标事件穿透不足]** → 收缩态窗口只有 238×32，展开态窗口大于可见面板，四角透明区会吞掉点击；真机 Gate 明确检查「面板外的窗口区域不阻挡下方应用点击」，必要时对四角做 `setIgnoreCursorEvents` 分段处理。
 
 ## Migration Plan

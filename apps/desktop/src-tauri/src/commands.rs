@@ -356,17 +356,26 @@ pub fn set_favorite(
     // 权威数据——否则在刘海播放器点了喜欢，主窗口的心形和「喜欢的音乐」不会刷新。
     let _ = app.emit(
         LIBRARY_INVALIDATED_EVENT,
-        LibraryInvalidated { reason: "favorite" },
+        LibraryInvalidated {
+            reason: "favorite",
+            song: Some(view.clone()),
+        },
     );
     Ok(view)
 }
 
 /// Broadcast after a catalog mutation that any window may have initiated.
+///
+/// The payload carries the committed view so other windows can adopt it
+/// immediately instead of waiting for their own re-read — a heart that lags a
+/// round trip behind the click reads as a slow control.
 pub const LIBRARY_INVALIDATED_EVENT: &str = "library://invalidated";
 
-#[derive(Clone, Copy, serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 pub struct LibraryInvalidated {
     pub reason: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub song: Option<SongView>,
 }
 
 #[tauri::command]

@@ -185,6 +185,10 @@ body,
      应用侧的 tokens.css 里没有这两个值，缺了它们 var() 会回退成 0s。 */
   --motion-silk: 520ms;
   --ease-silk: cubic-bezier(0.65, 0, 0.35, 1);
+  /* 玻璃底色只在这里定义一次：主体与外翻角共用同一份，否则外翻角会和主体
+     有色差（两处各写一遍就是色差的来源）。 */
+  --notch-glass: linear-gradient(180deg, rgba(22, 25, 34, 0.78) 0%, rgba(9, 11, 16, 0.84) 100%);
+  --notch-glass-height: 196px;
   --notch-bg: #0b0d12;
   --notch-bezel: #000000;
   --notch-fg: rgba(255, 255, 255, 0.94);
@@ -231,7 +235,7 @@ body,
 .notch-player[data-expanded="true"] .notch-surface {
   /* 只有主体：上亮下暗的薄层 + 背景模糊。没有内描边、没有外投影、没有额外的
      背景层——任何「边」都会读成面板外面还套了一个框。 */
-  background: linear-gradient(180deg, rgba(22, 25, 34, 0.78) 0%, rgba(9, 11, 16, 0.84) 100%);
+  background-image: var(--notch-glass);
   border-radius: 0 0 24px 24px;
   -webkit-backdrop-filter: blur(26px) saturate(160%);
   backdrop-filter: blur(26px) saturate(160%);
@@ -249,8 +253,14 @@ body,
 .notch-player::after {
   content: ""; position: absolute; top: 0; z-index: 2;
   width: var(--notch-fillet); height: var(--notch-fillet);
-  background-color: rgba(11, 13, 19, 0.86);
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.075));
+  /* 底色取主体渐变的前 26px（`background-size` 设成主体高度），再叠一层与
+     主体顶部同强度的白色柔光。这样外翻角和主体是同一块玻璃，不是两块。 */
+  background-color: transparent;
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.08)),
+    var(--notch-glass);
+  background-size: auto, 100% var(--notch-glass-height);
+  background-repeat: no-repeat;
   -webkit-backdrop-filter: blur(26px) saturate(160%);
   backdrop-filter: blur(26px) saturate(160%);
   opacity: 0; pointer-events: none;
