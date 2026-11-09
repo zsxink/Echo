@@ -21,6 +21,10 @@ body,
 }
 
 :root {
+  /* 展开/收起时长与曲线属于这个窗口自己的动效，必须随生成物一起下发：
+     应用侧的 tokens.css 里没有这两个值，缺了它们 var() 会回退成 0s。 */
+  --motion-silk: 520ms;
+  --ease-silk: cubic-bezier(0.65, 0, 0.35, 1);
   --notch-bg: #0b0d12;
   --notch-bezel: #000000;
   --notch-fg: rgba(255, 255, 255, 0.94);
@@ -43,7 +47,7 @@ body,
 .notch-player[data-expanded="true"] { width: 360px; height: 196px; }
 /* 收起比展开略快，回弹感不至于让用户等 */
 .notch-player:not([data-expanded="true"]) {
-  transition-duration: 380ms, 380ms;
+  transition-duration: 420ms, 420ms;
 }
 .notch-surface {
   position: absolute; inset: 0; overflow: hidden;
@@ -105,7 +109,7 @@ body,
 .notch-player[data-expanded="true"]::before,
 .notch-player[data-expanded="true"]::after {
   opacity: 1;
-  transition: opacity 320ms var(--ease-standard) 150ms;
+  transition: opacity 300ms var(--ease-standard) 60ms;
 }
 
 /* 玻璃顶部的柔性高光（上亮下透），只随展开出现 */
@@ -122,7 +126,7 @@ body,
 }
 .notch-player[data-expanded="true"] .notch-surface::before {
   opacity: 1;
-  transition: opacity 420ms var(--ease-standard) 120ms;
+  transition: opacity 380ms var(--ease-standard) 100ms;
 }
 /* 硬件刘海：纯黑凹口与纯黑表面靠色差分层，视觉上把收缩态切成左右两只「耳」 */
 /* 与表面等高的硬件凹口：比表面更黑，靠色差而非描边交代边界。
@@ -148,11 +152,11 @@ body,
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 5px;
   /* 收起时等面板缩回再出现，避免小封面与小音符在中间穿过 */
-  transition: opacity 160ms var(--ease-standard) 240ms;
+  transition: opacity 200ms var(--ease-standard) 340ms;
 }
 .notch-player[data-expanded="true"] .ears {
   opacity: 0; pointer-events: none;
-  transition: opacity 140ms var(--ease-standard) 0ms;
+  transition: opacity 200ms var(--ease-standard) 0ms;
 }
 .ear {
   display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0;
@@ -190,16 +194,17 @@ body,
 /* 展开态 */
 .panel {
   position: absolute; top: 36px; left: 0; right: 0; z-index: 3;
-  padding: 0 16px 14px; opacity: 0; transform: translateY(-10px);
+  padding: 0 16px 14px; opacity: 0; transform: translateY(-6px);
   pointer-events: none;
-  transition: opacity 150ms var(--ease-standard), transform 260ms var(--ease-standard);
+  transition: opacity 240ms var(--ease-standard), transform 260ms var(--ease-standard);
 }
-/* 内容比面板晚一点淡入，先看到玻璃展开、再看到信息 */
+/* 内容与面板生长交叉淡入，但等面板长到约 1/3 才开始：太早会让封面被裁成
+   半张，太晚又会先出现一个空黑框。 */
 .notch-player[data-expanded="true"] .panel {
   opacity: 1; transform: none; pointer-events: auto;
   transition:
-    opacity 280ms var(--ease-standard) 170ms,
-    transform 460ms var(--ease-silk) 130ms;
+    opacity 300ms var(--ease-standard) 140ms,
+    transform 460ms var(--ease-silk) 90ms;
 }
 .panel-head { display: flex; align-items: center; gap: 12px; min-height: 52px; }
 .panel-actions { flex: none; display: flex; align-items: center; gap: 2px; }
