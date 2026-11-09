@@ -539,6 +539,17 @@ export const SCENARIOS = {
 "DAS-R04-S01": { command: DESK_ALL, evidence: [rust("platform::local_state")], },
 "DAS-R04-S02": { command: DESK_ALL, evidence: [rust("platform::local_state")], },
 "DAS-R04-S03": { command: DESK_ALL, evidence: [rust("platform::local_state")], },
+// The notch player preference: platform/hardware-dependent rendering and the
+// "unavailable must not overwrite the stored value" rule are both UI contracts,
+// covered by the settings-row cases.
+"DAS-R04-S04": {
+  command: VITEST_ALL,
+  evidence: [vitest("src/features/settings/SettingsView.test.tsx", "刘海播放器")],
+},
+"DAS-R04-S05": {
+  command: VITEST_ALL,
+  evidence: [vitest("src/features/settings/SettingsView.test.tsx", "刘海播放器")],
+},
 "DAS-R05-S01": { command: "node scripts/verify/checks/task-9.6.mjs", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },
 "DAS-R05-S02": { command: "node scripts/verify/checks/task-9.6.mjs", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },
 "DAS-R05-S03": { command: "node scripts/verify/checks/task-9.6.mjs", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },
@@ -550,6 +561,13 @@ export const SCENARIOS = {
 "DAS-R07-S03": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
   "DAS-R07-S04": { command: ATTEST("DAS-R07-S04"), evidence: [attest("DAS-R07-S04")] },
   "DAS-R07-S05": { command: ATTEST("DAS-R07-S05"), evidence: [attest("DAS-R07-S05")] },
+  // A companion window in the same process: the architecture guard proves the
+  // notch module never owns a player/queue, which is what keeps the relaunch
+  // path at one instance and one session.
+  "DAS-R07-S06": {
+    command: "cargo test -p echo-app --all-features",
+    evidence: [rust("notch_window_never_constructs_a_second_playback_session")],
+  },
 "DAS-R08-S01": { command: VITEST_ALL, evidence: [vitest("src/app/narrow.test.tsx")], },
 "DAS-R08-S02": { command: VITEST_ALL, evidence: [vitest("src/app/overlays.test.tsx")], },
 "DAS-R08-S03": { command: VITEST_ALL, evidence: [vitest("src/app/overlays.test.tsx")], },

@@ -42,3 +42,31 @@ fn tauri_shell_does_not_reimplement_core_playback_rules() {
         "Tauri architecture violations:\n{violations:#?}"
     );
 }
+
+/// The macOS notch player is a *companion window*, not a second player: it must
+/// never construct a playback session of its own (spec `desktop-app-shell`:
+/// 伴随窗口不构成第二个实例). It only asks the shell to resize itself; every
+/// transport command goes through the shared IPC surface.
+#[test]
+fn notch_window_never_constructs_a_second_playback_session() {
+    let notch = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("notch");
+    let mut violations = Vec::new();
+    for (relative, source) in collect_rust_files(&notch) {
+        for needle in [
+            "PlayerController",
+            "PlaybackCoordinator",
+            "Queue::new",
+            "player::port::PlayerCommand",
+        ] {
+            if source.contains(needle) {
+                violations.push(format!("{}: {needle}", relative.display()));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "the notch window must not own a playback session:\n{violations:#?}"
+    );
+}
