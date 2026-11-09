@@ -189,6 +189,10 @@ body,
      有色差（两处各写一遍就是色差的来源）。 */
   --notch-glass: linear-gradient(180deg, rgba(22, 25, 34, 0.78) 0%, rgba(9, 11, 16, 0.84) 100%);
   --notch-glass-height: 196px;
+  /* 顶部高光只有竖向变化：径向柔光在主体上有、外翻角上无法复现（它按元素宽度
+     取百分比），两者相接就会露出直线色差。只保留竖向渐变，外翻角取同一条的前
+     26px 即可完全一致。 */
+  --notch-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.05) 18%, rgba(255, 255, 255, 0) 42%);
   --notch-bg: #0b0d12;
   --notch-bezel: #000000;
   --notch-fg: rgba(255, 255, 255, 0.94);
@@ -219,26 +223,25 @@ body,
   border-radius: 0 0 9px 9px;
   /* 收缩态：与硬件刘海连成一体，靠 1px 内侧高光交代材质 */
   box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.07), 0 16px 34px rgba(0, 0, 0, 0.42);
-  -webkit-backdrop-filter: blur(0px) saturate(100%);
-  backdrop-filter: blur(0px) saturate(100%);
   transition:
     background-color var(--motion-silk) var(--ease-standard),
     border-radius var(--motion-silk) var(--ease-silk),
-    box-shadow var(--motion-silk) var(--ease-standard),
-    -webkit-backdrop-filter var(--motion-silk) var(--ease-standard),
-    backdrop-filter var(--motion-silk) var(--ease-standard);
+    box-shadow var(--motion-silk) var(--ease-standard);
 }
 /* 展开态 = 液态玻璃：半透明黑底 + 背景模糊/饱和 + 上亮下暗的高光边 + 外投影。
    透明度取 .86：既要透出背后的模糊，又要在浅色桌面上仍然是「黑色面板」而
    不是发灰的毛玻璃。顶部两角**不内收**，由外侧的外翻角（下方 ::before/::after）
    接到屏幕顶边，读作面板从屏幕边缘「长出来」。 */
 .notch-player[data-expanded="true"] .notch-surface {
-  /* 只有主体：上亮下暗的薄层 + 背景模糊。没有内描边、没有外投影、没有额外的
-     背景层——任何「边」都会读成面板外面还套了一个框。 */
+  /* 只有主体：上亮下暗的半透明薄层 + 顶部柔光。没有内描边、没有外投影、没有
+     额外的背景层——任何「边」都会读成面板外面还套了一个框。也不用
+     backdrop-filter：它对 26px 的外翻角和 360px 的主体采样范围不同，边缘钳制
+     会让两者必然有色差；应用侧的透明窗口本来也没有可糊的桌面。 */
+  /* 收缩态的不透明底色必须清掉：只换 background-image 会让面板仍是实心的，
+     与外翻角（透明底 + 同一渐变）差出一档亮度——直线色差就是这么来的。 */
+  background-color: transparent;
   background-image: var(--notch-glass);
   border-radius: 0 0 24px 24px;
-  -webkit-backdrop-filter: blur(26px) saturate(160%);
-  backdrop-filter: blur(26px) saturate(160%);
   box-shadow: none;
 }
 /* 外翻圆角（liquid glass 的「液体挂边」）：面板左右两侧各多出一块 26×26 的
@@ -256,13 +259,9 @@ body,
   /* 底色取主体渐变的前 26px（`background-size` 设成主体高度），再叠一层与
      主体顶部同强度的白色柔光。这样外翻角和主体是同一块玻璃，不是两块。 */
   background-color: transparent;
-  background-image:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.08)),
-    var(--notch-glass);
-  background-size: auto, 100% var(--notch-glass-height);
+  background-image: var(--notch-sheen), var(--notch-glass);
+  background-size: 100% var(--notch-glass-height), 100% var(--notch-glass-height);
   background-repeat: no-repeat;
-  -webkit-backdrop-filter: blur(26px) saturate(160%);
-  backdrop-filter: blur(26px) saturate(160%);
   opacity: 0; pointer-events: none;
   transition: opacity 200ms var(--ease-standard);
 }
@@ -286,14 +285,7 @@ body,
 .notch-surface::before {
   content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
   border-radius: inherit; opacity: 0;
-  background:
-    radial-gradient(150% 90% at 14% 0%, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 62%),
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.16) 0%,
-      rgba(255, 255, 255, 0.05) 18%,
-      rgba(255, 255, 255, 0) 42%
-    );
+  background-image: var(--notch-sheen);
   transition: opacity 200ms var(--ease-standard);
 }
 .notch-player[data-expanded="true"] .notch-surface::before {

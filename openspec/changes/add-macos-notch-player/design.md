@@ -103,6 +103,19 @@ resize 时必须同时重新定位：Tauri 的 `set_size` 保持左上角，而�
 
 `desktop-playback` 已经要求常驻播放栏的随机模式不得使用强调色；刘海播放器沿用同一结论：模式控件三种状态都是与上一首 / 下一首一致的中性色，只靠图标区分。强调色在面板里只出现在进度填充与播放·暂停键两处。
 
+### D9 点击「第一次被吞掉」的已知限制
+
+Echo 不是前台应用时，第一次点击刘海面板会被 macOS 用于激活 Echo，不会送到 webview
+（`WKWebView` 的 `acceptsFirstMouse:` 返回 NO），因此用户需要点两次。尝试过的两条修法：
+
+- **运行时替换 webview 的类**（`object_setClass` 到一个覆写 `acceptsFirstMouse:` 的
+  子类）：实测会直接让 webview 停止渲染（渲染层的挂载探针一次都没触发），已回退。
+- **把窗口改成 `NSPanel` + `.nonactivatingPanel`**：这是唯一能同时做到「点击不激活
+  应用」和「首次点击即生效」的正规做法，但 Tauri 创建的是 `NSWindow`，改类不安全。
+
+当前状态：悬浮展开已经与前台状态无关（D5b 的跟踪区），只有「点击」还受此限制。要根治
+需要换掉窗口的实现方式，属于独立变更的范畴。
+
 ## Risks / Trade-offs
 
 - **[窗口层级盖住菜单栏菜单]** → 使用 `NSStatusWindowLevel`（25）：高于菜单栏本身（24，否则收缩态会被菜单栏盖住），低于展开的系统菜单（`NSPopUpMenuWindowLevel` = 101，否则会挡住用户打开的菜单）。实测窗口层为 25，见 `docs/verification/macos-notch-player-2026-11-09.md`。

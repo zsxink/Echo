@@ -25,15 +25,27 @@ beforeEach(async () => {
   const tauriCore = await import("@tauri-apps/api/core");
   capturedInvoke = (tauriCore as unknown as { invoke: ReturnType<typeof vi.fn> }).invoke;
   capturedInvoke.mockClear();
-  capturedInvoke.mockImplementation(async (command: string) => {
-    if (command === "song_cover_keys") return {};
-    if (command === "song_detail") return null;
-    if (command === "notch_player_set_expanded") return null;
-    if (command === "get_notch_player_state") {
-      return { available: true, enabled: true, notchWidth: 185 };
-    }
-    return null;
-  });
+  capturedInvoke.mockImplementation(
+    async (command: string, args?: Record<string, unknown>) => {
+      if (command === "song_cover_keys") return {};
+      if (command === "song_detail") return null;
+      if (command === "notch_player_set_expanded") return null;
+      if (command === "get_notch_player_state") {
+        return { available: true, enabled: true, notchWidth: 185 };
+      }
+      if (command === "set_favorite") {
+        return {
+          id: args?.songId,
+          relativePath: "a.mp3",
+          favorite: args?.favorite,
+          playCount: 0,
+          availability: "available",
+          hasCover: false,
+        };
+      }
+      return null;
+    },
+  );
   invalidateCovers();
   playerStore.publish(baseSnapshot());
 });
@@ -114,6 +126,61 @@ describe("collapsed and expanded content", () => {
     expect(screen.getByLabelText("下一首")).toBeDisabled();
     expect(screen.getByTestId("notch-mode")).toBeDisabled();
     expect(screen.getByTestId("notch-favorite")).toBeDisabled();
+  });
+
+  it("toggles the favourite on the first click and back on the next", async () => {
+    capturedInvoke.mockImplementation(
+      async (command: string, args?: Record<string, unknown>) => {
+        if (command === "song_cover_keys") return {};
+        if (command === "song_detail") {
+          return {
+            songId: "song-1",
+            relativePath: "a.mp3",
+            title: "晴天",
+            artist: "周杰伦",
+            favorite: false,
+            playCount: 0,
+            availability: "available",
+            hasCover: false,
+          };
+        }
+        if (command === "set_favorite") {
+          return {
+            id: args?.songId,
+            relativePath: "a.mp3",
+            title: "晴天",
+            favorite: args?.favorite,
+            playCount: 0,
+            availability: "available",
+            hasCover: false,
+          };
+        }
+        return null;
+      },
+    );
+    renderNotch({ currentSongId: "song-1", currentCanImport: false, currentTitle: null });
+
+    const heart = await screen.findByTestId("notch-favorite");
+    await waitFor(() => expect(heart).toBeEnabled());
+
+    fireEvent.click(heart);
+    await waitFor(() =>
+      expect(capturedInvoke).toHaveBeenCalledWith("set_favorite", {
+        songId: "song-1",
+        favorite: true,
+      }),
+    );
+    // The optimistic publish must flip the heart without waiting for the reply.
+    await waitFor(() => expect(heart).toHaveAttribute("aria-pressed", "true"));
+
+    fireEvent.click(heart);
+    await waitFor(() =>
+      expect(capturedInvoke).toHaveBeenCalledWith("set_favorite", {
+        songId: "song-1",
+        favorite: false,
+      }),
+    );
+    await waitFor(() => expect(heart).toHaveAttribute("aria-pressed", "false"));
   });
 
   it("disables the favourite control for a temporary item (it has no library identity)", () => {
