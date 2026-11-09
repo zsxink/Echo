@@ -9,7 +9,7 @@
 //      same FIFO in main.rs, so the platform arg shims converge on one path.
 //
 // Fails (nonzero) unless the file-association drift test is green and both OS
-// open paths in the shell go through `deliver_file_open`.
+// open paths in the shell go through `deliver_file_opens`.
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";

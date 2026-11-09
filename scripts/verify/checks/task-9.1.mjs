@@ -107,7 +107,7 @@ for (const token of ["receive_file_open", "app://file-open-request"]) {
 // A regression where the single-instance callback bypasses the FIFO and emits
 // directly would leave an unguarded `app.emit(FILE_OPEN_REQUEST, ...)` on the
 // argv path. Both open paths must go through `deliver_file_opens`, so the only
-// direct emits to that event live in `deliver_file_open`/`drain_pending_opens`.
+// direct emits to that event live in `emit_file_opens`/`drain_pending_opens`.
 const directEmits = (fileOpenGate.match(/app\.emit\(FILE_OPEN_REQUEST/g) || []).length;
 if (directEmits > 2) {
   fail(`unexpected direct file-open emits in gate helper: ${directEmits}`);
@@ -194,7 +194,7 @@ if (!appTsx.includes("file_open_frontend_ready")) {
 //    registered only inside `.setup()` is still absent exactly when the first
 //    and only open request of that launch arrives: `try_state` returns `None`
 //    and the path is dropped — the app starts and never plays. Measured order
-//    on macOS: RunEvent::Opened -> deliver_file_open -> "setup".
+//    on macOS: RunEvent::Opened -> deliver_file_opens -> "setup".
 //    The gate above (5) is unreachable while that holds, so this is the
 //    precondition the whole change rests on and it must be pinned structurally.
 const createdIdx = bootstrap.indexOf("Arc::new(StartupSupervisor::new())");
