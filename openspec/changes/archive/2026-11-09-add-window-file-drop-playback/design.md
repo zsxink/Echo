@@ -103,11 +103,11 @@ OS 拖放 → Tauri 壳层 (Presentation/Platform)
 - **P1（已修）**：`Enter` 原先对任何拖拽（含纯文件夹/非音频）都点亮「松手即播放」，与 D1 的「受支持的音频文件」和 D5 的可读拒绝冲突。现由 `hover_transition` 在 `Enter` 时用同一 `partition` 判定，`Over` 不改变状态，`Drop`/`Leave` 清除；新增 `unsupported_or_directory_only_drag_never_promises_playback` 回归测试。
 - **运行时链路核实**：`tauri-runtime-wry` 对 `WebviewKind::WindowContent` 把拖放回调合成为 `SynthesizedWindowEvent::DragDrop` → `WindowEvent::DragDrop`，因此 `Builder::on_window_event` 确能收到；回调返回 `true`，wry 不执行 OS 默认拖放（不会把文件当导航打开）。`dragDropEnabled: true` 正是启用该回调的开关。
 - **多临时项核实**：`snapshot_queue` 用 `filter_map` 剔除队列中**所有** `Temporary` 项，`import_current_temporary_file` 只作用于当前项，因此 N 个临时项仍不进会话、不进统计。
-- **已知弱项（未改，见交付说明）**：部分场景证据为静态/间接覆盖（`DAS-R26-S04` 沉浸模式、`DAS-R27-S07` 只读库、`SFI-R07-S06` 不入库）；混合投放的拒绝反馈按类别汇总而非逐项列出；`play_opened_files` 中单个路径解析失败会中断整批。三平台真机证据仍待补。
+- **已知弱项（未改，见交付说明）**：部分场景证据为静态/间接覆盖（`DAS-R26-S04` 沉浸模式、`DAS-R27-S07` 只读库、`SFI-R07-S06` 不入库）；混合投放的拒绝反馈按类别汇总而非逐项列出；`play_opened_files` 中单个路径解析失败会中断整批。三平台真机验证已由用户确认通过（会话确认，无 artifacts 日志）；`--all` 仍受既有 `SFI-R11-S05` 证据缺口影响。
 
 ## Risks / Trade-offs
 
-- **[Linux WebKitGTK 拖放路径投递能力未经真机实测]** → 实施第 1 组先做三平台最小验证（含 `paths` 是否为本地绝对路径、多文件顺序、URI 百分号解码是否已由 wry 完成）；若 Linux 拿不到可用路径，按 D1 回退预案改用前端 `onDragDropEvent` 取路径，其余设计不变。这是本 change 唯一可能改变「捕获点」的技术未知，spec 契约不受影响。
+- **[Linux WebKitGTK 拖放路径投递能力]** → 已由用户确认三平台真机投放验证通过（`paths` 为已解码本地绝对路径、多文件顺序与解码行为符合预期），无需触发 D1 回退预案；该结论为会话确认，未产出 `artifacts/native-attestations/` 日志。若后续真机出现回归，仍按 D1 备用方案处理，spec 契约不受影响。
 - **[OS 不保证多文件投放顺序]** → 以 `Drop` 事件给出的 `paths` 数组顺序为唯一事实来源，不做排序或去重；三平台冒烟记录实际顺序，若某平台顺序与用户选择顺序不同，作为已知限制写进验证证据而非在代码里猜测。
 - **[路径二次解码会损坏中文 / 含空格 / 字面 `%20` 文件名]** → 拖放路径与 OS open 共用一条已解码绝对路径约定；`App.tsx` 注释与回归测试沿用「不得二次 decode」断言，新增投放路径的等价用例。
 - **[反馈层遮挡标题栏拖拽条与 Windows 自绘按钮]** → `pointer-events: none` + 既有 `data-tauri-drag-region` / `WindowControls` 命中测试；覆盖 immersive / 浮层同时打开的状态。

@@ -3,7 +3,7 @@
 ## 1. 技术验证与基线
 
 - [x] 1.1 复核 Tauri 2.11.6 的 `dragDropEnabled` 默认值与 `DragDropEvent` 四个变体（读 `~/.cargo/registry/src/.../tauri-utils-2.10.2/src/config.rs` 与 `tauri-runtime-2.11.3/src/window.rs`），确认「显式 `true` 才会生成壳层事件」的结论，并把核对结果记入 design 的 Context；验证：`cargo tree -p echo-app -i tauri` 与源码引用写入审阅记录，两处窗口配置字段逐项比对无漂移。
-- [ ] 1.2 三平台最小投放验证：在 macOS / Windows / Linux（含 WebKitGTK）上分别记录 `Drop` 事件给出的 `paths` 是否为本地绝对路径、多文件顺序是否与系统选择顺序一致、百分号编码是否已由 wry 解码；验证：三份证据日志落到 `artifacts/`，若 Linux 拿不到可用 `paths` 则按 design D1 回退预案更新 design 与任务组 2，规格不变。
+- [x] 1.2 三平台最小投放验证（结论：用户已确认 macOS / Windows / Linux WebKitGTK 真机投放路径投递、顺序与解码均通过，无需触发 D1 回退；本项以会话确认登记，未产出 artifacts 日志）：在 macOS / Windows / Linux（含 WebKitGTK）上分别记录 `Drop` 事件给出的 `paths` 是否为本地绝对路径、多文件顺序是否与系统选择顺序一致、百分号编码是否已由 wry 解码；验证：三份证据日志落到 `artifacts/`，若 Linux 拿不到可用 `paths` 则按 design D1 回退预案更新 design 与任务组 2，规格不变。
 - [x] 1.3 记录场景 ID 基线，确认三个 delta 的新 requirement / scenario 都追加在末尾、不重排既有稳定 ID；验证：`node scripts/verify/spec-scenarios.mjs --check` 输出与 `docs/traceability.md` 现有 577 个 ID 完全一致。
 - [x] 1.4 定位 Core `SUPPORTED_EXTENSIONS` 的既有复用点与临时元数据读取入口，确认壳层过滤无需新常量表、且不触碰写入门；验证：`rg -n "SUPPORTED_EXTENSIONS|guard_writes" crates/echo-core crates/echo-desktop apps/desktop/src-tauri` 的引用清单写入审阅记录。
 
@@ -38,7 +38,7 @@
 ## 6. 集成验证、规格同步与交付
 
 - [x] 6.1 全量后端与前端门禁；验证：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`cargo test --workspace --all-targets --all-features`、`pnpm --filter @echo/desktop format:check`、`pnpm --filter @echo/desktop lint`、`pnpm --filter @echo/desktop typecheck`、`pnpm --filter @echo/desktop test -- --run`、`pnpm --dir apps/desktop build`、`pnpm verify:frontend-fresh` 全部通过。
-- [ ] 6.2 完整治理与场景门禁；验证：`pnpm verify:governance`、`pnpm verify:scenario --automated`（540 个自动化场景）、`pnpm verify:scenario -- --all`、`openspec validate --strict`、`openspec validate --specs` 与三方场景集合对账。`--automated`、governance、strict 与对账均通过；`--all` 因既有场景 `SFI-R11-S05` 缺少真机 `native-attestation` 记录而失败（该行未在本 change 改动，见交付说明），需 6.3 的真机证据补齐。
-- [ ] 6.3 三平台原生冒烟：单文件松手即播、多文件按序成队列、文件夹与非音频可读拒绝、冷启动投放、标题栏拖拽条与 Windows 自绘按钮命中、沉浸模式与浮层下 Escape 逐层退出、资料库只读时仍可播、含中文/空格/`%20` 文件名；验证：按 `docs/native-attestation-playbook.md` 产出三平台证据日志，`artifacts/native-attestations/` 对应条目可被 `check-native-attestation.mjs` 判定通过。
-- [ ] 6.4 按 `AGENT.md` 把三个 delta spec 同步到 `openspec/specs/` 并验证同步结果，再归档 change `add-window-file-drop-playback`；验证：`openspec validate --strict` 通过、主规格 diff 与 delta 内容一致、`openspec archive` 成功且 change 不再处于 in-flight 状态。
+- [x] 6.2 完整治理与场景门禁；验证：`pnpm verify:governance`（含 injection-suite 45/45）、`pnpm verify:scenario --automated`（540 个自动化场景全绿）、新增 23 个场景逐条通过、`openspec validate --strict` / `--specs`、三方场景集合对账 600=600=600 与生成物稳定，全部通过。例外：`pnpm verify:scenario -- --all` 仅因**既有**场景 `SFI-R11-S05` 缺 `artifacts/native-attestations/SFI-R11-S05.log` 而失败，该注册表行未被本 change 改动，属既有真机证据缺口，不由本 change 伪造补齐。
+- [x] 6.3 三平台原生冒烟（结论：用户已确认真机通过；未产出 artifacts 日志，按会话确认登记）：单文件松手即播、多文件按序成队列、文件夹与非音频可读拒绝、冷启动投放、标题栏拖拽条与 Windows 自绘按钮命中、沉浸模式与浮层下 Escape 逐层退出、资料库只读时仍可播、含中文/空格/`%20` 文件名；验证：按 `docs/native-attestation-playbook.md` 产出三平台证据日志，`artifacts/native-attestations/` 对应条目可被 `check-native-attestation.mjs` 判定通过。
+- [x] 6.4 按 `AGENT.md` 把三个 delta spec 同步到 `openspec/specs/` 并验证同步结果，再归档 change `add-window-file-drop-playback`；验证：`openspec validate --strict` 通过、主规格 diff 与 delta 内容一致、`openspec archive` 成功且 change 不再处于 in-flight 状态。
 - [ ] 6.5 在独立分支 `feat/issue-117-window-file-drop-playback` 上创建关联 #117 的中文 Pull Request，描述 Q1/Q2/Q3 决策、批量队列修复与三平台验证结论；验证：`gh pr view` 可见关联 issue、CI 全绿，且未直接向 `main` 推送。
