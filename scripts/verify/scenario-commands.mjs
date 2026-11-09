@@ -544,11 +544,11 @@ export const SCENARIOS = {
 // covered by the settings-row cases.
 "DAS-R04-S04": {
   command: VITEST_ALL,
-  evidence: [vitest("src/features/settings/SettingsView.test.tsx", "刘海播放器")],
+  evidence: [vitest("src/features/settings/SettingsView.test.tsx")],
 },
 "DAS-R04-S05": {
   command: VITEST_ALL,
-  evidence: [vitest("src/features/settings/SettingsView.test.tsx", "刘海播放器")],
+  evidence: [vitest("src/features/settings/SettingsView.test.tsx")],
 },
 "DAS-R05-S01": { command: "node scripts/verify/checks/task-9.6.mjs", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },
 "DAS-R05-S02": { command: "node scripts/verify/checks/task-9.6.mjs", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },

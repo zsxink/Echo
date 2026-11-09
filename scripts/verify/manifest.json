@@ -1922,8 +1922,7 @@
       "evidence": [
         {
           "kind": "vitest",
-          "target": "src/features/settings/SettingsView.test.tsx",
-          "name": "刘海播放器"
+          "target": "src/features/settings/SettingsView.test.tsx"
         }
       ]
     },
@@ -1934,8 +1933,7 @@
       "evidence": [
         {
           "kind": "vitest",
-          "target": "src/features/settings/SettingsView.test.tsx",
-          "name": "刘海播放器"
+          "target": "src/features/settings/SettingsView.test.tsx"
         }
       ]
     },
