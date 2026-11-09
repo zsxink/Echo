@@ -53,6 +53,7 @@ mod app_menu;
 mod commands;
 mod commands_audio_effects;
 mod commands_file_open;
+mod commands_notch;
 mod cover_payload;
 mod cover_preview;
 mod cover_protocol;
