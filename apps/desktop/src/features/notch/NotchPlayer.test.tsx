@@ -182,7 +182,17 @@ describe("window growth protocol", () => {
     renderNotch();
     expect(root()).toHaveAttribute("data-expanded", "false");
 
-    fireEvent.pointerOver(screen.getByTestId("notch-ear-left"), { relatedTarget: document.body });
+    fireEvent.pointerOver(root(), { relatedTarget: document.body });
+
+    await waitFor(() => expect(root()).toHaveAttribute("data-expanded", "true"));
+    expect(capturedInvoke).toHaveBeenCalledWith("notch_player_set_expanded", { expanded: true });
+  });
+
+  it("expands when the pointer is over the housing strip itself", async () => {
+    // The window covers the housing at NSStatusWindowLevel, so that strip is
+    // part of the bar's hover target rather than a dead zone.
+    renderNotch();
+    fireEvent.pointerOver(screen.getByTestId("notch-housing"), { relatedTarget: document.body });
 
     await waitFor(() => expect(root()).toHaveAttribute("data-expanded", "true"));
     expect(capturedInvoke).toHaveBeenCalledWith("notch_player_set_expanded", { expanded: true });
@@ -196,7 +206,7 @@ describe("window growth protocol", () => {
       return null;
     });
     renderNotch();
-    fireEvent.pointerOver(screen.getByTestId("notch-ear-right"), { relatedTarget: document.body });
+    fireEvent.pointerOver(root(), { relatedTarget: document.body });
     await waitFor(() =>
       expect(capturedInvoke).toHaveBeenCalledWith("notch_player_set_expanded", { expanded: true }),
     );
@@ -206,7 +216,7 @@ describe("window growth protocol", () => {
   it("collapses on leave and only shrinks the window after the animation", async () => {
     vi.useFakeTimers();
     renderNotch();
-    fireEvent.pointerOver(screen.getByTestId("notch-ear-left"), { relatedTarget: document.body });
+    fireEvent.pointerOver(root(), { relatedTarget: document.body });
     await act(async () => {
       await Promise.resolve();
     });
@@ -235,7 +245,7 @@ describe("window growth protocol", () => {
   it("stays open while the progress slider is being dragged", async () => {
     vi.useFakeTimers();
     renderNotch();
-    fireEvent.pointerOver(screen.getByTestId("notch-ear-left"), { relatedTarget: document.body });
+    fireEvent.pointerOver(root(), { relatedTarget: document.body });
     await act(async () => {
       await Promise.resolve();
     });

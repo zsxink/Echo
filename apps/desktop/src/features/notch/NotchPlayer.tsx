@@ -166,6 +166,11 @@ export function NotchPlayer() {
       data-temporary={isTemporary}
       role="group"
       aria-label="Echo 刘海播放器"
+      // The whole bar is the hover target, including the housing strip in the
+      // middle: the window already covers that area at `NSStatusWindowLevel`,
+      // so claiming its hover costs the app underneath nothing visible and
+      // gives the user the largest, most forgiving target on the bar.
+      onPointerEnter={() => void expand()}
       style={
         notchWidth === null
           ? undefined
@@ -176,24 +181,16 @@ export function NotchPlayer() {
     >
       <div className="notch-surface">
         <div className="ears" aria-hidden="true" {...inertProps(expanded)}>
-          {/* Only the two ears are hover targets: the hardware housing between
-              them is not part of this window's interactive area. */}
-          <div
-            className="ear ear-left"
-            onPointerEnter={() => void expand()}
-            data-testid="notch-ear-left"
-          >
+          {/* Decorative collapsed-state content: the hover target is the bar
+              itself, so neither ear needs a handler of its own. */}
+          <div className="ear ear-left" data-testid="notch-ear-left">
             <span className={`thumb${artwork ? " has-image" : ""}`}>
               {artwork ? (
                 <img src={artwork} alt="" onError={() => setFailedCover(coverKey)} />
               ) : null}
             </span>
           </div>
-          <div
-            className="ear ear-right"
-            onPointerEnter={() => void expand()}
-            data-testid="notch-ear-right"
-          >
+          <div className="ear ear-right" data-testid="notch-ear-right">
             <span className="playing-bars compact">
               <i />
               <i />
@@ -325,7 +322,7 @@ export function NotchPlayer() {
           </div>
         </div>
       </div>
-      <div className="hardware-notch" aria-hidden="true" />
+      <div className="hardware-notch" aria-hidden="true" data-testid="notch-housing" />
     </div>
   );
 }

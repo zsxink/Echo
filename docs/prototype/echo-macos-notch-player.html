@@ -649,11 +649,11 @@ code { padding: 1px 4px; border-radius: 4px; background: var(--surface); font: 4
             <div class="hardware-notch" aria-hidden="true"></div>
           </div>
 
-          <p class="desktop-hint">把鼠标移到刘海两侧的小耳展开 · 移出收起 · <kbd>Tab</kbd> 可聚焦 · <kbd>Esc</kbd> 收起</p>
+          <p class="desktop-hint">把鼠标移到刘海（含中间凹口）或两侧小耳展开 · 移出收起 · <kbd>Tab</kbd> 可聚焦 · <kbd>Esc</kbd> 收起</p>
         </div>
 
         <p class="state-readout" id="state-readout" aria-live="polite"></p>
-        <p class="stage-caption">纯黑表面与硬件刘海连成一体，收缩态只比刘海宽左右各 26 px（刚好放一张 16 px 小封面与一组 12 px 跳动音符）；展开时向右拓宽、向下展开，并切到液态玻璃（半透明 + 背景模糊 + 顶部高光）。面板<strong>顶部两角不内收</strong>，而是向屏幕外翻出 26 px 凹圆角，像从屏幕边缘长出来；底部两角仍为 24 px 圆角。桌面上的窗口只是给玻璃提供背景参照，不属于产品界面。</p>
+        <p class="stage-caption">纯黑表面与硬件刘海连成一体，收缩态只比刘海宽左右各 26 px（刚好放一张 16 px 小封面与一组 12 px 跳动音符），整条区域（含刘海本体）都是悬浮展开命中区；展开时向右拓宽、向下展开，并切到液态玻璃（半透明 + 背景模糊 + 顶部高光）。面板<strong>顶部两角不内收</strong>，而是向屏幕外翻出 26 px 凹圆角，像从屏幕边缘长出来；底部两角仍为 24 px 圆角。桌面上的窗口只是给玻璃提供背景参照，不属于产品界面。</p>
       </section>
 
       <section class="notes" aria-label="原型说明与验收清单">
@@ -674,7 +674,7 @@ code { padding: 1px 4px; border-radius: 4px; background: var(--surface); font: 4
             <h3>需要你给结论（对应 #147）</h3>
             <ul>
               <li><strong>Q3</strong>：表面改为纯黑（与硬件刘海连成一体），深色壁纸下几乎不可见、浅色壁纸下边界清楚。是否需要在深色壁纸下补一条极淡的边缘提示（当前只靠顶部高光渐变 + 外投影，展开态已刻意不画 1 px 内描边，否则会在外翻角接缝处留一道竖线）。</li>
-              <li><strong>Q4</strong>：仅悬浮展开，还是允许点击锁定；展开后右上角的「︿」是收起入口，两种模式下都可用。</li>
+              <li><strong>Q4</strong>：已定为「整条收缩态（含刘海本体）都是悬浮命中区」；仍待定的是仅悬浮展开还是允许点击锁定，展开后右上角的「︿」是收起入口。</li>
               <li><strong>Q2</strong>：与菜单栏状态行（#37，右上示意）并存的间距与让位规则。</li>
               <li><strong>Q6</strong>：空播放态、临时播放项（「临时」标签 + 喜欢禁用）的展示口径。</li>
               <li><strong>Q8</strong>：独立原型文件是否纳入 <code>extract-prototype-css.mjs</code> 的样式生成流程；面板的玻璃参数（透明度 / 模糊半径 / 高光）要不要反过来作为 #74 liquid glass 的 L2 浮层基准。</li>
@@ -927,9 +927,10 @@ code { padding: 1px 4px; border-radius: 4px; background: var(--surface); font: 4
     function previous() { setTrack(state.index - 1); }
 
     /* ── 播放器交互 ─────────────────────────────────────────────────────── */
-    // 悬浮只在两侧窄耳上触发：凹口是硬件，应用无法在其下方接收指针，
-    // 所以把展开命中区限定为窄耳与展开面板，移出整个播放器才收起。
-    ears.addEventListener("mouseenter", function () {
+    // 整条收缩态都是展开命中区，包括中间的刘海本体：窗口在最上层覆盖了这块
+    // 区域，命中本来就归窗口所有，把刘海做成死区只会让用户更难瞄。移出整条
+    // 播放器才收起。
+    player.addEventListener("mouseenter", function () {
       state.hovered = true;
       if (state.expandMode === "hover") setExpanded(true);
     });

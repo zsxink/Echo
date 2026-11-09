@@ -116,9 +116,9 @@ cargo build -p echo-app
 | 播放与暂停 | `data-playing = state === "playing" && hasCurrent`；CSS 动画只挂在该属性上 | `NotchPlayer.test` 三项（playing/paused/loading） |
 | 切歌 | 快照驱动，`coverKey` 与标题同帧更新 | `NotchPlayer.test`「下一首换歌名与封面」 |
 | 减少动画 | `notch.css` 的 `@media (prefers-reduced-motion)` 把动画时长/延迟归零 | 原型验收台实测 `animation: none` |
-| 悬浮展开 | `onPointerEnter`（仅两侧窄耳）→ `await notch_player_set_expanded(true)` → 置 `data-expanded` | `NotchPlayer.test`「awaits the resize before showing」 |
+| 悬浮展开 | 根容器 `onPointerEnter`（整条，含刘海本体）→ `await notch_player_set_expanded(true)` → 置 `data-expanded` | `NotchPlayer.test`「awaits the resize before showing」 |
 | 移出收起 | `onPointerLeave` → 90 ms 后收起动画，420 ms 后缩窗 | `NotchPlayer.test`「collapses on leave …」 |
-| 指针经过硬件刘海 | 处理函数只挂在 `.ear-left` / `.ear-right`，`.hardware-notch` 为 `pointer-events: none` | 结构保证（无覆盖整条的处理器）；真机 #2 |
+| 指针经过硬件刘海 | 根容器 `onPointerEnter`：整条收缩态（含刘海本体）都是命中区；`.hardware-notch` 为 `pointer-events: none`，事件落到容器 | `NotchPlayer.test`「expands when the pointer is over the housing strip itself」；真机 #2 |
 | 拖动进度条 | `onPointerDown` 置 `draggingRef`，`collapse` 直接返回 | `NotchPlayer.test`「stays open while dragging」 |
 | 从刘海播放器控制播放 | `player_control` / `seek` / `set_favorite` 与播放栏同命令 | `NotchPlayer.test`「sends the same transport actions」 |
 | 从其它入口控制播放 | 同一 `player://snapshot` 流 | `playerStore` 单一边界；真机 #11 |
