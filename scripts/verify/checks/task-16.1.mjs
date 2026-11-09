@@ -12,7 +12,8 @@
 //      string downstream cannot compile.
 //
 // Note: `task-9.1.mjs` separately guards the FIFO wiring that shares this
-// boundary; this check owns the normalization contract itself.
+// boundary; this check owns the normalization contract itself. Since #117 both
+// OS open entries deliver one batch, the owner is `deliver_file_opens`.
 
 import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
@@ -81,7 +82,7 @@ const runtime = readFileSync(
 
 const shellRequired = [
   "open_targets::open_targets(&urls)",
-  "fn deliver_file_open(",
+  "fn deliver_file_opens(",
   "fn record_gate_open(",
 ];
 for (const token of shellRequired) {

@@ -145,14 +145,13 @@ describe("File-open playback", () => {
     ).__echoTest;
     callbacks.emit("app://file-open-request", ["/tmp/drained.flac"]);
     await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("play_temporary_file", {
-        path: "/tmp/drained.flac",
-        displayName: "drained.flac",
+      expect(invoke).toHaveBeenCalledWith("play_opened_files", {
+        paths: ["/tmp/drained.flac"],
       }),
     );
   });
 
-  it("replaces playback for every path drained after cold start", async () => {
+  it("plays every drained path in one batch after cold start", async () => {
     render(<App />);
     await waitFor(() =>
       expect((invoke as unknown as { mock: { calls: unknown[][] } }).mock.calls).toContainEqual([
@@ -169,14 +168,19 @@ describe("File-open playback", () => {
     callbacks.emit("app://file-open-request", ["/tmp/first.flac", "/tmp/second.flac"]);
 
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("play_temporary_file", {
-        path: "/tmp/first.flac",
-        displayName: "first.flac",
+      expect(invoke).toHaveBeenCalledWith("play_opened_files", {
+        paths: ["/tmp/first.flac", "/tmp/second.flac"],
       });
-      expect(invoke).toHaveBeenCalledWith("play_temporary_file", {
-        path: "/tmp/second.flac",
-        displayName: "second.flac",
-      });
+    });
+    // One event must produce exactly one batch command — the old per-path
+    // loop rebuilt the queue twice and silently dropped the first file. The
+    // invoke mock is shared across cases, so assert no per-path split rather
+    // than a global call count.
+    expect(invoke).not.toHaveBeenCalledWith("play_opened_files", {
+      paths: ["/tmp/first.flac"],
+    });
+    expect(invoke).not.toHaveBeenCalledWith("play_opened_files", {
+      paths: ["/tmp/second.flac"],
     });
   });
 
@@ -201,15 +205,31 @@ describe("File-open playback", () => {
     callbacks.emit("app://file-open-request", ["/tmp/My%20Mix.flac"]);
 
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("play_temporary_file", {
-        path: "/tmp/My%20Mix.flac",
-        displayName: "My%20Mix.flac",
+      expect(invoke).toHaveBeenCalledWith("play_opened_files", {
+        paths: ["/tmp/My%20Mix.flac"],
       });
     });
-    expect(invoke).not.toHaveBeenCalledWith("play_temporary_file", {
-      path: "/tmp/My Mix.flac",
-      displayName: "My Mix.flac",
+    expect(invoke).not.toHaveBeenCalledWith("play_opened_files", {
+      paths: ["/tmp/My Mix.flac"],
     });
+  });
+
+  it("mounts the window file-drop overlay and follows shell drop state", async () => {
+    render(<App />);
+    const callbacks = (
+      globalThis as unknown as {
+        __echoTest: { emit: (event: string, payload: unknown) => void };
+      }
+    ).__echoTest;
+    expect(screen.queryByRole("status", { name: "松手即播放" })).not.toBeInTheDocument();
+    await act(async () => {
+      callbacks.emit("app://file-drop-state", { active: true });
+    });
+    expect(screen.getByRole("status", { name: "松手即播放" })).toBeInTheDocument();
+    await act(async () => {
+      callbacks.emit("app://file-drop-state", { active: false });
+    });
+    expect(screen.queryByRole("status", { name: "松手即播放" })).not.toBeInTheDocument();
   });
 });
 describe("Sync opt-in guard", () => {

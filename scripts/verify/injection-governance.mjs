@@ -173,15 +173,16 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       baseline: true,
       inject() {
         // Regression to the original bug: the Opened payload is handed
-        // downstream as a raw URL string (`.`->`to_string()`) instead of a
-        // decoded filesystem path. The loop variable is deliberately spelled
-        // `url` so the check's `url.to_string()` guard trips on every runner
-        // (non-macOS exempts the dead-code lint on `open_targets`, so clippy
-        // alone cannot prove the violation off-macOS).
+        // downstream as raw URL strings (`.url.to_string()`) instead of
+        // decoded filesystem paths. The macOS Opened branch now delivers one
+        // batch, so inject at the `deliver_file_opens` argument. The variable
+        // is deliberately spelled `url` so the check's `url.to_string()` guard
+        // trips on every runner (non-macOS exempts the dead-code lint on
+        // `open_targets`, so clippy alone cannot prove the violation there).
         replaceIn(
           join(ROOT, "apps", "desktop", "src-tauri", "src", "bootstrap.rs"),
-          "for path in open_targets::open_targets(&urls) {",
-          "for path in urls.iter().map(|url| url.to_string()).map(std::path::PathBuf::from) {",
+          "deliver_file_opens(app, &startup, open_targets::open_targets(&urls));",
+          "deliver_file_opens(app, &startup, urls.iter().map(|url| url.to_string()).map(std::path::PathBuf::from).collect());",
         );
         return {};
       },

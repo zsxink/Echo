@@ -2,7 +2,7 @@ use super::*;
 
 // ==== system file-open dispatch (SFI-R06, normalize-os-file-open-paths) ====
 //
-// The shell hands a decoded absolute path to `play_temporary_file`; its first
+// The shell hands decoded absolute paths to `play_opened_files`; its first
 // move is `active_song_for_path`, whose answer decides between "play the
 // existing library identity" and "create a session temporary item". These
 // tests pin the predicate the dispatch depends on — the coordinator's

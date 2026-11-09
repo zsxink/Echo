@@ -65,7 +65,7 @@ pub struct AppServices {
     supervisor: ScanSupervisor,
     /// The one and only startup supervisor: the shell `manage`s this very
     /// `Arc`, so the readiness gate and the file-open delivery gate that
-    /// `deliver_file_open` reads are the same state this composition root
+    /// `deliver_file_opens` reads are the same state this composition root
     /// exposes ([`Self::startup`]). A second, separately-constructed instance
     /// would let the two gates diverge silently
     /// (deliver-file-opens-after-frontend-ready, D3).

@@ -22,7 +22,7 @@ import type { E2EState } from "./mock-bridge-state";
 export const PLAYER_COMMANDS: ReadonlySet<string> = new Set([
   "play_playlist_context",
   "play_library_context",
-  "play_temporary_file",
+  "play_opened_files",
   "player_control",
   "queue_command",
   "set_volume",

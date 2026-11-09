@@ -16,10 +16,10 @@
 //! §12). No I/O here: the coordinator delegates file resolution to the
 //! platform layer and just answers "what is current / what is next".
 
-use echo_core::domain::ids::{PlaybackSessionId, QueueEntryId};
+use echo_core::domain::ids::{PlaybackSessionId, QueueEntryId, SongId};
 
 use super::port::{PlayMode, PlayerCommand, PlayerPort, PlayerSnapshot};
-use super::queue::{Queue, QueueEntry, QueueItem, QueueRevision, ViewContext};
+use super::queue::{Queue, QueueEntry, QueueItem, QueueRevision, TemporaryItem, ViewContext};
 
 /// "Previous" restarts the current track when it has played longer than this
 /// (task 8.6: ">5 秒上一首回到开头").
@@ -299,33 +299,79 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
 
     /// Play a single temporary file immediately (system file open outside the
     /// active library). The temporary item becomes the sole current entry.
+    ///
+    /// Delegates to [`Self::play_opened_files`] so the single-file and the
+    /// multi-file paths can never diverge in queue semantics.
     pub fn play_temporary(&mut self, item: TemporaryPlay) {
-        let display = item.display_name.clone();
-        let path = item.path.clone();
-        let entry = QueueEntry {
-            id: QueueEntryId::new(),
-            item: QueueItem::Temporary(Box::new(super::queue::TemporaryItem {
-                display_name: item.display_name,
-                path: item.path,
-                duration: item.duration,
-                metadata: item.metadata,
-                on_active_root: item.on_active_root,
-            })),
+        self.play_opened_files(vec![OpenedPlayItem::Temporary(Box::new(item))]);
+    }
+
+    /// Play a batch of OS-opened / window-dropped files as ONE queue, in the
+    /// order the platform supplied them.
+    ///
+    /// A single `replace_queue` and a single load are issued for the whole
+    /// batch. Calling [`Self::play_temporary`] once per path used to rebuild the
+    /// queue N times, leaving only the last file (#117). Active-library paths
+    /// keep their stable UUID; the rest become session-only temporary items.
+    /// The batch replaces the current queue, priority lane and failed round,
+    /// exactly like a single file open (Q3=A) — it never appends.
+    pub fn play_opened_files(&mut self, items: Vec<OpenedPlayItem>) {
+        let mut queue = Queue::new();
+        let mut first = None;
+        for item in items {
+            let queue_item = match item {
+                OpenedPlayItem::Library(song_id) => QueueItem::Library(song_id),
+                OpenedPlayItem::Temporary(play) => {
+                    let play = *play;
+                    QueueItem::Temporary(Box::new(TemporaryItem {
+                        display_name: play.display_name,
+                        path: play.path,
+                        duration: play.duration,
+                        metadata: play.metadata,
+                        on_active_root: play.on_active_root,
+                    }))
+                }
+            };
+            let entry = QueueEntry {
+                id: QueueEntryId::new(),
+                item: queue_item,
+            };
+            if first.is_none() {
+                first = Some(entry.id);
+            }
+            queue.push(entry);
+        }
+        let Some(current) = first else {
+            return;
         };
-        let id = entry.id;
-        self.replace_queue(Queue::new());
-        self.queue.push(entry);
-        self.queue.set_current(id);
+        queue.set_current(current);
+        // Clone the first entry before handing the queue over: the load
+        // decision must not borrow the queue across a player command.
+        let first_item = queue.get(current).map(|entry| entry.item.clone());
+        self.replace_queue(queue);
         self.failed_round.clear(); // fresh session
         self.queue.bump_revision();
-        let session = self.new_load_session(id);
-        self.player
-            .send(PlayerCommand::LoadTemporary {
-                display_name: display,
-                path,
-                session_id: session,
-            })
-            .ok();
+        let session = self.new_load_session(current);
+        match first_item {
+            Some(QueueItem::Library(song_id)) => {
+                self.player
+                    .send(PlayerCommand::LoadLibrarySong {
+                        song_id,
+                        session_id: session,
+                    })
+                    .ok();
+            }
+            Some(QueueItem::Temporary(item)) => {
+                self.player
+                    .send(PlayerCommand::LoadTemporary {
+                        display_name: item.display_name,
+                        path: item.path,
+                        session_id: session,
+                    })
+                    .ok();
+            }
+            None => {}
+        }
     }
 
     /// Convert the still-current temporary entry into its committed library
@@ -789,6 +835,16 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
     }
 }
 
+/// One resolved external file-open/drop entry, in platform-supplied order.
+/// Lives in the desktop player layer: the Core never sees playback queues.
+#[derive(Clone, Debug)]
+pub enum OpenedPlayItem {
+    /// The path belongs to the active library — reuse its stable UUID.
+    Library(SongId),
+    /// The path is outside the active library — a session-only temporary item.
+    Temporary(Box<TemporaryPlay>),
+}
+
 /// A request to play a temporary file (from the platform open-file boundary).
 #[derive(Clone, Debug)]
 pub struct TemporaryPlay {
@@ -802,5 +858,9 @@ pub struct TemporaryPlay {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+#[cfg(test)]
+#[path = "coordinator/tests_opened_files.rs"]
+mod tests_opened_files;
+
 #[cfg(test)]
 mod tests;

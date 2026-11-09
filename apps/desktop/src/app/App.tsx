@@ -61,6 +61,7 @@ import { WindowControls } from "./WindowControls";
 import { TitlebarActions } from "./TitlebarActions";
 import { EffectsPanel } from "../features/player";
 import { ToastView } from "./ToastView";
+import { FileDropOverlay } from "./FileDropOverlay";
 import { useAppShell } from "./useAppShell";
 import { invalidateCovers } from "./coverArt";
 import { requestSearchFocus } from "./searchFocus";
@@ -123,16 +124,19 @@ export function App() {
     return () => document.removeEventListener("contextmenu", preventDefaultContextMenu);
   }, []);
 
-  // Finder / file-manager opens are a desktop-owned playback request, never an
-  // import. The player coordinator atomically replaces its context for each
-  // accepted file; registering here also covers paths drained after cold start.
+  // Finder / file-manager opens AND window file drops are desktop-owned
+  // playback requests, never imports. The shell filters and batches them into
+  // one `app://file-open-request` event; a single command builds one queue in
+  // platform order (issue #117). Registering here also covers paths drained
+  // after cold start.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     const signalReady = () =>
       // The listener is now in place, so the shell may drain every file-open
       // that arrived before it (deliver-file-opens-after-frontend-ready): Tauri
       // drops an emit with no registered JS listener, so paths from a cold-start
-      // double-click wait in the startup FIFO until this command opens the gate.
+      // double-click or an early drop wait in the startup FIFO until this
+      // command opens the gate.
       // Idempotent on the backend — the second call drains an empty queue — so
       // React StrictMode's double-invoked effect is harmless.
       bridge.fireAndForget("file_open_frontend_ready");
@@ -140,14 +144,15 @@ export function App() {
       .subscribe<readonly string[]>("app://file-open-request", (paths) => {
         // Each element is a DECODED absolute filesystem path: the shell's
         // `open_targets` already converted the OS `file://` URL and decoded
-        // percent-encoding exactly once (normalize-os-file-open-paths). Do NOT
+        // percent-encoding exactly once (normalize-os-file-open-paths), and
+        // native drag-drop paths arrive as decoded `PathBuf`s from wry. Do NOT
         // URL-decode here — a filename may legitimately contain a literal
-        // `%20`, and a second decode would corrupt it. The display name is the
-        // final path segment, taken verbatim.
-        for (const path of paths) {
-          const displayName = path.split(/[\\/]/).filter(Boolean).at(-1) ?? "音频文件";
-          bridge.fireAndForget("play_temporary_file", { path, displayName });
-        }
+        // `%20`, and a second decode would corrupt it. Display names are now
+        // resolved by the command layer from the final path segment, verbatim.
+        // One event = one batch = one queue: calling a single-file command per
+        // path used to rebuild the queue N times and leave only the last file.
+        if (paths.length === 0) return;
+        bridge.fireAndForget("play_opened_files", { paths });
       })
       .then((dispose) => {
         unlisten = dispose;
@@ -444,6 +449,7 @@ export function App() {
         <PlayerBar root={status.activeRoot ?? undefined} queueTriggerRef={queueTriggerRef} />
 
         <ToastView />
+        <FileDropOverlay />
         {scanIssues.length > 0 ? (
           <ScanReportDialog issues={scanIssues} onClose={() => setScanIssues([])} />
         ) : null}

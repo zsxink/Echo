@@ -454,7 +454,7 @@ export interface IpcCommandResultMap {
   readonly play_library_context: void;
   readonly restore_playback_session: string;
   readonly file_open_frontend_ready: void;
-  readonly play_temporary_file: void;
+  readonly play_opened_files: void;
   readonly import_current_temporary_file: ImportResultDto;
   readonly player_control: void;
   readonly queue_command: void;

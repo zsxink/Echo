@@ -5,7 +5,7 @@
 - 本表逐项覆盖 specs 中的全部 Scenario；稳定 ID 不得复用，标题调整时保留原 ID。
 - 场景 ID 由 spec 标题派生；每行必须给出可执行验收命令，且该场景在 `scripts/verify/scenario-commands.mjs` 的 `SCENARIOS` 中声明非空 `evidence`（命令可执行 + 证据可观测）。人工举证由 `docs/native-attestation-playbook.md` 与 `artifacts/native-attestations/<ID>.log` 承担，字段与判定见 `check-native-attestation.mjs`。
 - 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表与场景清单的 ID 集合完全相等，并逐项执行；命令按域聚合后逐条断言 evidence 目标在输出中被观测到，缺失、重复、无命令、无证据、证据未观测或失败均返回非零。
-- 当前基线：148 个 Requirement，577 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16、封面载荷受控与预览回收 9、内嵌封面解码与 MIME 约束 5、封面原件内容真实性校验 8、封面选图预览受控缩略图 5）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
+- 当前基线：151 个 Requirement，600 个 Scenario（#117 窗口文件投放新增 3 个 Requirement / 23 个 Scenario；0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16、封面载荷受控与预览回收 9、内嵌封面解码与 MIME 约束 5、封面原件内容真实性校验 8、封面选图预览受控缩略图 5）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
 
 ## ci-release-pipeline
 
@@ -142,6 +142,22 @@
 | DAS-R25-S04 | 封面选图预览必须使用受控尺寸的缩略图 | 缩略图生成失败可恢复 | issue-133 | React | `pnpm verify:scenario -- DAS-R25-S04` |
 | DAS-R25-S05 | 封面选图预览必须使用受控尺寸的缩略图 | 小图不被放大 | issue-133 | Rust | `pnpm verify:scenario -- DAS-R25-S05` |
 
+| DAS-R26-S01 | 窗口级文件投放必须提供进入与离开反馈 | 拖入受支持音频出现反馈 | issue-117 | React | `pnpm verify:scenario DAS-R26-S01` |
+| DAS-R26-S02 | 窗口级文件投放必须提供进入与离开反馈 | 拖离或取消后反馈消失 | issue-117 | React | `pnpm verify:scenario DAS-R26-S02` |
+| DAS-R26-S03 | 窗口级文件投放必须提供进入与离开反馈 | 反馈层不遮挡窗口控件与拖拽条 | issue-117 | React | `pnpm verify:scenario DAS-R26-S03` |
+| DAS-R26-S04 | 窗口级文件投放必须提供进入与离开反馈 | 沉浸模式与既有浮层下投放 | issue-117 | React | `pnpm verify:scenario DAS-R26-S04` |
+| DAS-R26-S05 | 窗口级文件投放必须提供进入与离开反馈 | 减少动画设置下保留状态变化 | issue-117 | React | `pnpm verify:scenario DAS-R26-S05` |
+| DAS-R27-S01 | 松手投放必须立即播放且只接受受支持的单个音频文件 | 单文件松手即播 | issue-117 | Desktop/React | `pnpm verify:scenario DAS-R27-S01` |
+| DAS-R27-S02 | 松手投放必须立即播放且只接受受支持的单个音频文件 | 与双击打开同语义 | issue-117 | Desktop/React | `pnpm verify:scenario DAS-R27-S02` |
+| DAS-R27-S03 | 松手投放必须立即播放且只接受受支持的单个音频文件 | 非音频文件可读拒绝 | issue-117 | Desktop | `pnpm verify:scenario DAS-R27-S03` |
+| DAS-R27-S04 | 松手投放必须立即播放且只接受受支持的单个音频文件 | 文件夹可读拒绝 | issue-117 | Desktop | `pnpm verify:scenario DAS-R27-S04` |
+| DAS-R27-S05 | 松手投放必须立即播放且只接受受支持的单个音频文件 | 混合投放部分拒绝 | issue-117 | Desktop | `pnpm verify:scenario DAS-R27-S05` |
+| DAS-R27-S06 | 松手投放必须立即播放且只接受受支持的单个音频文件 | 不扩权限面 | issue-117 | Gate | `pnpm verify:scenario DAS-R27-S06` |
+| DAS-R27-S07 | 松手投放必须立即播放且只接受受支持的单个音频文件 | 资料库只读或不可用时仍可播 | issue-117 | Desktop/Gate | `pnpm verify:scenario DAS-R27-S07` |
+| DAS-R28-S01 | 投放路径与到达时机必须与文件打开通道一致 | 特殊字符文件名不被二次解码 | issue-117 | React | `pnpm verify:scenario DAS-R28-S01` |
+| DAS-R28-S02 | 投放路径与到达时机必须与文件打开通道一致 | 监听器未就绪时到达的投放 | issue-117 | Desktop | `pnpm verify:scenario DAS-R28-S02` |
+| DAS-R28-S03 | 投放路径与到达时机必须与文件打开通道一致 | 三平台行为一致 | issue-117 | Desktop/Gate | `pnpm verify:scenario DAS-R28-S03` |
+
 ## desktop-playback
 
 | Scenario ID | Requirement | Scenario | 任务 | 测试层 | 实际验收命令 |
@@ -186,6 +202,10 @@
 | DP-R07-S02 | 临时播放项边界 | 临时项执行持久化操作 | 9.2, 11.7 | Desktop/Native | `pnpm verify:scenario -- DP-R07-S02` |
 | DP-R07-S03 | 临时播放项边界 | 临时项导入后转换为库内歌曲 | 8.1–8.4, 8.12 | Desktop/Native | `pnpm verify:scenario -- DP-R07-S03` |
 | DP-R07-S04 | 临时播放项边界 | 临时项导入失败不改变播放身份 | 8.1–8.4, 8.12 | Desktop/Native | `pnpm verify:scenario -- DP-R07-S04` |
+| DP-R07-S05 | 临时播放项边界 | 一次打开或投放多个文件按序成一条队列 | issue-117 | Desktop | `pnpm verify:scenario DP-R07-S05` |
+| DP-R07-S06 | 临时播放项边界 | 库内与库外混合保持输入顺序 | issue-117 | Desktop | `pnpm verify:scenario DP-R07-S06` |
+| DP-R07-S07 | 临时播放项边界 | 多文件打开替换当前队列与随机轮 | issue-117 | Desktop | `pnpm verify:scenario DP-R07-S07` |
+| DP-R07-S08 | 临时播放项边界 | 系统打开多个文件同样不再丢失 | issue-117 | Desktop/React | `pnpm verify:scenario DP-R07-S08` |
 | DP-R08-S01 | 播放统计 | 达到播放阈值 | 3.9, 8.10 | Core/Desktop | `pnpm verify:scenario -- DP-R08-S01` |
 | DP-R08-S02 | 播放统计 | 未达到阈值或 seek 作弊 | 3.9, 8.10 | Core/Desktop | `pnpm verify:scenario -- DP-R08-S02` |
 | DP-R09-S01 | 会话恢复 | 正常恢复 | 7.6, 8.9 | Desktop | `pnpm verify:scenario -- DP-R09-S01` |
@@ -610,6 +630,10 @@
 | SFI-R07-S03 | 源文件、系统关联与安全边界 | 非活动旧资料库文件直接打开 | 4.2, 7.5, 9.1, 9.2, 8.9 | Security/Native | `pnpm verify:scenario -- SFI-R07-S03` |
 | SFI-R07-S04 | 源文件、系统关联与安全边界 | 源文件保持不变 | 4.2, 7.5, 9.2, 12.7, 5.3 | Security/Native | `pnpm verify:scenario -- SFI-R07-S04` |
 | SFI-R07-S05 | 源文件、系统关联与安全边界 | 暂存目录名称与用户内容冲突 | 4.2, 7.5, 9.2, 12.7, 5.3, 5.7 | Security/Native | `pnpm verify:scenario -- SFI-R07-S05` |
+| SFI-R07-S06 | 源文件、系统关联与安全边界 | 投放不入库且源文件不变 | issue-117 | Desktop/Gate | `pnpm verify:scenario SFI-R07-S06` |
+| SFI-R07-S07 | 源文件、系统关联与安全边界 | 投放后显式导入才入库 | issue-117 | Desktop | `pnpm verify:scenario SFI-R07-S07` |
+| SFI-R07-S08 | 源文件、系统关联与安全边界 | 投放路径不二次解码 | issue-117 | React | `pnpm verify:scenario SFI-R07-S08` |
+| SFI-R07-S09 | 源文件、系统关联与安全边界 | 文件夹投放不触发扫描或复制 | issue-117 | Desktop | `pnpm verify:scenario SFI-R07-S09` |
 | SFI-R08-S01 | 单实例唤醒与重复打开 | 已运行实例接收文件关联 | 9.1, 9.2 | Desktop/Native | `pnpm verify:scenario -- SFI-R08-S01` |
 | SFI-R08-S02 | 单实例唤醒与重复打开 | 冷启动文件关联 | 9.1, 9.2 | Desktop/Native | `pnpm verify:scenario -- SFI-R08-S02` |
 | SFI-R09-S01 | 操作系统文件打开载荷必须先归一化为本地路径 | 带百分号编码的 file URL 被归一化 | 5.5, 5.10, 13.3, 13.4 | Fault injection/Native | `pnpm verify:scenario -- SFI-R09-S01` |

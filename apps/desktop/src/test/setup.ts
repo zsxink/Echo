@@ -44,7 +44,7 @@ const tauriCore = {
     // that registers the file-open listener (deliver-file-opens-after-
     // frontend-ready). It returns void and no test needs to decode its result,
     // so treat it like library_status: default success, no per-test opt-in.
-    if (command === "file_open_frontend_ready") {
+    if (command === "file_open_frontend_ready" || command === "play_opened_files") {
       return null;
     }
     throw new Error(`No mock for tauri command: ${command}`);

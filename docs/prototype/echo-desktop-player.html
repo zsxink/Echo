@@ -274,6 +274,16 @@ button:focus-visible, input:focus-visible { outline: none; box-shadow: var(--foc
 .settings-about-copy p { color: var(--fg-2); font: 400 var(--text-sm)/var(--leading-relaxed) var(--font-body); letter-spacing: normal; }
 .settings-about-copy .settings-about-lead { color: var(--fg); font-weight: 600; }
 
+/* Window file drop (issue #117): the hint covers the whole window but never
+   takes pointer hits, so the titlebar drag strip, Windows caption buttons and
+   open popovers stay usable. It reuses the same restrained scrim, raised
+   surface and glass blur as the effects/audio popovers (#74) rather than
+   introducing a second overlay material. */
+.file-drop-overlay { position: fixed; z-index: 60; inset: 0; display: grid; place-items: center; pointer-events: none; background: color-mix(in oklab, var(--fg), transparent 62%); -webkit-backdrop-filter: blur(20px) saturate(140%); backdrop-filter: blur(20px) saturate(140%); animation: file-drop-in 140ms ease-out; }
+.file-drop-overlay-label { padding: var(--space-4) var(--space-5); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--elev-raised); color: var(--fg); font: 650 var(--text-lg)/var(--leading-tight) var(--font-display); letter-spacing: var(--tracking-display); }
+@keyframes file-drop-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .file-drop-overlay { animation: none; } }
+
 .library-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-5); margin-bottom: var(--space-1); }
 .eyebrow { margin: 0 0 var(--space-2); color: var(--muted); font: 600 var(--text-xs)/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
 h1, h2, h3, p { margin-top: 0; }
@@ -588,6 +598,10 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 .queue-list::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-pill); background: transparent; background-clip: padding-box; }
 .queue-list.is-scrolling { scrollbar-color: color-mix(in oklab, var(--muted), transparent 42%) transparent; }
 .queue-list.is-scrolling::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--muted), transparent 42%); }
+/* The windowed list: only the rows around the viewport exist in the DOM, and
+   the scroll padding holds the space of the rows above and below them. The
+   row gap moves here because `.queue-list` now has a single child. */
+.queue-window { display: grid; gap: var(--queue-row-gap); }
 .queue-item { display: grid; width: 100%; grid-template-columns: var(--queue-cover-size) minmax(0, 1fr) 47px; gap: 11px; align-items: center; min-height: var(--queue-row-height); padding: 4px calc(var(--space-2) * .9); border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; cursor: pointer; text-align: left; }
 .queue-item:hover { background: var(--surface); }
 .queue-item:disabled { cursor: not-allowed; opacity: .58; }

@@ -3,7 +3,7 @@
 #[allow(clippy::wildcard_imports, unused_imports)]
 use super::*;
 
-use super::file_open_gate::{deliver_file_open, schedule_gate_exit};
+use super::file_open_gate::{deliver_file_opens, schedule_gate_exit};
 
 /// Crate entry: `main.rs` delegates here.
 #[allow(clippy::too_many_lines)]
@@ -32,9 +32,12 @@ pub(super) fn bootstrap_main() {
                 // startup FIFO (task 9.1). `skip(1)` drops the argv program name;
                 // macOS/Windows/Linux argv unification is task 9.2.
                 focus_main_window(app);
-                for path in args.into_iter().skip(1) {
-                    deliver_file_open(app, &startup, PathBuf::from(path));
-                }
+                // One launch = one batch. Emitting one event per argv path made
+                // the frontend replace the queue N times, leaving only the last
+                // file (#117 / DP-R07-S08). All paths still go through the
+                // startup FIFO, one by one, in arrival order.
+                let paths: Vec<PathBuf> = args.into_iter().skip(1).map(PathBuf::from).collect();
+                deliver_file_opens(app, &startup, paths);
             }
         }))
         // Native directory/file pickers in the Rust side (task 7.5 real wiring)
@@ -44,6 +47,18 @@ pub(super) fn bootstrap_main() {
         // its minimal permission set (no dialog/fs permissions granted).
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        // Window-level file drop (issue #117): the shell is the only owner of
+        // absolute paths. `dragDropEnabled: true` in both window configs keeps
+        // Tauri's internal handler emitting these events; disabling it would
+        // silence the shell instead of enabling HTML5 DnD for our use case.
+        .on_window_event({
+            let startup = Arc::clone(&startup);
+            move |window, event| {
+                if let tauri::WindowEvent::DragDrop(drag) = event {
+                    crate::file_drop::handle_drag_drop(window.app_handle(), &startup, drag);
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             sync_commands::sync_status,
             sync_commands::sync_storage_space,
@@ -114,9 +129,9 @@ pub(super) fn bootstrap_main() {
             commands::play_playlist_context,
             commands::play_library_context,
             commands::restore_playback_session,
-            commands::play_temporary_file,
+            commands_file_open::play_opened_files,
             commands::import_current_temporary_file,
-            commands::file_open_frontend_ready,
+            commands_file_open::file_open_frontend_ready,
             commands::player_control,
             commands::queue_command,
             crate::player_sync::player_sync,
@@ -352,9 +367,9 @@ pub(super) fn bootstrap_main() {
             #[cfg(target_os = "macos")]
             RunEvent::Opened { urls } => {
                 focus_main_window(app);
-                for path in open_targets::open_targets(&urls) {
-                    deliver_file_open(app, &startup, path);
-                }
+                // Same batching rule as the argv path: one `odoc` event may
+                // carry several files, and they must become one queue.
+                deliver_file_opens(app, &startup, open_targets::open_targets(&urls));
             }
             // Clicking the macOS Dock icon emits `Reopen`, rather than a tray-icon
             // event. Restore the hidden player window only when no window is visible.
