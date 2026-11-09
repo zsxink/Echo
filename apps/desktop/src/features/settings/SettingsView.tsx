@@ -445,17 +445,15 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
                               : "在屏幕顶部刘海两侧常驻迷你播放控制：收缩时只占极小宽度，悬浮展开完整控制。"}
                           </span>
                         </div>
-                        <label className="setting-choice">
-                          <input
-                            type="checkbox"
-                            name="notch-player"
-                            aria-label="刘海播放器"
-                            checked={notchPlayer?.enabled ?? false}
-                            disabled={notchPlayer?.available !== true}
-                            onChange={(event) => void toggleNotchPlayer(event.target.checked)}
-                          />
-                          显示刘海播放器
-                        </label>
+                        <button
+                          type="button"
+                          className="switch"
+                          role="switch"
+                          aria-checked={notchPlayer?.enabled ?? false}
+                          aria-label="刘海播放器"
+                          disabled={notchPlayer?.available !== true}
+                          onClick={() => void toggleNotchPlayer(!(notchPlayer?.enabled ?? false))}
+                        />
                       </div>
                     ) : null}
                   </section>

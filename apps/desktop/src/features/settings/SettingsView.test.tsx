@@ -569,7 +569,7 @@ describe("SettingsView notch player", () => {
     mocks.setInvoke("get_notch_player_state", { available: true, enabled: true });
     render(<SettingsView onClose={() => undefined} />);
 
-    const toggle = await screen.findByLabelText("刘海播放器");
+    const toggle = await screen.findByRole("switch", { name: "刘海播放器" });
     expect(toggle).toBeEnabled();
     expect(toggle).toBeChecked();
   });
@@ -578,7 +578,7 @@ describe("SettingsView notch player", () => {
     mocks.setInvoke("get_notch_player_state", { available: false, enabled: true });
     render(<SettingsView onClose={() => undefined} />);
 
-    const toggle = await screen.findByLabelText("刘海播放器");
+    const toggle = await screen.findByRole("switch", { name: "刘海播放器" });
     expect(toggle).toBeDisabled();
     // The unavailable state must not silently rewrite the user's choice.
     expect(toggle).toBeChecked();
@@ -589,7 +589,7 @@ describe("SettingsView notch player", () => {
     mocks.setInvoke("get_notch_player_state", { available: false, enabled: false });
     render(<SettingsView onClose={() => undefined} />);
 
-    const toggle = await screen.findByLabelText("刘海播放器");
+    const toggle = await screen.findByRole("switch", { name: "刘海播放器" });
     fireEvent.click(toggle);
     expect(
       (invoke as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(
@@ -603,7 +603,7 @@ describe("SettingsView notch player", () => {
     mocks.setInvoke("set_notch_player_enabled", { available: true, enabled: false });
     render(<SettingsView onClose={() => undefined} />);
 
-    const toggle = await screen.findByLabelText("刘海播放器");
+    const toggle = await screen.findByRole("switch", { name: "刘海播放器" });
     fireEvent.click(toggle);
 
     await waitFor(() => {
@@ -620,7 +620,7 @@ describe("SettingsView notch player", () => {
     delete document.documentElement.dataset.platform;
     mocks.setInvoke("get_notch_player_state", { available: true, enabled: true });
     render(<SettingsView onClose={() => undefined} />);
-    expect(screen.queryByLabelText("刘海播放器")).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "刘海播放器" })).not.toBeInTheDocument();
   });
 });
 
