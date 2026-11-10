@@ -4562,6 +4562,43 @@
       ]
     },
     {
+      "id": "LD-R01-S04",
+      "title": "收藏写入返回后立即回读已是新值",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "favorite_is_visible_to_every_read_path_the_moment_the_write_returns"
+        },
+        {
+          "kind": "rust",
+          "target": "unfavorite_is_visible_to_every_read_path_too"
+        }
+      ]
+    },
+    {
+      "id": "LD-R01-S05",
+      "title": "收藏的投影失败仍报告为已保存待投影",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "library_durability_favorite_failure_is_saved_and_later_false_catches_up"
+        }
+      ]
+    },
+    {
+      "id": "LD-R01-S06",
+      "title": "收藏写入只追平增量投影",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "a_favorite_projects_only_the_incremental_commit"
+        }
+      ]
+    },
+    {
       "id": "LD-R02-S01",
       "title": "级联删除写到一半崩溃",
       "command": "cargo test -p echo-core --all-features",
@@ -6144,6 +6181,42 @@
         {
           "kind": "rust",
           "target": "library_durability_retry_catches_up_all_saved_operations_without_new_commits"
+        }
+      ]
+    },
+    {
+      "id": "LE-R21-S06",
+      "title": "收藏写入返回后界面已是新值",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/library/libraryNavCounts.test.tsx",
+          "name": "keeps the heart, the favorites view and the count on one click"
+        }
+      ]
+    },
+    {
+      "id": "LE-R22-S01",
+      "title": "同一首歌连续两次喜欢只计一次",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/library/favoriteMutation.test.ts",
+          "name": "counts a repeated like once even when the row is still the pre-write value"
+        }
+      ]
+    },
+    {
+      "id": "LE-R22-S02",
+      "title": "取消收藏回退一次增量",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/library/favoriteMutation.test.ts",
+          "name": "counts a repeated unlike once even when the row is still the pre-write value"
         }
       ]
     },

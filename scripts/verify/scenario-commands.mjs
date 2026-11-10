@@ -30,6 +30,9 @@ export const SCENARIOS = {
 "LD-R01-S01": { command: CORE_ALL, evidence: [rust("library_durability_refused_commit_leaves_every_wired_entrypoint_untouched")], },
 "LD-R01-S02": { command: CORE_ALL, evidence: [rust("library_durability_retry_projection_failure_keeps_original_identity")], },
 "LD-R01-S03": { command: CORE_ALL, evidence: [rust("library_durability_later_edit_catches_up_failed_earlier_playlist")], },
+"LD-R01-S04": { command: DESK_ALL, evidence: [rust("favorite_is_visible_to_every_read_path_the_moment_the_write_returns"), rust("unfavorite_is_visible_to_every_read_path_too")], },
+"LD-R01-S05": { command: CORE_ALL, evidence: [rust("library_durability_favorite_failure_is_saved_and_later_false_catches_up")], },
+"LD-R01-S06": { command: DESK_ALL, evidence: [rust("a_favorite_projects_only_the_incremental_commit")], },
 "LD-R02-S01": { command: CORE_ALL, evidence: [rust("library_durability_playlist_delete_saves_cascade_before_projection")], },
 "LD-R02-S02": { command: CORE_ALL, evidence: [rust("library_durability_every_native_commit_boundary_recovers_same_operation")], },
 "LD-R02-S03": { command: CORE_ALL, evidence: [rust("library_durability_prepared_only_is_not_accepted_as_saved_recovery")], },
@@ -439,6 +442,9 @@ export const SCENARIOS = {
 "LE-R21-S03": { command: CORE_ALL, evidence: [rust("library_durability_refused_commit_leaves_every_wired_entrypoint_untouched")], },
 "LE-R21-S04": { command: VITEST_ALL, evidence: [vitest("src/features/library/savedPendingFeedback.test.tsx", "reports each batch item's own outcome and retries only the saved ones")], },
 "LE-R21-S05": { command: CORE_ALL, evidence: [rust("library_durability_retry_catches_up_all_saved_operations_without_new_commits")], },
+"LE-R21-S06": { command: VITEST_ALL, evidence: [vitest("src/features/library/libraryNavCounts.test.tsx", "keeps the heart, the favorites view and the count on one click")], },
+"LE-R22-S01": { command: VITEST_ALL, evidence: [vitest("src/features/library/favoriteMutation.test.ts", "counts a repeated like once even when the row is still the pre-write value")], },
+"LE-R22-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/favoriteMutation.test.ts", "counts a repeated unlike once even when the row is still the pre-write value")], },
 
   // playlist-management
 "PM-R01-S01": { command: CORE_ALL, evidence: [rust("playlist")], },

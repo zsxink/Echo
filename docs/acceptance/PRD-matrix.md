@@ -9,15 +9,15 @@
 | **A3** | 外部改名/移动 | 44 | `cargo test -p echo-core --all-features relink` |
 | **A4** | 多文件安全导入 | 44 | `cargo test -p echo-core --all-features recover::` |
 | **A5** | 资料库失联/恢复 | 44 | `node scripts/verify/checks/task-5.8.mjs 2>/dev/null \|\| cargo test -p echo-core --all-features trash::` |
-| **A6** | 搜索/排序/收藏 | 154 | `node scripts/verify/checks/task-10.5.mjs` |
+| **A6** | 搜索/排序/收藏 | 157 | `node scripts/verify/checks/task-10.5.mjs` |
 | **A7** | 歌单 CRUD | 54 | `node scripts/verify/checks/task-10.9.mjs` |
 | **A8** | 播放与队列 | 88 | `node scripts/verify/checks/task-11.2.mjs && cargo test -p echo-desktop --lib runtime::player && cargo test -p echo-desktop --lib player::actor::tests::subscribe_snapshots` |
 | **A9** | 歌词与沉浸模式 | 32 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
 | **A10** | 系统双击文件 | 44 | `cargo test -p echo-core --all-features watch:: && node scripts/verify/checks/task-9.2.mjs` |
 | **A11** | 删除与撤销 | 44 | `cargo test -p echo-core --all-features recover::` |
 | **A12** | 关窗与托盘 | 131 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
-| **A13** | 无障碍与窄屏 | 273 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
-| **A14** | 范围保护 | 241 | `node scripts/verify/checks/task-13.8.mjs` |
+| **A13** | 无障碍与窄屏 | 276 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
+| **A14** | 范围保护 | 244 | `node scripts/verify/checks/task-13.8.mjs` |
 
 ## 逐场景归属
 
@@ -668,6 +668,9 @@
 | A13 | `LE-R21-S03` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A13 | `LE-R21-S04` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A13 | `LE-R21-S05` | 收藏与批量操作以音乐库持久结果为反馈 |
+| A13 | `LE-R21-S06` | 收藏与批量操作以音乐库持久结果为反馈 |
+| A13 | `LE-R22-S01` | 收藏计数不得因重复操作重复累加 |
+| A13 | `LE-R22-S02` | 收藏计数不得因重复操作重复累加 |
 | A13 | `DAS-R24-S01` | 封面缩略图必须解码已声明的图片格式 |
 | A13 | `DAS-R24-S02` | 封面缩略图必须解码已声明的图片格式 |
 | A13 | `DAS-R25-S01` | 封面选图预览必须使用受控尺寸的缩略图 |
@@ -909,6 +912,9 @@
 | A14 | `LE-R21-S03` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A14 | `LE-R21-S04` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A14 | `LE-R21-S05` | 收藏与批量操作以音乐库持久结果为反馈 |
+| A14 | `LE-R21-S06` | 收藏与批量操作以音乐库持久结果为反馈 |
+| A14 | `LE-R22-S01` | 收藏计数不得因重复操作重复累加 |
+| A14 | `LE-R22-S02` | 收藏计数不得因重复操作重复累加 |
 | A14 | `DAS-R24-S01` | 封面缩略图必须解码已声明的图片格式 |
 | A14 | `DAS-R24-S02` | 封面缩略图必须解码已声明的图片格式 |
 | A14 | `DAS-R25-S01` | 封面选图预览必须使用受控尺寸的缩略图 |
@@ -1217,6 +1223,9 @@
 | A6 | `LE-R21-S03` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A6 | `LE-R21-S04` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A6 | `LE-R21-S05` | 收藏与批量操作以音乐库持久结果为反馈 |
+| A6 | `LE-R21-S06` | 收藏与批量操作以音乐库持久结果为反馈 |
+| A6 | `LE-R22-S01` | 收藏计数不得因重复操作重复累加 |
+| A6 | `LE-R22-S02` | 收藏计数不得因重复操作重复累加 |
 | A6 | `LL-R01-S01` | 单一资料库根目录与本地持久化 |
 | A6 | `LL-R01-S02` | 单一资料库根目录与本地持久化 |
 | A6 | `LL-R01-S03` | 单一资料库根目录与本地持久化 |
