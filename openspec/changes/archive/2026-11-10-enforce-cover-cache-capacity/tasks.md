@@ -30,5 +30,5 @@
 
 - [x] 5.1 确认 1–4 全部勾选、`openspec status --change enforce-cover-cache-capacity` 显示任务完成、delta 已 early-sync。验证：`openspec validate enforce-cover-cache-capacity --strict` 退出 0。
 - [x] 5.2 运行 `openspec archive enforce-cover-cache-capacity --yes`，确认归档目录出现且主规格保留 `cover-cache-capacity` 的 4 个 Requirement。验证：`openspec list --changes` 输出符合预期、`rg -c '^### Requirement:' openspec/specs/cover-cache-capacity/spec.md` 输出 `4`；归档后复跑 `node scripts/verify/spec-scenarios.mjs --check`、`node scripts/verify/reconcile-scenarios.mjs` 与 `pnpm verify:governance`（独占）均退出 0。
-- [ ] 5.3 在独立分支上以中文提交并推送（例如 `fix(cover): 封面缓存超限时回收可重建缩略图 (#126)`）。验证：`git status --short` 干净、`git branch --show-current` 为 `fix/issue-126-cover-cache-capacity`、`git log -1 --oneline` 符合预期，且未直接向 `main` 推送。
-- [ ] 5.4 用中文 PR 关联 #126：`gh pr create --base main --head fix/issue-126-cover-cache-capacity --title ... --body-file ...`，正文包含变更摘要、复现测试的红/绿证据、验证命令与结果、兼容性说明、`Closes #126`。验证：`gh pr view --json url,title,body,state` 返回正确内容，PR 未合并到 `main`（由维护者审阅合并）。
+- [x] 5.3 在独立分支上以中文提交并推送（例如 `fix(cover): 封面缓存超限时回收可重建缩略图 (#126)`）。验证：`git status --short` 干净、`git branch --show-current` 为 `fix/issue-126-cover-cache-capacity`、`git log -1 --oneline` 符合预期，且未直接向 `main` 推送。
+- [x] 5.4 用中文 PR 关联 #126：`gh pr create --base main --head fix/issue-126-cover-cache-capacity --title ... --body-file ...`，正文包含变更摘要、复现测试的红/绿证据、验证命令与结果、兼容性说明、`Closes #126`。验证：`gh pr view --json url,title,body,state` 返回正确内容，PR 未合并到 `main`（由维护者审阅合并）。
