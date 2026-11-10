@@ -53,6 +53,7 @@ mod app_menu;
 mod commands;
 mod commands_audio_effects;
 mod commands_file_open;
+mod commands_notch;
 mod cover_payload;
 mod cover_preview;
 mod cover_protocol;
@@ -63,6 +64,7 @@ mod macos_now_playing;
 mod macos_status_row;
 #[cfg(any(target_os = "macos", test))]
 mod macos_window_lifecycle;
+mod notch;
 mod open_targets;
 mod player_sync;
 mod restore_retry;
@@ -487,6 +489,14 @@ fn wire_composition(
         platform_default,
     ));
     app.manage(local_state.clone());
+
+    // macOS notch player (openspec `macos-notch-player`): the companion window's
+    // runtime state. The preference comes from the local store; availability is a
+    // runtime hardware fact, so it starts false and is filled in during setup.
+    let show_notch_player = local_state
+        .show_notch_player()
+        .unwrap_or(echo_desktop::platform::local_state::DEFAULT_SHOW_NOTCH_PLAYER);
+    app.manage(notch::NotchPlayer::new(show_notch_player));
 
     // Playback: spawn the real libmpv actor and keep the coordinator handle
     // the command layer drives.  Do not substitute FakePlayer here: it makes

@@ -1916,6 +1916,28 @@
       ]
     },
     {
+      "id": "DAS-R04-S04",
+      "title": "刘海播放器偏好按平台与硬件呈现",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/settings/SettingsView.test.tsx"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R04-S05",
+      "title": "刘海偏好与不可用状态互不覆盖",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/settings/SettingsView.test.tsx"
+        }
+      ]
+    },
+    {
       "id": "DAS-R05-S01",
       "title": "选择退出应用",
       "command": "node scripts/verify/checks/task-9.6.mjs",
@@ -2033,6 +2055,17 @@
         {
           "kind": "attestation",
           "target": "DAS-R07-S05"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R07-S06",
+      "title": "伴随窗口不构成第二个实例",
+      "command": "cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "notch_window_never_constructs_a_second_playback_session"
         }
       ]
     },

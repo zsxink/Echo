@@ -64,6 +64,7 @@ export type { SavedPendingOptions } from "./savedPendingNotice";
 export {
   invalidateLibrary,
   resetLibraryInvalidations,
+  startLibraryEvents,
   subscribeLibraryInvalidations,
 } from "./libraryInvalidation";
 export type { LibraryViewKind, SongSort } from "./types";

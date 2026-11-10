@@ -45,6 +45,11 @@ use serde::{Deserialize, Serialize};
 
 mod effects;
 
+/// The notch player defaults to on: on a notched Mac it is the intended
+/// out-of-the-box experience, and on a Mac without a notch the preference is
+/// inert because the window is never created.
+pub const DEFAULT_SHOW_NOTCH_PLAYER: bool = true;
+
 /// The three themes (spec `desktop-app-shell`: 珊瑚玫红默认 / 深钴蓝 / 松石绿).
 /// A theme only changes accent and primary action colors; it never changes the
 /// pure-white music workspace surface (the interface terminology is
@@ -226,6 +231,12 @@ struct RawDoc {
     theme: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     close_behavior: Option<String>,
+    /// Whether the macOS notch player window should exist. Stored as an
+    /// optional bool so a wrong-typed value degrades this field alone; the
+    /// window's *availability* (does this Mac have a notch?) is a runtime fact
+    /// and is deliberately not persisted — see `ResolvedState`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    show_notch_player: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     window: Option<WindowState>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -246,6 +257,11 @@ struct RawDoc {
 pub struct ResolvedState {
     pub theme: DesktopTheme,
     pub close_behavior: CloseBehavior,
+    /// The user's notch-player preference. Defaults to `true`; whether the
+    /// window can actually exist is decided at runtime by notch detection, so
+    /// this value is never rewritten just because the current Mac lacks a
+    /// notch (a closed lid must not erase the user's choice).
+    pub show_notch_player: bool,
     pub window: Option<WindowState>,
     pub had_corruption: bool,
 }
@@ -257,6 +273,7 @@ impl ResolvedState {
         Self {
             theme: DesktopTheme::default_theme(),
             close_behavior: platform.behavior(),
+            show_notch_player: DEFAULT_SHOW_NOTCH_PLAYER,
             window: None,
             had_corruption: false,
         }
@@ -333,6 +350,15 @@ impl DesktopStateStore {
         self.mutate(|raw| raw.close_behavior = Some(String::from(behavior)))
     }
 
+    /// Durable, atomic mutation of the **notch player preference**.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::set_theme`].
+    pub fn set_show_notch_player(&self, show: bool) -> Result<(), StateError> {
+        self.mutate(|raw| raw.show_notch_player = Some(show))
+    }
+
     /// Durable, atomic mutation of the **window state**. `None` clears any
     /// saved geometry (e.g. after the user resets it or the display changed).
     ///
@@ -374,6 +400,15 @@ impl DesktopStateStore {
     /// As [`Self::load`].
     pub fn close_behavior(&self) -> Result<CloseBehavior, StateError> {
         Ok(self.load()?.close_behavior)
+    }
+
+    /// The currently-valid notch player preference, defaulting to on.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::load`].
+    pub fn show_notch_player(&self) -> Result<bool, StateError> {
+        Ok(self.load()?.show_notch_player)
     }
 
     /// The currently-valid window state, if any.
@@ -491,6 +526,7 @@ fn parse_doc(bytes: &[u8]) -> ParsedDoc {
 struct ParsedDoc {
     theme: Option<DesktopTheme>,
     close_behavior: Option<CloseBehavior>,
+    show_notch_player: Option<bool>,
     window: Option<WindowState>,
     playback_session: Option<PlaybackSessionValue>,
     corruption: bool,
@@ -518,6 +554,7 @@ impl ParsedDoc {
                 "version",
                 "theme",
                 "closeBehavior",
+                "showNotchPlayer",
                 "window",
                 "playbackSession",
                 "effects",
@@ -550,6 +587,12 @@ impl ParsedDoc {
             None => {}
         }
 
+        match value.get("showNotchPlayer") {
+            Some(serde_json::Value::Bool(b)) => doc.show_notch_player = Some(*b),
+            Some(_) => doc.corruption = true, // wrong type -> default (on)
+            None => {}
+        }
+
         if let Some(w) = value.get("window") {
             match serde_json::from_value::<WindowState>(w.clone()) {
                 Ok(ws) if ws.is_usable() => doc.window = Some(ws),
@@ -571,6 +614,7 @@ impl ParsedDoc {
         ResolvedState {
             theme: self.theme.unwrap_or_else(DesktopTheme::default_theme),
             close_behavior: self.close_behavior.unwrap_or_else(|| platform.behavior()),
+            show_notch_player: self.show_notch_player.unwrap_or(DEFAULT_SHOW_NOTCH_PLAYER),
             window: self.window,
             had_corruption: self.corruption,
         }
@@ -583,6 +627,7 @@ impl ParsedDoc {
         RawDoc {
             theme: self.theme.map(String::from),
             close_behavior: self.close_behavior.map(String::from),
+            show_notch_player: self.show_notch_player,
             window: self.window,
             playback_session: self.playback_session,
             effects: self.effects,

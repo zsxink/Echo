@@ -4,7 +4,7 @@
 
 | 编号 | 验收路径 | 证明场景数 | macOS 可运行命令 |
 |---|---|---|---|
-| **A1** | 空库首次启动 | 172 | `cargo test -p echo-desktop --lib runtime::startup_supervisor && cargo test -p echo-core --all-features root_switch::` |
+| **A1** | 空库首次启动 | 175 | `cargo test -p echo-desktop --lib runtime::startup_supervisor && cargo test -p echo-core --all-features root_switch::` |
 | **A2** | 10,000 首混合曲库扫描 | 44 | `node scripts/verify/checks/task-12.5.mjs && cargo test -p echo-core --all-features scan::` |
 | **A3** | 外部改名/移动 | 44 | `cargo test -p echo-core --all-features relink` |
 | **A4** | 多文件安全导入 | 44 | `cargo test -p echo-core --all-features recover::` |
@@ -15,9 +15,9 @@
 | **A9** | 歌词与沉浸模式 | 32 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
 | **A10** | 系统双击文件 | 44 | `cargo test -p echo-core --all-features watch:: && node scripts/verify/checks/task-9.2.mjs` |
 | **A11** | 删除与撤销 | 44 | `cargo test -p echo-core --all-features recover::` |
-| **A12** | 关窗与托盘 | 128 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
-| **A13** | 无障碍与窄屏 | 270 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
-| **A14** | 范围保护 | 238 | `node scripts/verify/checks/task-13.8.mjs` |
+| **A12** | 关窗与托盘 | 131 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
+| **A13** | 无障碍与窄屏 | 273 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
+| **A14** | 范围保护 | 241 | `node scripts/verify/checks/task-13.8.mjs` |
 
 ## 逐场景归属
 
@@ -48,6 +48,8 @@
 | A1 | `DAS-R04-S01` | 主题与本机偏好必须持久化且可回退 |
 | A1 | `DAS-R04-S02` | 主题与本机偏好必须持久化且可回退 |
 | A1 | `DAS-R04-S03` | 主题与本机偏好必须持久化且可回退 |
+| A1 | `DAS-R04-S04` | 主题与本机偏好必须持久化且可回退 |
+| A1 | `DAS-R04-S05` | 主题与本机偏好必须持久化且可回退 |
 | A1 | `DAS-R05-S01` | 主窗口关闭行为必须符合用户选择并保留播放状态 |
 | A1 | `DAS-R05-S02` | 主窗口关闭行为必须符合用户选择并保留播放状态 |
 | A1 | `DAS-R05-S03` | 主窗口关闭行为必须符合用户选择并保留播放状态 |
@@ -59,6 +61,7 @@
 | A1 | `DAS-R07-S03` | 应用必须保证单实例与文件打开唤醒 |
 | A1 | `DAS-R07-S04` | 应用必须保证单实例与文件打开唤醒 |
 | A1 | `DAS-R07-S05` | 应用必须保证单实例与文件打开唤醒 |
+| A1 | `DAS-R07-S06` | 应用必须保证单实例与文件打开唤醒 |
 | A1 | `DAS-R08-S01` | 窄屏布局与浮层关闭必须可预测 |
 | A1 | `DAS-R08-S02` | 窄屏布局与浮层关闭必须可预测 |
 | A1 | `DAS-R08-S03` | 窄屏布局与浮层关闭必须可预测 |
@@ -308,6 +311,8 @@
 | A12 | `DAS-R04-S01` | 主题与本机偏好必须持久化且可回退 |
 | A12 | `DAS-R04-S02` | 主题与本机偏好必须持久化且可回退 |
 | A12 | `DAS-R04-S03` | 主题与本机偏好必须持久化且可回退 |
+| A12 | `DAS-R04-S04` | 主题与本机偏好必须持久化且可回退 |
+| A12 | `DAS-R04-S05` | 主题与本机偏好必须持久化且可回退 |
 | A12 | `DAS-R05-S01` | 主窗口关闭行为必须符合用户选择并保留播放状态 |
 | A12 | `DAS-R05-S02` | 主窗口关闭行为必须符合用户选择并保留播放状态 |
 | A12 | `DAS-R05-S03` | 主窗口关闭行为必须符合用户选择并保留播放状态 |
@@ -319,6 +324,7 @@
 | A12 | `DAS-R07-S03` | 应用必须保证单实例与文件打开唤醒 |
 | A12 | `DAS-R07-S04` | 应用必须保证单实例与文件打开唤醒 |
 | A12 | `DAS-R07-S05` | 应用必须保证单实例与文件打开唤醒 |
+| A12 | `DAS-R07-S06` | 应用必须保证单实例与文件打开唤醒 |
 | A12 | `DAS-R08-S01` | 窄屏布局与浮层关闭必须可预测 |
 | A12 | `DAS-R08-S02` | 窄屏布局与浮层关闭必须可预测 |
 | A12 | `DAS-R08-S03` | 窄屏布局与浮层关闭必须可预测 |
@@ -436,6 +442,8 @@
 | A13 | `DAS-R04-S01` | 主题与本机偏好必须持久化且可回退 |
 | A13 | `DAS-R04-S02` | 主题与本机偏好必须持久化且可回退 |
 | A13 | `DAS-R04-S03` | 主题与本机偏好必须持久化且可回退 |
+| A13 | `DAS-R04-S04` | 主题与本机偏好必须持久化且可回退 |
+| A13 | `DAS-R04-S05` | 主题与本机偏好必须持久化且可回退 |
 | A13 | `DAS-R05-S01` | 主窗口关闭行为必须符合用户选择并保留播放状态 |
 | A13 | `DAS-R05-S02` | 主窗口关闭行为必须符合用户选择并保留播放状态 |
 | A13 | `DAS-R05-S03` | 主窗口关闭行为必须符合用户选择并保留播放状态 |
@@ -447,6 +455,7 @@
 | A13 | `DAS-R07-S03` | 应用必须保证单实例与文件打开唤醒 |
 | A13 | `DAS-R07-S04` | 应用必须保证单实例与文件打开唤醒 |
 | A13 | `DAS-R07-S05` | 应用必须保证单实例与文件打开唤醒 |
+| A13 | `DAS-R07-S06` | 应用必须保证单实例与文件打开唤醒 |
 | A13 | `DAS-R08-S01` | 窄屏布局与浮层关闭必须可预测 |
 | A13 | `DAS-R08-S02` | 窄屏布局与浮层关闭必须可预测 |
 | A13 | `DAS-R08-S03` | 窄屏布局与浮层关闭必须可预测 |
@@ -706,6 +715,8 @@
 | A14 | `DAS-R04-S01` | 主题与本机偏好必须持久化且可回退 |
 | A14 | `DAS-R04-S02` | 主题与本机偏好必须持久化且可回退 |
 | A14 | `DAS-R04-S03` | 主题与本机偏好必须持久化且可回退 |
+| A14 | `DAS-R04-S04` | 主题与本机偏好必须持久化且可回退 |
+| A14 | `DAS-R04-S05` | 主题与本机偏好必须持久化且可回退 |
 | A14 | `DAS-R05-S01` | 主窗口关闭行为必须符合用户选择并保留播放状态 |
 | A14 | `DAS-R05-S02` | 主窗口关闭行为必须符合用户选择并保留播放状态 |
 | A14 | `DAS-R05-S03` | 主窗口关闭行为必须符合用户选择并保留播放状态 |
@@ -717,6 +728,7 @@
 | A14 | `DAS-R07-S03` | 应用必须保证单实例与文件打开唤醒 |
 | A14 | `DAS-R07-S04` | 应用必须保证单实例与文件打开唤醒 |
 | A14 | `DAS-R07-S05` | 应用必须保证单实例与文件打开唤醒 |
+| A14 | `DAS-R07-S06` | 应用必须保证单实例与文件打开唤醒 |
 | A14 | `DAS-R08-S01` | 窄屏布局与浮层关闭必须可预测 |
 | A14 | `DAS-R08-S02` | 窄屏布局与浮层关闭必须可预测 |
 | A14 | `DAS-R08-S03` | 窄屏布局与浮层关闭必须可预测 |

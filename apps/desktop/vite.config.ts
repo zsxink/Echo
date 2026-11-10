@@ -17,6 +17,10 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, "index.html"),
+        // The macOS notch player window (openspec `macos-notch-player`):
+        // a separate, tiny entry so the companion window never loads the
+        // library shell.
+        notch: resolve(__dirname, "notch.html"),
         e2e: resolve(__dirname, "e2e", "index.html"),
         perf: resolve(__dirname, "e2e", "perf.html"),
       },

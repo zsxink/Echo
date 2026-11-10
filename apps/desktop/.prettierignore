@@ -20,6 +20,8 @@ src/styles/shell.css
 src/styles/library.css
 src/styles/player.css
 src/styles/responsive.css
+# Extracted the same way from docs/prototype/echo-macos-notch-player.html.
+src/styles/notch.css
 
 # Vendored third-party libmpv supply-chain assets (task 9.8 platform Gate).
 # manifest.json carries its own fixed 1-space-indent format that the Gate

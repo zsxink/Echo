@@ -32,7 +32,10 @@ serde_json = { workspace = true }
 uuid = { workspace = true }
 rcgen = { version = "=0.13.2", default-features = false, features = ["ring", "zeroize"] }
 tracing = { workspace = true }
-tauri = { version = "2.11.5", features = ["tray-icon"] }
+# `macos-private-api` is required for a transparent window on macOS, which the
+# notch player needs so its NSVisualEffectView (real backdrop blur) shows
+# through the web view. See openspec/changes/add-macos-notch-player/design.md.
+tauri = { version = "2.11.5", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-dialog = "2.4.0"
 tauri-plugin-opener = "2.5.0"
 tauri-plugin-single-instance = "2.4.3"
@@ -41,7 +44,7 @@ tauri-plugin-single-instance = "2.4.3"
 # The status-item panel is an AppKit boundary. Keeping the bindings target
 # scoped prevents Cocoa from leaking into the portable desktop/Core layers.
 objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSAccessibilityProtocols", "NSButton", "NSColor", "NSControl", "NSEvent", "NSImage", "NSMenu", "NSMenuItem", "NSResponder", "NSStatusBar", "NSStatusBarButton", "NSStatusItem", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSAccessibilityProtocols", "NSButton", "NSColor", "NSControl", "NSEvent", "NSImage", "NSMenu", "NSMenuItem", "NSResponder", "NSScreen", "NSStatusBar", "NSStatusBarButton", "NSStatusItem", "NSView", "NSWindow"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSData", "NSDictionary", "NSValue", "NSObject", "NSString", "NSNotification"] }
 block2 = "0.6.1"
 

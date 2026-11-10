@@ -39,7 +39,7 @@ use echo_desktop::player::queue::{QueueEntry, QueueItem, ViewContext};
 use echo_desktop::player::session::{snapshot_queue, SessionPersistence};
 use echo_desktop::runtime::player::CorePlaybackRecorder;
 use echo_desktop::runtime::services::AppServices;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::cover_payload::decode_cover_bytes;
 
@@ -342,14 +342,40 @@ pub fn song_cover_keys(
 
 #[tauri::command]
 pub fn set_favorite(
+    app: tauri::AppHandle,
     services: State<'_, AppServices>,
     song_id: String,
     favorite: bool,
 ) -> Result<SongView, IpcErrorDto> {
     let song = parse_id::<SongId>(&song_id, "songId")?;
-    services
+    let view = services
         .set_favorite(song, favorite)
-        .map_err(|error| IpcErrorDto::from_mutation(&error))
+        .map_err(|error| IpcErrorDto::from_mutation(&error))?;
+    // 收藏可以在任何窗口发起（常驻播放栏、刘海播放器、未来的其它视图）。各窗口
+    // 的 React 状态互不可见，所以由壳广播一次「资料库变了」，让每个窗口各自重读
+    // 权威数据——否则在刘海播放器点了喜欢，主窗口的心形和「喜欢的音乐」不会刷新。
+    let _ = app.emit(
+        LIBRARY_INVALIDATED_EVENT,
+        LibraryInvalidated {
+            reason: "favorite",
+            song: Some(view.clone()),
+        },
+    );
+    Ok(view)
+}
+
+/// Broadcast after a catalog mutation that any window may have initiated.
+///
+/// The payload carries the committed view so other windows can adopt it
+/// immediately instead of waiting for their own re-read — a heart that lags a
+/// round trip behind the click reads as a slow control.
+pub const LIBRARY_INVALIDATED_EVENT: &str = "library://invalidated";
+
+#[derive(Clone, serde::Serialize)]
+pub struct LibraryInvalidated {
+    pub reason: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub song: Option<SongView>,
 }
 
 #[tauri::command]

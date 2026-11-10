@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SettingsView } from "./SettingsView";
 
@@ -554,6 +554,75 @@ function renderSyncSettings() {
   render(<SettingsView onClose={() => undefined} />);
   fireEvent.click(screen.getByRole("tab", { name: "同步" }));
 }
+
+describe("SettingsView notch player", () => {
+  // `detectPlatform()` honours a preset on <html>, which is how the browser e2e
+  // harness forces a platform; using it here keeps the test off user agents.
+  beforeEach(() => {
+    document.documentElement.dataset.platform = "macos";
+  });
+  afterEach(() => {
+    delete document.documentElement.dataset.platform;
+  });
+
+  it("shows an enabled, on-by-default switch when the Mac has a notch", async () => {
+    mocks.setInvoke("get_notch_player_state", { available: true, enabled: true });
+    render(<SettingsView onClose={() => undefined} />);
+
+    const toggle = await screen.findByRole("switch", { name: "刘海播放器" });
+    expect(toggle).toBeEnabled();
+    expect(toggle).toBeChecked();
+  });
+
+  it("greys the switch out on a Mac without a notch and keeps the stored value", async () => {
+    mocks.setInvoke("get_notch_player_state", { available: false, enabled: true });
+    render(<SettingsView onClose={() => undefined} />);
+
+    const toggle = await screen.findByRole("switch", { name: "刘海播放器" });
+    expect(toggle).toBeDisabled();
+    // The unavailable state must not silently rewrite the user's choice.
+    expect(toggle).toBeChecked();
+    expect(screen.getByText("此 Mac 没有刘海屏，无法使用该入口。")).toBeInTheDocument();
+  });
+
+  it("cannot be toggled while unavailable", async () => {
+    mocks.setInvoke("get_notch_player_state", { available: false, enabled: false });
+    render(<SettingsView onClose={() => undefined} />);
+
+    const toggle = await screen.findByRole("switch", { name: "刘海播放器" });
+    fireEvent.click(toggle);
+    expect(
+      (invoke as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(
+        ([command]) => command === "set_notch_player_enabled",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("persists the preference and adopts the answered state", async () => {
+    mocks.setInvoke("get_notch_player_state", { available: true, enabled: true });
+    mocks.setInvoke("set_notch_player_enabled", { available: true, enabled: false });
+    render(<SettingsView onClose={() => undefined} />);
+
+    const toggle = await screen.findByRole("switch", { name: "刘海播放器" });
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(
+        (invoke as unknown as { mock: { calls: unknown[][] } }).mock.calls.find(
+          ([command]) => command === "set_notch_player_enabled",
+        ),
+      ).toEqual(["set_notch_player_enabled", { enabled: false }]);
+    });
+    expect(toggle).not.toBeChecked();
+  });
+
+  it("is not rendered outside macOS", () => {
+    delete document.documentElement.dataset.platform;
+    mocks.setInvoke("get_notch_player_state", { available: true, enabled: true });
+    render(<SettingsView onClose={() => undefined} />);
+    expect(screen.queryByRole("switch", { name: "刘海播放器" })).not.toBeInTheDocument();
+  });
+});
 
 describe("SettingsView shortcuts", () => {
   function renderShortcuts() {

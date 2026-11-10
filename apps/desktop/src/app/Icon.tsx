@@ -193,6 +193,7 @@ const GLYPHS: Record<string, Glyph> = {
       </>
     ),
   },
+  chevronUp: { strokeWidth: 2, nodes: <path d="m6 15 6-6 6 6" /> },
   chevronDown: { strokeWidth: 2, nodes: <path d="m6 9 6 6 6-6" /> },
   chevronLeft: { strokeWidth: 2, nodes: <path d="m14 6-6 6 6 6" /> },
   chevronRight: { strokeWidth: 2, nodes: <path d="m10 6 6 6-6 6" /> },

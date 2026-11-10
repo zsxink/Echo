@@ -1,0 +1,301 @@
+/* macOS notch player window
+ *
+ * Verbatim from docs/prototype/echo-macos-notch-player.html (the visual source
+ * of truth) — only the block between its @notch-product markers. Do not
+ * hand-edit declarations here: change the prototype and re-run
+ * `node scripts/extract-prototype-css.mjs` so the app cannot drift from it.
+ *
+ * Application tokens (--bg / --accent / --focus-ring …) come from tokens.css;
+ * this file only adds the window's own --notch-* variables and rules.
+ */
+
+/* 刘海播放器自身的设计变量：纯黑表面，与硬件刘海连成一体；文字用白色层级
+   而非主题色，强调色只留给进度填充与播放键两个位置。播放模式任何状态都不
+   上色，只靠图标区分。 */
+/* 伴随窗口是透明窗口：body 与根容器必须透明，窗口背后的
+   NSVisualEffectView（真实背景模糊）才能透出来。只覆盖 body / #root 而不碰
+   html，是为了让演示页仍能用 html 的底色（tokens.css 也只给 body 上底色）。 */
+body,
+#root {
+  background: transparent;
+}
+
+:root {
+  /* 展开/收起时长与曲线属于这个窗口自己的动效，必须随生成物一起下发：
+     应用侧的 tokens.css 里没有这两个值，缺了它们 var() 会回退成 0s。 */
+  --motion-silk: 520ms;
+  --ease-silk: cubic-bezier(0.65, 0, 0.35, 1);
+  /* 玻璃底色只在这里定义一次：主体与外翻角共用同一份，否则外翻角会和主体
+     有色差（两处各写一遍就是色差的来源）。 */
+  --notch-glass: linear-gradient(180deg, rgba(22, 25, 34, 0.78) 0%, rgba(9, 11, 16, 0.84) 100%);
+  --notch-glass-height: 196px;
+  /* 顶部高光只有竖向变化：径向柔光在主体上有、外翻角上无法复现（它按元素宽度
+     取百分比），两者相接就会露出直线色差。只保留竖向渐变，外翻角取同一条的前
+     26px 即可完全一致。 */
+  --notch-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.05) 18%, rgba(255, 255, 255, 0) 42%);
+  --notch-bg: #0b0d12;
+  --notch-bezel: #000000;
+  --notch-fg: rgba(255, 255, 255, 0.94);
+  --notch-fg-2: rgba(255, 255, 255, 0.62);
+  --notch-line: rgba(255, 255, 255, 0.14);
+  --notch-track: rgba(255, 255, 255, 0.22);
+  --notch-hover: rgba(255, 255, 255, 0.10);
+  --notch-danger: color-mix(in oklab, var(--danger), white 24%);
+}
+
+.notch-player {
+  --notch-fillet: 26px;
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  /* 收缩态 = 真刘海宽度 + 左右各一只放小封面 / 小音符的窄耳（26px）。
+     刘海宽度由运行时注入（--notch-hw-width）：真机 185 pt，不同机型不同，
+     写死会让封面压到刘海下面。原型没有注入时按 186 兜底。 */
+  width: calc(var(--notch-hw-width, 186px) + 52px); height: 32px; z-index: 5;
+  transition: width var(--motion-silk) var(--ease-silk), height var(--motion-silk) var(--ease-silk);
+}
+.notch-player[data-expanded="true"] { width: 360px; height: 196px; }
+/* 收起比展开略快，回弹感不至于让用户等 */
+.notch-player:not([data-expanded="true"]) {
+  transition-duration: 420ms, 420ms;
+}
+.notch-surface {
+  position: absolute; inset: 0; overflow: hidden;
+  background: rgba(11, 13, 18, 1);
+  border-radius: 0 0 9px 9px;
+  /* 收缩态：与硬件刘海连成一体，靠 1px 内侧高光交代材质 */
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.07), 0 16px 34px rgba(0, 0, 0, 0.42);
+  transition:
+    background-color var(--motion-silk) var(--ease-standard),
+    border-radius var(--motion-silk) var(--ease-silk),
+    box-shadow var(--motion-silk) var(--ease-standard);
+}
+/* 展开态 = 液态玻璃：半透明黑底 + 上亮下暗的薄层 + 顶部柔光。
+   透明度取 .86：既要透出背后的模糊，又要在浅色桌面上仍然是「黑色面板」而
+   不是发灰的毛玻璃。顶部两角**不内收**，由外侧的外翻角（下方 ::before/::after）
+   接到屏幕顶边，读作面板从屏幕边缘「长出来」。 */
+.notch-player[data-expanded="true"] .notch-surface {
+  /* 只有主体：上亮下暗的半透明薄层 + 顶部柔光。没有内描边、没有外投影、没有
+     额外的背景层——任何「边」都会读成面板外面还套了一个框。也不用
+     backdrop-filter：它对 26px 的外翻角和 360px 的主体采样范围不同，边缘钳制
+     会让两者必然有色差；应用侧的透明窗口本来也没有可糊的桌面。 */
+  /* 收缩态的不透明底色必须清掉：只换 background-image 会让面板仍是实心的，
+     与外翻角（透明底 + 同一渐变）差出一档亮度——直线色差就是这么来的。 */
+  background-color: transparent;
+  background-image: var(--notch-glass);
+  border-radius: 0 0 24px 24px;
+  box-shadow: none;
+}
+/* 外翻圆角（liquid glass 的「液体挂边」）：面板左右两侧各多出一块 26×26 的
+   方形，用 radial-gradient mask 挖掉靠内下角的一个圆，剩下靠外的部分就是从
+   顶边向外拱出的凹圆角。
+   注意两点，否则接缝会露出来：
+   1. 面板展开态不画 1px 内描边（描边会在接缝处留下一道竖线）；
+   2. 这里必须叠上同一条顶部高光渐变（取面板 sheen 的前 26 px），否则外翻角
+      会比面板暗一档。backdrop-filter 采样的是元素后面的背景而不是面板，
+      所以两块玻璃的模糊结果天然连续。 */
+.notch-player::before,
+.notch-player::after {
+  content: ""; position: absolute; top: 0; z-index: 2;
+  width: var(--notch-fillet); height: var(--notch-fillet);
+  /* 底色取主体渐变的前 26px（`background-size` 设成主体高度），再叠一层与
+     主体顶部同强度的白色柔光。这样外翻角和主体是同一块玻璃，不是两块。 */
+  background-color: transparent;
+  background-image: var(--notch-sheen), var(--notch-glass);
+  background-size: 100% var(--notch-glass-height), 100% var(--notch-glass-height);
+  background-repeat: no-repeat;
+  opacity: 0; pointer-events: none;
+  transition: opacity 200ms var(--ease-standard);
+}
+.notch-player::before {
+  left: calc(var(--notch-fillet) * -1);
+  -webkit-mask: radial-gradient(circle at 0 100%, transparent calc(var(--notch-fillet) - 0.5px), #000 var(--notch-fillet));
+  mask: radial-gradient(circle at 0 100%, transparent calc(var(--notch-fillet) - 0.5px), #000 var(--notch-fillet));
+}
+.notch-player::after {
+  right: calc(var(--notch-fillet) * -1);
+  -webkit-mask: radial-gradient(circle at 100% 100%, transparent calc(var(--notch-fillet) - 0.5px), #000 var(--notch-fillet));
+  mask: radial-gradient(circle at 100% 100%, transparent calc(var(--notch-fillet) - 0.5px), #000 var(--notch-fillet));
+}
+.notch-player[data-expanded="true"]::before,
+.notch-player[data-expanded="true"]::after {
+  opacity: 1;
+  transition: opacity 300ms var(--ease-standard) 60ms;
+}
+
+/* 玻璃顶部的柔性高光（上亮下透），只随展开出现 */
+.notch-surface::before {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  border-radius: inherit; opacity: 0;
+  background-image: var(--notch-sheen);
+  transition: opacity 200ms var(--ease-standard);
+}
+.notch-player[data-expanded="true"] .notch-surface::before {
+  opacity: 1;
+  transition: opacity 380ms var(--ease-standard) 100ms;
+}
+/* 硬件刘海：纯黑凹口与纯黑表面靠色差分层，视觉上把收缩态切成左右两只「耳」 */
+/* 与表面等高的硬件凹口：比表面更黑，靠色差而非描边交代边界。
+   宽度由运行时注入（`--notch-hw-width`）：真机刘海在 16" 上是 185 pt，不同
+   机型不同，写死会让收缩态的封面压到刘海下面。原型没有注入时用 186 兜底。 */
+.hardware-notch {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: var(--notch-hw-width, 186px); height: 32px; z-index: 4; pointer-events: none;
+  border-radius: 0 0 9px 9px; background: var(--notch-bezel);
+}
+.hardware-notch::after {
+  content: ""; position: absolute; top: 11px; right: 22px; width: 7px; height: 7px;
+  border-radius: 50%; background: radial-gradient(circle at 35% 30%, #2d3646, #0b0e15 72%);
+}
+/* 验收辅助（默认关闭）：标出硬件刘海矩形，便于确认收缩态只比它宽一点点 */
+.desktop[data-guide="true"] .hardware-notch {
+  outline: 1px dashed rgba(255, 255, 255, 0.55); outline-offset: -1px;
+}
+
+/* 收缩态：左封面缩略图，右跳动音符 */
+.ears {
+  position: absolute; top: 0; left: 0; right: 0; height: 32px; z-index: 3;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 5px;
+  /* 收起时等面板缩回再出现，避免小封面与小音符在中间穿过 */
+  transition: opacity 200ms var(--ease-standard) 340ms;
+}
+.notch-player[data-expanded="true"] .ears {
+  opacity: 0; pointer-events: none;
+  transition: opacity 200ms var(--ease-standard) 0ms;
+}
+.ear {
+  display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0;
+  border: 0; border-radius: 5px; background: transparent; cursor: pointer;
+}
+.ear:focus-visible { box-shadow: var(--focus-ring); }
+/* 封面容器 + 内部 <img>：无封面时去掉 src，由容器背景画黑胶占位，
+   避免 <img> 无 src 时渲染浏览器的“破图”图标。 */
+.thumb { display: block; width: 16px; height: 16px; border-radius: 4px; overflow: hidden; position: relative; background: repeating-radial-gradient(circle at center, #3a3a3f 0 1px, #56565d 2px 3px); }
+.thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.thumb img:not([src]) { display: none; }
+.thumb::after {
+  content: ""; position: absolute; inset: 5px; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.42); pointer-events: none;
+}
+/* 与产品 .cover.has-image 同一套开关：不用 :has()，macOS 12 的 WKWebView 不支持 */
+.thumb.has-image::after { content: none; }
+
+/* 跳动的音乐符号：逐字复用 library.css 的 .playing-bars 规则 */
+.playing-bars { display: inline-flex; width: 16px; height: 16px; align-items: end; justify-content: center; gap: 2px; vertical-align: middle; }
+.playing-bars i { display: block; width: 3px; height: 7px; border-radius: var(--radius-pill); background: var(--accent); transform-origin: bottom; }
+.playing-bars i:nth-child(2) { height: 13px; }
+.playing-bars i:nth-child(3) { height: 9px; }
+/* 收缩态用同一套 .playing-bars 语义（同 keyframes、同延迟），只缩小尺寸 */
+.playing-bars.compact { width: 12px; height: 12px; gap: 1.5px; }
+.playing-bars.compact i { width: 2px; }
+.playing-bars.compact i:nth-child(1) { height: 5px; }
+.playing-bars.compact i:nth-child(2) { height: 10px; }
+.playing-bars.compact i:nth-child(3) { height: 7px; }
+.notch-player[data-playing="true"] .playing-bars i { animation: playing-bars 700ms var(--ease-standard) infinite alternate; }
+.notch-player[data-playing="true"] .playing-bars i:nth-child(2) { animation-delay: -240ms; }
+.notch-player[data-playing="true"] .playing-bars i:nth-child(3) { animation-delay: -440ms; }
+@keyframes playing-bars { to { transform: scaleY(.38); } }
+
+/* 展开态 */
+.panel {
+  position: absolute; top: 36px; left: 0; right: 0; z-index: 3;
+  padding: 0 16px 14px; opacity: 0; transform: translateY(-6px);
+  pointer-events: none;
+  transition: opacity 240ms var(--ease-standard), transform 260ms var(--ease-standard);
+}
+/* 内容与面板生长交叉淡入，但等面板长到约 1/3 才开始：太早会让封面被裁成
+   半张，太晚又会先出现一个空黑框。 */
+.notch-player[data-expanded="true"] .panel {
+  opacity: 1; transform: none; pointer-events: auto;
+  transition:
+    opacity 300ms var(--ease-standard) 140ms,
+    transform 460ms var(--ease-silk) 90ms;
+}
+.panel-head { display: flex; align-items: center; gap: 12px; min-height: 52px; }
+.panel-actions { flex: none; display: flex; align-items: center; gap: 2px; }
+.panel-cover { flex: none; display: block; width: 48px; height: 48px; border-radius: var(--radius-md); overflow: hidden; position: relative; background: repeating-radial-gradient(circle at center, #3a3a3f 0 3px, #56565d 4px 6px); }
+.panel-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.panel-cover img:not([src]) { display: none; }
+.panel-cover::after { content: ""; position: absolute; inset: 14px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.42); pointer-events: none; }
+.panel-cover.has-image::after { content: none; }
+.panel-meta { min-width: 0; flex: 1; }
+.panel-title { display: block; color: var(--notch-fg); font-size: var(--text-sm); font-weight: 650; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-title.is-empty { color: var(--notch-fg-2); }
+.panel-sub { display: block; color: var(--notch-fg-2); font-size: var(--text-xs); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-tag {
+  display: none; margin-left: 6px; padding: 0 5px; border: 1px solid var(--notch-line);
+  border-radius: 4px; color: var(--notch-fg-2); font-size: var(--text-xs); font-weight: 400;
+}
+.notch-player[data-temporary="true"] .panel-tag { display: inline-block; }
+.panel-bars { flex: none; display: flex; align-items: center; padding-right: 2px; }
+
+/* 可拖动的播放进度条（复用 PlayerProgress 的结构与样式） */
+.panel-progress { margin-top: 14px; }
+.panel-progress .progress-line {
+  --slider-track-height: 4px; position: relative; z-index: 1; inset: auto;
+  width: 100%; height: 8px;
+}
+.panel-progress .progress-line::before, .panel-progress .progress-fill {
+  content: ""; position: absolute; top: calc((8px - var(--slider-track-height)) / 2);
+  height: var(--slider-track-height); border-radius: var(--radius-pill); pointer-events: none;
+}
+.panel-progress .progress-line::before { right: 0; left: 0; background: var(--notch-track); }
+.panel-progress .progress-fill { left: 0; width: 100%; background: var(--accent); transform: scaleX(0); transform-origin: left center; }
+.panel-progress .progress {
+  position: relative; z-index: 2; display: block; width: 100%; height: 8px; margin: 0;
+  appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer;
+}
+.panel-progress .progress::-webkit-slider-runnable-track { height: 8px; background: transparent; }
+.panel-progress .progress::-webkit-slider-thumb {
+  width: 12px; height: 12px; margin-top: -2px; appearance: none; -webkit-appearance: none;
+  border: 2px solid var(--notch-bg); border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent), white 30%);
+  transition: transform var(--motion-fast) var(--ease-standard);
+}
+.panel-progress .progress::-moz-range-track { height: 8px; background: transparent; }
+.panel-progress .progress::-moz-range-thumb {
+  width: 8px; height: 8px; border: 2px solid var(--notch-bg); border-radius: 50%;
+  background: var(--accent);
+}
+.panel-progress .progress:hover::-webkit-slider-thumb { transform: scale(1.16); }
+.panel-progress .progress:focus-visible { border-radius: var(--radius-pill); box-shadow: var(--focus-ring); outline: none; }
+.panel-progress .progress:disabled { cursor: default; }
+.panel-progress .progress:disabled::-webkit-slider-thumb { background: var(--notch-line); box-shadow: none; }
+.panel-progress .progress:disabled::-moz-range-thumb { background: var(--notch-line); box-shadow: none; }
+.progress-times { display: flex; justify-content: space-between; margin-top: 4px; color: var(--notch-fg-2); font: 400 var(--text-xs)/1.5 var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* 传输控制区：喜欢 / 上一首 / 播放·暂停 / 下一首 / 播放模式 */
+.panel-controls { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding: 0 6px; }
+.notch-control {
+  display: grid; place-items: center; width: 34px; height: 34px; padding: 0;
+  border: 0; border-radius: 50%; background: transparent; color: var(--notch-fg-2); cursor: pointer;
+}
+.notch-control:hover { background: var(--notch-hover); color: var(--notch-fg); }
+.notch-control svg { width: 18px; height: 18px; display: block; }
+.notch-control.is-favorite { color: var(--notch-danger); }
+/* 播放模式任何状态都不使用主题色：只靠图标区分列表循环 / 随机 / 单曲，
+   颜色与上一首、下一首一致；aria-pressed 仅保留语义，不驱动视觉。 */
+.notch-control.control-play { width: 40px; height: 40px; color: var(--accent); }
+.notch-control.control-play svg { width: 28px; height: 28px; }
+.notch-control.control-play:hover { color: var(--accent-hover); background: transparent; }
+.notch-control:disabled { color: var(--notch-fg-2); opacity: 0.38; cursor: default; background: transparent; }
+.notch-collapse {
+  display: grid; place-items: center; width: 26px; height: 26px; padding: 0;
+  border: 0; border-radius: 50%; background: transparent; color: var(--notch-fg-2); cursor: pointer;
+}
+.notch-collapse:hover { background: var(--notch-hover); color: var(--notch-fg); }
+.notch-collapse svg { width: 14px; height: 14px; }
+.notch-collapse:focus-visible { box-shadow: var(--focus-ring); }
+
+/* 空播放态 / 临时播放项 */
+.notch-player[data-empty="true"] .thumb { opacity: 0.5; }
+.notch-player[data-empty="true"] .playing-bars i { background: var(--notch-line); }
+/* 减少动画：音符静止、面板即时出现，但仍保留状态变化 */
+.desktop[data-reduce-motion="true"] .notch-player *,
+.desktop[data-reduce-motion="true"] .notch-player {
+  animation: none !important; transition-duration: 1ms !important; transition-delay: 0ms !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .notch-player, .notch-player * {
+    animation: none !important; transition-duration: 1ms !important; transition-delay: 0ms !important;
+  }
+}

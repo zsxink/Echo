@@ -89,6 +89,8 @@ pub fn request(
         super::macos_now_playing::clear();
         #[cfg(target_os = "macos")]
         super::macos_window_lifecycle::unregister();
+        #[cfg(target_os = "macos")]
+        super::notch::window::unregister_screen_observer();
         return;
     }
     api.prevent_exit();

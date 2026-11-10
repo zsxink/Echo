@@ -485,3 +485,62 @@ fn effects_and_unknown_fields_survive_all_legacy_mutations() {
     assert_eq!(raw["futureDesktop"], serde_json::json!({"opaque":true}));
     assert_eq!(raw["window"]["width"], 800);
 }
+
+#[test]
+fn notch_player_defaults_to_on_when_absent() {
+    let p = temp_path("notch-default");
+    cleanup(&p);
+    let store = DesktopStateStore::new(p.clone(), PlatformCloseDefault::Other);
+    assert!(store.show_notch_player().expect("default"));
+    assert!(
+        store.load().expect("load").show_notch_player,
+        "first launch shows the notch player where the hardware allows it"
+    );
+    assert!(!store.load().expect("load").had_corruption);
+    cleanup(&p);
+}
+
+#[test]
+fn notch_player_preference_round_trips() {
+    let p = temp_path("notch-roundtrip");
+    cleanup(&p);
+    let store = DesktopStateStore::new(p.clone(), PlatformCloseDefault::Other);
+    store.set_show_notch_player(false).expect("off");
+    assert!(!store.show_notch_player().expect("read off"));
+    store.set_show_notch_player(true).expect("on");
+    assert!(store.show_notch_player().expect("read on"));
+    cleanup(&p);
+}
+
+#[test]
+fn notch_player_wrong_type_degrades_only_itself() {
+    let p = temp_path("notch-wrong-type");
+    // A wrong-typed notch value must not take down a sibling that is valid.
+    fs::write(&p, br#"{"showNotchPlayer":"yes","theme":"cobalt"}"#).expect("write");
+    let store = DesktopStateStore::new(p.clone(), PlatformCloseDefault::Other);
+    let s = store.load().expect("load");
+    assert!(
+        s.show_notch_player,
+        "wrong type falls back to the default (on)"
+    );
+    assert_eq!(s.theme, DesktopTheme::Cobalt, "sibling survives");
+    assert!(s.had_corruption, "the bad field is reported");
+    cleanup(&p);
+}
+
+#[test]
+fn notch_player_mutation_keeps_the_value_on_disk_when_unavailable() {
+    let p = temp_path("notch-keep");
+    cleanup(&p);
+    let store = DesktopStateStore::new(p.clone(), PlatformCloseDefault::Other);
+    store.set_show_notch_player(false).expect("off");
+    // Simulates a later launch on a Mac without a notch: reading the state must
+    // not rewrite it, so the choice survives until the hardware allows it again.
+    let loaded = store.load().expect("load");
+    assert!(!loaded.show_notch_player);
+    assert!(
+        !store.show_notch_player().expect("read"),
+        "reading the preference never rewrites it"
+    );
+    cleanup(&p);
+}

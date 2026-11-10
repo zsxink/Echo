@@ -383,6 +383,12 @@ export interface SongLyricsDto {
 export type Theme = 'coral' | 'cobalt' | 'turquoise';
 export type CloseBehavior = 'exit' | 'background';
 
+export interface NotchPlayerState {
+  readonly available: boolean;
+  readonly enabled: boolean;
+  readonly notchWidth: number | null;
+}
+
 /** Generated command name → successful return DTO contract. */
 export interface IpcCommandResultMap {
   readonly sync_status: SyncStatus;
@@ -450,6 +456,9 @@ export interface IpcCommandResultMap {
   readonly set_theme: void;
   readonly set_close_behavior: void;
   readonly get_close_behavior: CloseBehavior;
+  readonly get_notch_player_state: NotchPlayerState;
+  readonly set_notch_player_enabled: NotchPlayerState;
+  readonly notch_player_set_expanded: void;
   readonly play_playlist_context: void;
   readonly play_library_context: void;
   readonly restore_playback_session: string;

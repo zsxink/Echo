@@ -53,6 +53,8 @@
 | DAS-R04-S01 | 主题与本机偏好必须持久化且可回退 | 切换主题 | 7.6, 10.1 | Desktop/React | `pnpm verify:scenario -- DAS-R04-S01` |
 | DAS-R04-S02 | 主题与本机偏好必须持久化且可回退 | 下次启动恢复主题 | 7.6, 10.1 | Desktop/React | `pnpm verify:scenario -- DAS-R04-S02` |
 | DAS-R04-S03 | 主题与本机偏好必须持久化且可回退 | 偏好不可保存或值非法 | 7.6, 10.1 | Desktop/React | `pnpm verify:scenario -- DAS-R04-S03` |
+| DAS-R04-S04 | 主题与本机偏好必须持久化且可回退 | 刘海播放器偏好按平台与硬件呈现 | 10.1 | React | `pnpm verify:scenario -- DAS-R04-S04` |
+| DAS-R04-S05 | 主题与本机偏好必须持久化且可回退 | 刘海偏好与不可用状态互不覆盖 | 10.1 | React | `pnpm verify:scenario -- DAS-R04-S05` |
 | DAS-R05-S01 | 主窗口关闭行为必须符合用户选择并保留播放状态 | 选择退出应用 | 7.6, 9.6, 13.5 | Desktop/Native | `pnpm verify:scenario -- DAS-R05-S01` |
 | DAS-R05-S02 | 主窗口关闭行为必须符合用户选择并保留播放状态 | 选择后台运行 | 7.6, 9.6, 13.5 | Desktop/Native | `pnpm verify:scenario -- DAS-R05-S02` |
 | DAS-R05-S03 | 主窗口关闭行为必须符合用户选择并保留播放状态 | 关闭期间存在未完成初始化 | 7.6, 9.6, 13.5 | Desktop/Native | `pnpm verify:scenario -- DAS-R05-S03` |
@@ -64,6 +66,7 @@
 | DAS-R07-S03 | 应用必须保证单实例与文件打开唤醒 | 首实例尚未就绪 | 7.1, 9.1, 9.2 | Desktop/Native | `pnpm verify:scenario -- DAS-R07-S03` |
 | DAS-R07-S04 | 应用必须保证单实例与文件打开唤醒 | 前端监听器晚于文件打开请求就绪 | — | Gate | `pnpm verify:scenario -- DAS-R07-S04` |
 | DAS-R07-S05 | 应用必须保证单实例与文件打开唤醒 | 运行中收到文件打开请求 | — | Gate | `pnpm verify:scenario -- DAS-R07-S05` |
+| DAS-R07-S06 | 应用必须保证单实例与文件打开唤醒 | 伴随窗口不构成第二个实例 | — | Desktop | `pnpm verify:scenario -- DAS-R07-S06` |
 | DAS-R08-S01 | 窄屏布局与浮层关闭必须可预测 | 打开和关闭窄屏侧边栏 | 10.4, 12.1, 12.3 | React/E2E | `pnpm verify:scenario -- DAS-R08-S01` |
 | DAS-R08-S02 | 窄屏布局与浮层关闭必须可预测 | 窗口从宽屏变为窄屏 | 10.4, 12.1, 12.3 | React/E2E | `pnpm verify:scenario -- DAS-R08-S02` |
 | DAS-R08-S03 | 窄屏布局与浮层关闭必须可预测 | 浮层点击外部 | 10.4, 12.1, 12.3 | React/E2E | `pnpm verify:scenario -- DAS-R08-S03` |
