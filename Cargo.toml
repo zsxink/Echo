@@ -44,7 +44,11 @@ unicode-casefold = "0.2"
 # Newer releases pull edition-2024 transitive dependencies without declaring
 # the corresponding MSRV. Keep this compatible with Rust 1.88 explicitly.
 blake3 = "=1.8.2"
-rusqlite = { version = "0.32", features = ["backup", "bundled"] }
+# `fallible_uint`: rusqlite 0.41 gates the u64/usize `ToSql`/`FromSql` impls
+# behind this feature (they were unconditional before). Our schema stores
+# counts/revisions as unsigned, and the feature converts them fallibly — a
+# value above i64::MAX becomes an error instead of wrapping.
+rusqlite = { version = "0.41", features = ["backup", "bundled", "fallible_uint"] }
 # `std::fs::canonicalize` returns verbatim (`\\?\C:\...`) paths on Windows;
 # persisted root records and user-facing display keep the conventional plain
 # form (issue #82). dunce strips the prefix only when the plain form is
