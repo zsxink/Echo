@@ -11,7 +11,9 @@
 //!   from the stored original; they never enter song *list* queries — songs
 //!   reference the asset key only.
 //! - [`CoverCache::gc`] deletes entries outside the referenced keep-set and,
-//!   above the capacity limit, only ever touches *unreferenced* entries.
+//!   above the capacity limit, evicts rebuildable thumbnails from referenced
+//!   entries. The original and its mime record are never reclaimed: capacity
+//!   never wins over a live reference.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -35,6 +37,20 @@ const KEY_PREFIX: &str = "cv1-";
 /// to obtain the gate; the gate itself serializes generation.
 type InflightGates = Arc<Mutex<HashMap<(String, bool), Arc<Mutex<()>>>>>;
 
+/// Persisted names of the two rebuildable tiers. GC only ever reclaims these
+/// files; a new tier must be registered here and in the candidate collector.
+const LIST_THUMB_FILE: &str = "thumb-128.bin";
+const DETAIL_THUMB_FILE: &str = "thumb-512.bin";
+
+/// One rebuildable thumbnail that capacity reclamation may delete.
+struct ReclaimCandidate {
+    path: PathBuf,
+    len: u64,
+    /// `0` = detail tier (512 px), `1` = list tier (128 px).
+    tier: u8,
+    hash: String,
+}
+
 /// The disk cover cache over one cache directory.
 #[derive(Clone, Debug)]
 pub struct DiskCoverCache {
@@ -46,6 +62,8 @@ pub struct DiskCoverCache {
     decode_count: Arc<std::sync::atomic::AtomicUsize>,
     #[cfg(test)]
     fail_thumbnail_write: Arc<std::sync::atomic::AtomicBool>,
+    #[cfg(test)]
+    fail_thumbnail_eviction: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl DiskCoverCache {
@@ -66,6 +84,8 @@ impl DiskCoverCache {
             decode_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             #[cfg(test)]
             fail_thumbnail_write: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            #[cfg(test)]
+            fail_thumbnail_eviction: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         })
     }
 
@@ -133,7 +153,11 @@ impl DiskCoverCache {
         } else {
             LIST_THUMB_PX
         };
-        let name = format!("thumb-{max_px}.bin");
+        let name = if detail {
+            DETAIL_THUMB_FILE
+        } else {
+            LIST_THUMB_FILE
+        };
         let thumb_path = self.entry_dir(&hash).join(name);
 
         // Fast path: an existing thumbnail never takes the generation gate.
@@ -224,6 +248,115 @@ impl DiskCoverCache {
         directory_bytes(&self.dir)
     }
 
+    /// Bring the cache back under `max_capacity` by evicting rebuildable
+    /// thumbnails from referenced entries.
+    ///
+    /// Only the two persisted `thumb-*.bin` names are candidates: the original
+    /// and its mime record *are* the referenced asset, so a capacity rule can
+    /// never delete them. When those non-rebuildable files alone exceed the
+    /// cap, evicting everything would still fail and would force a pointless
+    /// decode on every startup — keep the thumbnails and report it instead.
+    fn reclaim_thumbnails(&self, survivors: &[(PathBuf, u64)], total: u64) {
+        if total <= self.max_capacity {
+            return;
+        }
+        let mut candidates: Vec<ReclaimCandidate> = Vec::new();
+        for (entry_dir, _) in survivors {
+            let hash = entry_dir
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let entries = match std::fs::read_dir(entry_dir) {
+                Ok(entries) => entries,
+                Err(error) => {
+                    tracing::warn!(%error, entry = %hash, "cover cache entry scan failed");
+                    continue;
+                }
+            };
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let tier = match name.to_string_lossy().as_ref() {
+                    DETAIL_THUMB_FILE => 0,
+                    LIST_THUMB_FILE => 1,
+                    _ => continue,
+                };
+                let metadata = match entry.metadata() {
+                    Ok(metadata) if metadata.is_file() => metadata,
+                    Ok(_) => continue,
+                    Err(error) => {
+                        tracing::debug!(%error, entry = %hash, "thumbnail metadata unavailable");
+                        continue;
+                    }
+                };
+                candidates.push(ReclaimCandidate {
+                    path: entry.path(),
+                    len: metadata.len(),
+                    tier,
+                    hash: hash.clone(),
+                });
+            }
+        }
+
+        let reclaimable: u64 = candidates.iter().map(|c| c.len).sum();
+        let unreclaimable = total.saturating_sub(reclaimable);
+        if unreclaimable > self.max_capacity {
+            tracing::warn!(
+                total,
+                capacity = self.max_capacity,
+                unreclaimable,
+                "cover cache over capacity; referenced originals alone exceed the limit, thumbnails retained"
+            );
+            return;
+        }
+
+        // Deterministic order: detail tier first, then the largest files, then
+        // the content hash. Stop as soon as the cap is met so a startup GC
+        // never clears more thumbnails than it has to.
+        candidates.sort_by(|a, b| {
+            a.tier
+                .cmp(&b.tier)
+                .then(b.len.cmp(&a.len))
+                .then(a.hash.cmp(&b.hash))
+        });
+        let mut remaining = total;
+        let mut evicted = 0_u64;
+        let mut reclaimed = 0_u64;
+        for candidate in candidates {
+            if remaining <= self.max_capacity {
+                break;
+            }
+            #[cfg(test)]
+            if self
+                .fail_thumbnail_eviction
+                .swap(false, std::sync::atomic::Ordering::SeqCst)
+            {
+                tracing::warn!(entry = %candidate.hash, "cover cache thumbnail eviction failed (injected)");
+                continue;
+            }
+            match std::fs::remove_file(&candidate.path) {
+                Ok(()) => {}
+                // A concurrent reader or another GC may have removed it.
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    // Best effort, as in pass 1: one unremovable file must not
+                    // abort the whole GC or justify deleting a referenced asset.
+                    tracing::warn!(%error, entry = %candidate.hash, "cover cache thumbnail eviction failed");
+                    continue;
+                }
+            }
+            remaining = remaining.saturating_sub(candidate.len);
+            reclaimed = reclaimed.saturating_add(candidate.len);
+            evicted = evicted.saturating_add(1);
+        }
+        tracing::debug!(
+            total = remaining,
+            capacity = self.max_capacity,
+            evicted,
+            reclaimed,
+            "cover cache reclaimed rebuildable thumbnails"
+        );
+    }
+
     #[cfg(test)]
     fn decode_count(&self) -> usize {
         self.decode_count.load(std::sync::atomic::Ordering::SeqCst)
@@ -232,6 +365,12 @@ impl DiskCoverCache {
     #[cfg(test)]
     fn fail_next_thumbnail_write(&self) {
         self.fail_thumbnail_write
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    #[cfg(test)]
+    fn fail_next_thumbnail_eviction(&self) {
+        self.fail_thumbnail_eviction
             .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 }
@@ -275,20 +414,11 @@ impl CoverCache for DiskCoverCache {
             }
             survivors.push((path.clone(), directory_bytes(&path)));
         }
-        // Pass 2: enforce the capacity limit — deleting only from the
-        // (already unreferenced-free) survivor set, oldest-first by hash
-        // ordering, and stopping before any referenced asset would be hit.
-        // Survivors are all referenced at this point, so an over-limit state
-        // that would require deleting referenced assets is kept and surfaced
-        // via the stored size (the capacity rule never wins over references).
+        // Pass 2: capacity reclamation only touches rebuildable thumbnails
+        // inside the (already unreferenced-free) survivor set. Originals and
+        // mime records belong to the referenced asset and are never removed.
         let total: u64 = survivors.iter().map(|(_, size)| *size).sum();
-        if total > self.max_capacity {
-            tracing::debug!(
-                total,
-                capacity = self.max_capacity,
-                "cover cache over capacity; referenced assets are retained"
-            );
-        }
+        self.reclaim_thumbnails(&survivors, total);
         Ok(())
     }
 }
@@ -353,6 +483,12 @@ pub(crate) fn scale_to(bytes: &[u8], max_px: u32) -> Result<Vec<u8>, Error> {
         })?;
     Ok(out.into_inner())
 }
+
+// Capacity reclamation has its own scenario suite: keeping it beside the
+// adapter (rather than growing `cover.rs` past the 1000-line hard limit).
+#[cfg(test)]
+#[path = "cover_capacity_tests.rs"]
+mod capacity_tests;
 
 #[cfg(test)]
 mod tests {
@@ -512,7 +648,7 @@ mod tests {
         );
     }
 
-    fn rgba_png(width: u32, height: u32, rgba: image::Rgba<u8>) -> Vec<u8> {
+    pub(super) fn rgba_png(width: u32, height: u32, rgba: image::Rgba<u8>) -> Vec<u8> {
         let buffer = image::RgbaImage::from_pixel(width, height, rgba);
         let mut out = std::io::Cursor::new(Vec::new());
         buffer
@@ -521,15 +657,15 @@ mod tests {
         out.into_inner()
     }
 
-    fn thumb_path(cache: &DiskCoverCache, key: &str, detail: bool) -> PathBuf {
-        let max_px = if detail {
-            DETAIL_THUMB_PX
+    pub(super) fn thumb_path(cache: &DiskCoverCache, key: &str, detail: bool) -> PathBuf {
+        let name = if detail {
+            DETAIL_THUMB_FILE
         } else {
-            LIST_THUMB_PX
+            LIST_THUMB_FILE
         };
         cache
             .entry_dir(&DiskCoverCache::hash_of_key(key).unwrap())
-            .join(format!("thumb-{max_px}.bin"))
+            .join(name)
     }
 
     #[test]

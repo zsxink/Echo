@@ -95,6 +95,7 @@ apps/desktop/
 - `s=list` 是缺省档（128 px 最长边），用于歌曲行、歌单卡、目录卡、歌曲菜单、播放栏与队列；`s=detail` 是 512 px 档，仅用于歌单编辑预览；`s=original` 只由沉浸播放页显式请求。
 - 缺省、未知、空值或重复的 `s` 按第一个值解析，无法识别时回落 `list`，**绝不回落原图**。协议在剥离 query/fragment 之前解析档位；`s` 只选择缓存读取路径，不参与 key 白名单、长度上限或文件系统路径构造。
 - 缩略图按需生成并落盘复用；缓存仍按内容哈希寻址，磁盘布局与 `original.bin`/`mime.txt` 不变，不做格式转换。首次生成在阻塞线程上执行，按 `(key, 档位)` 单飞合并，原子写保证半成品不可见。
+- 封面缓存 GC（`DiskCoverCache::gc`）在启动装配时执行：先整目录删除未引用条目，再按容量上限回收**被引用条目内的可重建缩略图**（512 px 档优先、按占用降序、达到上限即停）。原图与 `mime.txt` 属于被引用资产本身，永不因容量被删除；被淘汰的缩略图在下次请求时沿用既有按需生成路径重建。若被引用原图自身已超上限，GC 保留全部缩略图并记录结构化日志，不做反复的无效淘汰。详见 `openspec/specs/cover-cache-capacity/spec.md`。
 - 成功响应带 `Cache-Control: private, max-age=31536000, immutable`（内容寻址使其字节不可变）；CSP 仍只放行 `img-src`/`media-src` 的 `cover:`，未知或畸形 key 仍返回 404。
 - 沉浸页的封面 URL 同时用于 `<img>` 与 `artworkPalette` 的主色提取，必须走 `original`，以保持 origin-clean 像素读取。
 - 封面**写入**（歌单/艺人封面）与 `cover://` 读取协议无关：WebView 通过 Tauri command 以 base64 字符串传递原图字节，桌面壳在 command 边界解码为 `&[u8]` 后交给 Core；编码不参与 `$s` 档位选择、缓存寻址或磁盘布局。
