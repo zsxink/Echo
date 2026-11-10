@@ -5,7 +5,7 @@
 - 本表逐项覆盖 specs 中的全部 Scenario；稳定 ID 不得复用，标题调整时保留原 ID。
 - 场景 ID 由 spec 标题派生；每行必须给出可执行验收命令，且该场景在 `scripts/verify/scenario-commands.mjs` 的 `SCENARIOS` 中声明非空 `evidence`（命令可执行 + 证据可观测）。人工举证由 `docs/native-attestation-playbook.md` 与 `artifacts/native-attestations/<ID>.log` 承担，字段与判定见 `check-native-attestation.mjs`。
 - 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表与场景清单的 ID 集合完全相等，并逐项执行；命令按域聚合后逐条断言 evidence 目标在输出中被观测到，缺失、重复、无命令、无证据、证据未观测或失败均返回非零。
-- 当前基线：151 个 Requirement，600 个 Scenario（#117 窗口文件投放新增 3 个 Requirement / 23 个 Scenario；0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16、封面载荷受控与预览回收 9、内嵌封面解码与 MIME 约束 5、封面原件内容真实性校验 8、封面选图预览受控缩略图 5）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
+- 当前基线：152 个 Requirement，609 个 Scenario（#152 收藏同步投影新增 1 个 Requirement / 6 个 Scenario；#117 窗口文件投放新增 3 个 Requirement / 23 个 Scenario；0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16、封面载荷受控与预览回收 9、内嵌封面解码与 MIME 约束 5、封面原件内容真实性校验 8、封面选图预览受控缩略图 5）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
 
 ## ci-release-pipeline
 
@@ -303,6 +303,9 @@
 | LD-R01-S01 | 本地音乐库权威提交 | 本地写入失败 | 3.1, 3.2 | Core | `pnpm verify:scenario -- LD-R01-S01` |
 | LD-R01-S02 | 本地音乐库权威提交 | 目录已提交而投影失败 | 4.2a, 6.1 | Core | `pnpm verify:scenario -- LD-R01-S02` |
 | LD-R01-S03 | 本地音乐库权威提交 | SQLite 投影滞后时连续本地编辑 | 13.1, 13.2 | Core | `pnpm verify:scenario -- LD-R01-S03` |
+| LD-R01-S04 | 本地音乐库权威提交 | 收藏写入返回后立即回读已是新值 | issue-152 | Core | `pnpm verify:scenario -- LD-R01-S04` |
+| LD-R01-S05 | 本地音乐库权威提交 | 收藏的投影失败仍报告为已保存待投影 | issue-152 | Core | `pnpm verify:scenario -- LD-R01-S05` |
+| LD-R01-S06 | 本地音乐库权威提交 | 收藏写入只追平增量投影 | issue-152 | Core | `pnpm verify:scenario -- LD-R01-S06` |
 | LD-R02-S01 | 多对象提交与中断恢复 | 级联删除写到一半崩溃 | 3.3, 6.4 | Core | `pnpm verify:scenario -- LD-R02-S01` |
 | LD-R02-S02 | 多对象提交与中断恢复 | 丢失 SQLite 后重放 | 4.3 | Core | `pnpm verify:scenario -- LD-R02-S02` |
 | LD-R02-S03 | 多对象提交与中断恢复 | 提交结果不确定 | 3.2, 3.3 | Core | `pnpm verify:scenario -- LD-R02-S03` |
@@ -448,6 +451,9 @@
 | LE-R21-S03 | 收藏与批量操作以音乐库持久结果为反馈 | 收藏未保存 | 6.1, 8.2 | Core | `pnpm verify:scenario -- LE-R21-S03` |
 | LE-R21-S04 | 收藏与批量操作以音乐库持久结果为反馈 | 批量收藏部分已保存 | 6.1, 8.2, 13.4 | React | `pnpm verify:scenario -- LE-R21-S04` |
 | LE-R21-S05 | 收藏与批量操作以音乐库持久结果为反馈 | 已保存待投影不被当作失败重试 | 4.2a, 6.1 | Core | `pnpm verify:scenario -- LE-R21-S05` |
+| LE-R21-S06 | 收藏与批量操作以音乐库持久结果为反馈 | 收藏写入返回后界面已是新值 | issue-152 | React | `pnpm verify:scenario -- LE-R21-S06` |
+| LE-R22-S01 | 收藏计数不得因重复操作重复累加 | 同一首歌连续两次喜欢只计一次 | issue-152 | React | `pnpm verify:scenario -- LE-R22-S01` |
+| LE-R22-S02 | 收藏计数不得因重复操作重复累加 | 取消收藏回退一次增量 | issue-152 | React | `pnpm verify:scenario -- LE-R22-S02` |
 
 ## local-library
 

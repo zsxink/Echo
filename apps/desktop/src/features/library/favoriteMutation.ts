@@ -11,6 +11,34 @@ interface FavoriteLane {
   tail: Promise<void> | null;
 }
 
+/**
+ * The last intent each song was written with, kept past the write's
+ * completion.
+ *
+ * The count delta is measured against this value, not against the rendered
+ * row: a row can still be the pre-write value when the next click arrives
+ * (a context menu holds the snapshot it opened with, and a re-read that
+ * raced the write can repaint the old row). Rebuilding the baseline from
+ * such a row counts the same song twice — "喜欢" twice must add one
+ * favorite, not two.
+ *
+ * The map is bounded by the number of songs the user actually toggled;
+ * entries are dropped only when a *later* intent for the same song makes
+ * them redundant, and the oldest entries are evicted past the cap.
+ */
+const intents = new Map<string, boolean>();
+const MAX_TRACKED_INTENTS = 512;
+
+function rememberIntent(songId: string, favorite: boolean): void {
+  intents.delete(songId);
+  intents.set(songId, favorite);
+  while (intents.size > MAX_TRACKED_INTENTS) {
+    const oldest = intents.keys().next();
+    if (oldest.done) break;
+    intents.delete(oldest.value);
+  }
+}
+
 const lanes = new Map<string, FavoriteLane>();
 
 /** Apply the click immediately, then serialize writes to this song. Other
@@ -24,13 +52,18 @@ export function setSongFavorite(
   const metric = beginLibraryInteraction("favorite");
   let lane = lanes.get(song.id);
   if (!lane) {
-    lane = { confirmed: song, desired: song.favorite, latest: 0, tail: null };
+    // The baseline is this song's last known intent. It is only the row's
+    // value when the song has never been written from this window; a tracked
+    // intent outranks a row that may not have caught up yet.
+    const baseline = intents.get(song.id) ?? song.favorite;
+    lane = { confirmed: song, desired: baseline, latest: 0, tail: null };
     lanes.set(song.id, lane);
   }
   const state = lane;
   const mutation = ++state.latest;
   bumpLibraryCount("favorites", Number(favorite) - Number(state.desired));
   state.desired = favorite;
+  rememberIntent(song.id, favorite);
   publishSongUpdate({ id: song.id, favorite }, "optimistic");
 
   const run = async () => {
@@ -51,6 +84,10 @@ export function setSongFavorite(
         if (state.latest === mutation) {
           bumpLibraryCount("favorites", Number(state.confirmed.favorite) - Number(state.desired));
           state.desired = state.confirmed.favorite;
+          // The write never landed, so the last *known* intent for this song
+          // is the durable one again. A later click must count against it,
+          // not against the intent that failed.
+          rememberIntent(song.id, state.confirmed.favorite);
           publishSongUpdate(state.confirmed, "rollback");
           options.onFailure?.();
         }
@@ -70,4 +107,5 @@ export function setSongFavorite(
 export function resetFavoriteMutations(): void {
   for (const state of lanes.values()) state.latest += 1;
   lanes.clear();
+  intents.clear();
 }

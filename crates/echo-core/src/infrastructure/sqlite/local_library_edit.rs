@@ -106,7 +106,18 @@ impl LocalLibraryEditPort for SqliteDatabase {
         favorite: bool,
         device: DeviceId,
     ) -> Result<(), Error> {
-        self.plan_library_edit(control, root, device, true, move |c, _, library, sequence, _| {
+        // A favorite is a **single-click, immediately visible** write: the list
+        // row, the favorites view and the favorites count all read the SQLite
+        // read model. Projecting it in the background left the read model
+        // behind the click, and the frontend's authoritative re-read then
+        // repainted the lit heart with the stale value — the user had to click
+        // twice (issue #152). The favorite therefore projects synchronously:
+        // the directory commit is still the durability boundary, and a failing
+        // projection is still reported as "saved, pending projection" with the
+        // operation identity intact.
+        // The favorite is projected **synchronously**: the read model must
+        // already carry the new value when this call returns.
+        self.plan_library_edit(control, root, device, false, move |c, _, library, sequence, _| {
             let visible: bool = c.query_row(
                 "SELECT EXISTS(SELECT 1 FROM songs WHERE uuid=?1 AND library_root_uuid=?2 AND availability<>'pending_delete')",
                 rusqlite::params![song.to_string(), root.to_string()], |row| row.get(0),
@@ -303,11 +314,15 @@ impl SqliteDatabase {
                     &baseline,
                     Some(authority.as_ref()),
                 )?;
-                let projection = if async_projection {
-                    durability_projection::project_verified_suffix(connection, root, &baseline)
-                } else {
-                    durability_projection::project_commits(connection, root, &baseline)
-                };
+                // Both the foreground catch-up and the background worker
+                // project only the authenticated suffix after SQLite's
+                // watermark. The full-history path re-validates every commit
+                // on every edit, which turns an interactive write into
+                // O(library history) work; `project_verified_suffix` falls
+                // back to it internally when the watermark is behind the
+                // checkpoint.
+                let projection =
+                    durability_projection::project_verified_suffix(connection, root, &baseline);
                 projection.map_err(|error| {
                     saved_pending_catch_up(connection, root, &baseline, retry_operation, error)
                 })?;
@@ -367,7 +382,15 @@ impl SqliteDatabase {
                         &replay,
                         Some(authority.as_ref()),
                     )?;
-                    durability_projection::project_commits(connection, root, &replay)
+                    // Only the suffix after SQLite's watermark is projected.
+                    // The full-history path re-validates every commit in the
+                    // chain, so a favorite would cost O(library history) on the
+                    // user's click path — 30 ms at 10,000 songs against 4.8 ms
+                    // at 1,000. `project_verified_suffix` falls back to the
+                    // full path internally when the watermark is behind the
+                    // checkpoint, so a cold or compacted library still gets
+                    // the complete projection.
+                    durability_projection::project_verified_suffix(connection, root, &replay)
                 })?;
                 trace_local_edit_stage(root, "sqlite_project_commit", stage_started);
             }

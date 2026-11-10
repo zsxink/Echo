@@ -248,3 +248,99 @@ fn migration_0029_drops_the_retired_sync_binding_protocol_version_column() {
     let reopened = SqliteDatabase::open(&path).unwrap();
     assert!(reopened.quick_check().is_ok());
 }
+
+#[test]
+fn migration_0030_adds_the_retained_projection_indexes_without_touching_retained_rows() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("legacy.sqlite");
+    let mut connection = open_writer(&path).unwrap();
+    through_v27(&mut connection);
+    apply_migration_set(
+        &mut connection,
+        &[
+            (
+                28,
+                include_str!("../migrations/0028_library_durability.sql"),
+            ),
+            (
+                29,
+                include_str!("../migrations/0029_drop_sync_binding_protocol_version.sql"),
+            ),
+        ],
+    )
+    .unwrap();
+    let root = LibraryRootId::new();
+    connection.execute("INSERT INTO library_roots(uuid,absolute_path,normalized_path_key,is_active,write_capable,created_at,updated_at) VALUES(?1,'/synthetic/library','/synthetic/library',1,1,123,456)", params![root.to_string()]).unwrap();
+    let evidence = DurableStateChange::new(
+        StateKind::Pending,
+        uuid::Uuid::new_v4(),
+        serde_json::json!({"frozen":"original"}),
+    );
+    let json = serde_json::to_string(&evidence).unwrap();
+    let key = serde_json::to_string(&ProjectionTarget::State {
+        state_kind: evidence.kind,
+        id: evidence.id,
+    })
+    .unwrap();
+    connection.execute("INSERT INTO library_recovery_records(library_root_uuid,object_key,envelope_json,row_kind,unresolved_reason) VALUES(?1,?2,?3,'state','\"requires_state_recovery\"')", params![root.to_string(),key,json]).unwrap();
+
+    // A partial 0030 rolls back: no index survives and the retained row is
+    // untouched.
+    let script = include_str!("../migrations/0030_retained_projection_indexes.sql");
+    let failing = format!("{script}\nINSERT INTO table_that_does_not_exist VALUES(1);");
+    assert!(apply_migration_set(&mut connection, &[(30, &failing)]).is_err());
+    assert_eq!(index_names(&connection), Vec::<String>::new());
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM library_recovery_records WHERE library_root_uuid=?1",
+                params![root.to_string()],
+                |row| row.get::<_, u64>(0)
+            )
+            .unwrap(),
+        1
+    );
+
+    // The real upgrade creates the indexes and preserves the retained rows.
+    apply_migrations(&mut connection).unwrap();
+    let indexes = index_names(&connection);
+    for expected in [
+        "library_recovery_records_kind",
+        "library_recovery_records_record_type",
+        "library_recovery_records_unresolved",
+    ] {
+        assert!(
+            indexes.iter().any(|name| name == expected),
+            "missing retained projection index {expected}"
+        );
+    }
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM library_recovery_records WHERE library_root_uuid=?1",
+                params![root.to_string()],
+                |row| row.get::<_, u64>(0)
+            )
+            .unwrap(),
+        1
+    );
+    drop(connection);
+    let reopened = SqliteDatabase::open(&path).unwrap();
+    assert!(reopened.quick_check().is_ok());
+}
+
+/// The indexes a schema carries, in a stable order.
+fn index_names(connection: &rusqlite::Connection) -> Vec<String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT name FROM sqlite_master WHERE type='index' \
+             AND name LIKE 'library_recovery_records%' AND name NOT LIKE 'sqlite_autoindex%' \
+             ORDER BY name",
+        )
+        .unwrap();
+    statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+}

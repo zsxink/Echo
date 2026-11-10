@@ -10,10 +10,11 @@ use crate::domain::{
         durability::{
             DurableResource, DurableStateChange, LibraryProjectionStatus, LibraryRecoveryRecords,
             PlaybackEvent, ProjectionTarget, ProjectionUnresolvedReason as Reason, StateKind,
-            StateNamespace, UnresolvedProjectionRecord,
+            StateNamespace, StateTarget, UnresolvedProjectionRecord,
         },
         PortableRecord, PortableRecordEnvelope,
     },
+    sync::ObjectKey,
 };
 use crate::error::Error;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -147,6 +148,186 @@ pub(super) fn read(c: &Connection, root: LibraryRootId) -> Result<LibraryRecover
     }
     Ok(result)
 }
+
+/// Read only the rows an ordinary projection still has to act on.
+///
+/// The retained catalog holds one row per projected object, so its **record**
+/// rows grow with the library: a 10,000-song library retains ten thousand
+/// song facts, and every one of them was decoded on every projection pass
+/// only to discover that nothing was pending.
+///
+/// The catalog is therefore read in four narrower queries:
+///
+/// 1. the **pending** records — the only records this pass retries;
+/// 2. the **tombstone** records — the "has this parent been deleted?"
+///    evidence every pending fact is checked against;
+/// 3. the **state** and **resource** rows, read whole;
+/// 4. the **song** records a pending publication refers to — the committed
+///    media location a published resource is compared against by
+///    [`resource_publication::project`].
+///
+/// The **state** and **resource** rows do not grow with the library — one
+/// claim per scan, one resource per published file — and the projection needs
+/// all of them: the allocation index pairs a mutation with its disposition
+/// across the whole state set, and a publication is complete only when its
+/// resources are all retained.
+///
+/// The rows are collected **by their object key**, so a row reached by two
+/// queries is retained once and the retained order stays the catalog's own
+/// object-key order — the order the full read produced.
+fn read_for_retry(
+    c: &Connection,
+    root: LibraryRootId,
+    pending: &std::collections::BTreeSet<String>,
+) -> Result<LibraryRecoveryRecords, Error> {
+    let mut rows: std::collections::BTreeMap<String, (String, String)> =
+        std::collections::BTreeMap::default();
+    let root_text = root.to_string();
+    // 1. The pending **records** are the rows this pass retries. The state and
+    //    resource rows are read whole by the third query, so reading them
+    //    here as well would retain each of them twice.
+    let mut statement = c
+        .prepare(
+            "SELECT object_key,row_kind,envelope_json FROM library_recovery_records \
+             WHERE library_root_uuid=?1 AND row_kind='record' \
+             AND unresolved_reason IS NOT NULL",
+        )
+        .map_err(storage)?;
+    let found = statement
+        .query_map([root_text.clone()], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(storage)?;
+    for row in found {
+        let (key, kind, json) = row.map_err(storage)?;
+        if !pending.contains(&key) {
+            continue;
+        }
+        rows.insert(key, (kind, json));
+    }
+    // 2. The tombstone records answer the "has this parent been deleted?"
+    //    question for every pending fact. They are retained evidence in their
+    //    own right, so they are read even when they are already resolved.
+    let mut statement = c
+        .prepare(
+            "SELECT object_key,row_kind,envelope_json FROM library_recovery_records \
+             WHERE library_root_uuid=?1 AND row_kind='record' \
+             AND json_extract(envelope_json,'$.record.type')='tombstone'",
+        )
+        .map_err(storage)?;
+    let found = statement
+        .query_map([root_text.clone()], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(storage)?;
+    for row in found {
+        let (key, kind, json) = row.map_err(storage)?;
+        rows.insert(key, (kind, json));
+    }
+    // 3. The state and resource rows do not grow with the library, and the
+    //    projection needs all of them: the allocation index pairs a mutation
+    //    with its disposition across the whole state set, and a publication is
+    //    complete only when every resource it names is retained.
+    let mut statement = c
+        .prepare(
+            "SELECT object_key,row_kind,envelope_json FROM library_recovery_records \
+             WHERE library_root_uuid=?1 AND row_kind<>'record'",
+        )
+        .map_err(storage)?;
+    let found = statement
+        .query_map([root_text.clone()], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(storage)?;
+    for row in found {
+        let (key, kind, json) = row.map_err(storage)?;
+        rows.insert(key, (kind, json));
+    }
+    // 4. The song records carry the committed media location that a published
+    //    resource is compared against. Only the songs a pending publication
+    //    refers to are read: the whole song catalog grows with the library, and
+    //    a pass with no pending publication needs none of it.
+    let mut states = Vec::new();
+    for (kind, json) in rows.values() {
+        if kind == "state" {
+            states.push(serde_json::from_str::<DurableStateChange>(json).map_err(storage)?);
+        }
+    }
+    for song in pending_songs(&states)? {
+        let mut statement = c
+            .prepare(
+                "SELECT object_key,row_kind,envelope_json FROM library_recovery_records \
+                 WHERE library_root_uuid=?1 AND object_key=?2 AND row_kind='record'",
+            )
+            .map_err(storage)?;
+        let mut found = statement
+            .query([root_text.clone(), song])
+            .map_err(storage)?;
+        if let Some(row) = found.next().map_err(storage)? {
+            let key = row.get::<_, String>(0).map_err(storage)?;
+            let kind = row.get::<_, String>(1).map_err(storage)?;
+            let json = row.get::<_, String>(2).map_err(storage)?;
+            rows.insert(key, (kind, json));
+        }
+    }
+    let mut result = LibraryRecoveryRecords::default();
+    for (kind, json) in rows.values() {
+        push_row(&mut result, kind, json)?;
+    }
+    Ok(result)
+}
+
+/// The songs a pending publication refers to.
+///
+/// A pending resource location names the song it publishes. The projection
+/// compares that publication against the song's committed media location, so
+/// only those songs are read back from the retained catalog.
+fn pending_songs(
+    states: &[DurableStateChange],
+) -> Result<std::collections::BTreeSet<String>, Error> {
+    let mut songs = std::collections::BTreeSet::new();
+    for state in states {
+        if state.kind != StateKind::ResourceLocation {
+            continue;
+        }
+        let Some(key) = &state.key else { continue };
+        let StateTarget::ResourceLocation { object } = key.target else {
+            continue;
+        };
+        let ObjectKey::Song(song) = object else {
+            continue;
+        };
+        songs.insert(serde_json::to_string(&ObjectKey::Song(song)).map_err(storage)?);
+    }
+    Ok(songs)
+}
+fn push_row(result: &mut LibraryRecoveryRecords, kind: &str, json: &str) -> Result<(), Error> {
+    match kind {
+        "record" => result
+            .records
+            .push(serde_json::from_str(json).map_err(storage)?),
+        "state" => result
+            .state
+            .push(serde_json::from_str(json).map_err(storage)?),
+        "resource" => result
+            .resources
+            .push(serde_json::from_str(json).map_err(storage)?),
+        _ => return Err(Error::conflict("unknown retained recovery row kind")),
+    }
+    Ok(())
+}
 pub(super) fn artist_cover_original(
     c: &Connection,
     root: LibraryRootId,
@@ -171,16 +352,24 @@ pub(super) fn retry(
         )
         .map_err(storage)?;
     }
-    let retained = read(c, root)?;
-    let mut statement = c.prepare(
-        "SELECT object_key FROM library_recovery_records WHERE library_root_uuid=?1 AND unresolved_reason IS NOT NULL",
-    ).map_err(storage)?;
-    let pending = statement
-        .query_map([root.to_string()], |row| row.get::<_, String>(0))
-        .map_err(storage)?
-        .collect::<Result<std::collections::BTreeSet<_>, _>>()
-        .map_err(storage)?;
+    let t0 = std::time::Instant::now();
+    let pending = pending_keys(c, root)?;
+    let t2 = std::time::Instant::now();
+    let retained = read_for_retry(c, root, &pending)?;
+    let t1 = std::time::Instant::now();
     retry_retained_records(c, root, &retained, &pending, sync_bound)?;
+    let t3 = std::time::Instant::now();
+    if std::env::var_os("ECHO_EDIT_TRACE").is_some() {
+        eprintln!(
+            "ECHO_EDIT_TRACE stage=retained.read elapsed_ms={:.3} pending_scan_ms={:.3} retry_records_ms={:.3} records={} states={} resources={}",
+            (t1 - t0).as_secs_f64() * 1_000.0,
+            (t2 - t0).as_secs_f64() * 1_000.0,
+            (t3 - t2).as_secs_f64() * 1_000.0,
+            retained.records.len(),
+            retained.state.len(),
+            retained.resources.len(),
+        );
+    }
     let mut allocations = local_allocation::AllocationIndex::new(&retained.state)?;
     for state in &retained.state {
         let key = state_key(state)?;
@@ -252,6 +441,49 @@ pub(super) fn retry(
         reason(c, root, &key, unresolved)?;
     }
     Ok(())
+}
+
+/// The retained rows that still carry an unresolved reason.
+///
+/// Only these rows are retried, so they are the only ones an ordinary
+/// projection has to look at. The query is index-backed: a resolved catalog
+/// has no pending rows at all, and answering that question must not cost a
+/// scan of the whole retained set.
+fn pending_keys(
+    c: &Connection,
+    root: LibraryRootId,
+) -> Result<std::collections::BTreeSet<String>, Error> {
+    let mut statement = c
+        .prepare(
+            "SELECT object_key FROM library_recovery_records \
+             WHERE library_root_uuid=?1 AND unresolved_reason IS NOT NULL",
+        )
+        .map_err(storage)?;
+    let keys = statement
+        .query_map([root.to_string()], |row| row.get::<_, String>(0))
+        .map_err(storage)?
+        .collect::<Result<std::collections::BTreeSet<_>, _>>()
+        .map_err(storage)?;
+    Ok(keys)
+}
+
+/// The narrowed read, exposed for the equivalence regression test.
+#[cfg(test)]
+pub(super) fn read_for_retry_for_test(
+    c: &Connection,
+    root: LibraryRootId,
+    pending: &std::collections::BTreeSet<String>,
+) -> Result<LibraryRecoveryRecords, Error> {
+    read_for_retry(c, root, pending)
+}
+
+/// The pending keys, exposed for the equivalence regression test.
+#[cfg(test)]
+pub(super) fn pending_keys_for_test(
+    c: &Connection,
+    root: LibraryRootId,
+) -> Result<std::collections::BTreeSet<String>, Error> {
+    pending_keys(c, root)
 }
 
 fn retry_retained_records(

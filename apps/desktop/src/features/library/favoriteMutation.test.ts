@@ -107,3 +107,48 @@ describe("favorite write coordination", () => {
     await Promise.all([one, two]);
   });
 });
+
+describe("favorite count baseline", () => {
+  it("counts a repeated like once even when the row is still the pre-write value", async () => {
+    // The row can still carry `favorite: false` when the next click arrives
+    // (a context menu keeps the snapshot it opened with, a re-read that
+    // raced the write repaints the old row). The count must still move by
+    // one: the song is favorited once, so the total grows by one.
+    vi.mocked(invoke).mockResolvedValue({ ...song, favorite: true } as never);
+
+    await setSongFavorite(song, true);
+    expect(getLibraryCountsSnapshot().favorites).toBe(1);
+
+    // The same intent again, still against the stale row.
+    await setSongFavorite(song, true);
+    expect(getLibraryCountsSnapshot().favorites).toBe(1);
+  });
+
+  it("counts a repeated unlike once even when the row is still the pre-write value", async () => {
+    vi.mocked(invoke).mockResolvedValue({ ...song, favorite: false } as never);
+    const liked = { ...song, favorite: true };
+
+    await setSongFavorite(liked, false);
+    expect(getLibraryCountsSnapshot().favorites).toBe(0);
+
+    // The count started at 0 and the song was never favorited in this window,
+    // so a repeated unlike must not push it below zero.
+    await setSongFavorite(liked, false);
+    expect(getLibraryCountsSnapshot().favorites).toBe(0);
+  });
+
+  it("rolls the tracked intent back when the write never landed", async () => {
+    vi.mocked(invoke)
+      .mockRejectedValueOnce(new Error("not saved"))
+      .mockResolvedValueOnce({ ...song, favorite: true } as never);
+
+    // The like fails, so the song is still not favorited.
+    await setSongFavorite(song, true);
+    expect(getLibraryCountsSnapshot().favorites).toBe(0);
+
+    // A later like counts against the durable state (not favorited), so it
+    // adds exactly one.
+    await setSongFavorite(song, true);
+    expect(getLibraryCountsSnapshot().favorites).toBe(1);
+  });
+});

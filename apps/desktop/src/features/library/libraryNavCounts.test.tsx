@@ -130,6 +130,39 @@ describe("音乐库导航计数", () => {
     );
   });
 
+  it("keeps the heart, the favorites view and the count on one click", async () => {
+    // issue-152: the click used to light the heart and then darken it again,
+    // because the authoritative re-read still saw the pre-write value. One
+    // click must leave the row lit, the song in 喜欢的音乐, and the count
+    // including it.
+    mocks.setInvoke("set_favorite", { ...SONG, favorite: true });
+    mocks.setInvoke("favorites", {
+      items: [{ ...SONG, favorite: true }],
+      isLast: true,
+      nextCursor: null,
+    });
+    await act(async () => {
+      render(<App />);
+    });
+
+    await waitFor(() => expect(screen.getByText("晴天")).toBeInTheDocument());
+    const heart = screen.getByRole("button", { name: /喜欢晴天/ });
+    expect(heart).toHaveAttribute("aria-pressed", "false");
+
+    act(() => fireEvent.click(heart));
+
+    // The row is lit and the count moved — one click, one favorite.
+    await waitFor(() => expect(heart).toHaveAttribute("aria-pressed", "true"));
+    expect(countOf("favorites")).toHaveTextContent("8");
+
+    // And the song really is in 喜欢的音乐.
+    act(() => fireEvent.click(screen.getByRole("button", { name: /喜欢的音乐/ })));
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "喜欢的音乐" })).toBeInTheDocument(),
+    );
+    expect(screen.getByText("晴天")).toBeInTheDocument();
+  });
+
   it("re-counts after a player-bar import invalidation", async () => {
     await act(async () => {
       render(<App />);
