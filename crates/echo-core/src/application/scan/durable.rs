@@ -144,6 +144,7 @@ pub(super) fn published_index_refresh(
         parsed.file.meta.format,
         parsed.file.meta.parameters,
     );
+    original.apply_loudness(parsed.file.meta.loudness);
     Ok(Some(original))
 }
 

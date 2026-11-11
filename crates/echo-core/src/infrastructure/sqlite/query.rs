@@ -21,9 +21,11 @@ use crate::error::{Error, Subject};
 use super::conversion::song_from_row;
 use super::support::{parse_id, storage};
 
-/// Column list shared by every read that produces a `Song`. The trailing four
-/// columns are the scan bookkeeping facts (phase 4): hash, size, mtime, format.
-pub(crate) const SONG_SELECT: &str = "SELECT s.uuid, s.library_root_uuid, s.relative_path, s.availability, s.is_favorite, s.play_count, s.revision, s.added_at, s.title, s.artist, s.album, s.duration_ms, s.updated_at, s.blake3_hash, s.file_size, s.file_mtime_ns, s.format, s.bitrate_bps, s.sample_rate_hz, s.channels, s.bits_per_sample FROM songs s";
+/// Column list shared by every read that produces a `Song`. The trailing
+/// columns are scan-derived facts: hash, size, mtime, format, stream
+/// parameters and embedded loudness tags (migration 0031). Always append new
+/// columns: `song_from_row` reads them by index.
+pub(crate) const SONG_SELECT: &str = "SELECT s.uuid, s.library_root_uuid, s.relative_path, s.availability, s.is_favorite, s.play_count, s.revision, s.added_at, s.title, s.artist, s.album, s.duration_ms, s.updated_at, s.blake3_hash, s.file_size, s.file_mtime_ns, s.format, s.bitrate_bps, s.sample_rate_hz, s.channels, s.bits_per_sample, s.loudness_source, s.loudness_track_gain_mdb, s.loudness_album_gain_mdb, s.loudness_track_peak_ppm, s.loudness_album_peak_ppm FROM songs s";
 
 pub(crate) fn active_root_id(connection: &Connection) -> Result<Option<LibraryRootId>, Error> {
     connection

@@ -1,0 +1,692 @@
+{
+  "status": "probe-only",
+  "gate_passed": false,
+  "probe": "echo_normalization_gain_only",
+  "platform": "macOS-27.2.1-arm64-arm-64bit",
+  "platform_verified": "macos",
+  "other_platforms": "deferred; no Windows/Linux real-machine capture in this run",
+  "started_utc": "2026-11-11T02:16:03Z",
+  "libmpv": "apps/desktop/src-tauri/vendor/libmpv/macos/libmpv.dylib",
+  "libmpv_sha256": "536cc29610c2cb105671fa92a5dfac00a483f534899c5f5884b1cd55ca4d855d",
+  "manifest": "apps/desktop/src-tauri/vendor/libmpv/macos/manifest.json",
+  "manifest_sha256": "54485a92fb77562c7286e9d12ea1ab9e94fc1a566c7e5b675a6363269c589bd7",
+  "fixture_manifest_sha256": "79917d2e628d8a67cbe11ab6d4fdc3bec435e7b285c53dd50a48b49d1a543a09",
+  "input": "/tmp/echo-normalization-fixtures/tone997-48000-2ch-60db.wav",
+  "input_sha256": "88085245b0e0c9577e15968cd66f7f27c188c914480134a630f49463a4afa2c2",
+  "pressure_input": "/tmp/echo-normalization-fixtures/tone997-48000-2ch-0.1db.wav",
+  "pressure_input_sha256": "1ffe078232b04470e14609c2258dcc32dfd9ab423f8dac8e578aef6385e20d0e",
+  "af_command_argument_count": 3,
+  "chain": "@echo_float:lavfi=[aformat=sample_fmts=dblp],@echo_preamp:lavfi=[volume@preamp=volume=1:precision=double],@echo_limiter:lavfi=[alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true]",
+  "gate_scope": "macOS PCM capture only; three-platform release Gate remains open",
+  "checks": [
+    {
+      "name": "gain_only_chain_shape",
+      "graph": "aformat=sample_fmts=dblp\nvolume@preamp=volume=1:precision=double\nalimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true",
+      "labels": [
+        "echo_float",
+        "echo_preamp",
+        "echo_limiter"
+      ],
+      "node_count": 3,
+      "has_equalizer": false,
+      "has_extrastereo": false,
+      "limiter_last": true,
+      "no_eq_or_spatial_node": true
+    },
+    {
+      "name": "static_gain_reference",
+      "expected_db": 6.0,
+      "measured_db": 5.996255735275406,
+      "error_db": -0.003744264724594437,
+      "harness_valid": true,
+      "meaning": "Install-time gain measured through the same PCM harness; a harness that reads 0 dB for a known gain is broken."
+    },
+    {
+      "name": "runtime_gain_pcm_proof",
+      "case": "normalization_minus_6_db",
+      "input": "/tmp/echo-normalization-fixtures/tone997-48000-2ch-60db.wav",
+      "input_sha256": "88085245b0e0c9577e15968cd66f7f27c188c914480134a630f49463a4afa2c2",
+      "extended_input_sha256": "762ac874b112857c1c3412c996f39ed037c8f92c155f74533a8a9da12f5c7a2a",
+      "extended_input_frames": 28800000,
+      "output_sha256": "6c932a1926749c5b8f5bf69955611a0e45c0c8b6e19992fd79bdc262035308b3",
+      "output_frames": 26963217,
+      "sample_rate": 48000,
+      "channels": 2,
+      "sample_width_bytes": 2,
+      "command": [
+        "af-command",
+        "echo_preamp",
+        "preamp:volume",
+        "0.501187233627272"
+      ],
+      "command_result": 0,
+      "eof_before_command": false,
+      "time_pos_before_command": 188.50702083333334,
+      "file_bytes_before_command": 36192256,
+      "file_bytes_after_command": 72351744,
+      "command_frame_upper_bound": 18087936,
+      "baseline_window_frames": [
+        4800,
+        28800
+      ],
+      "changed_window_frames": [
+        26915217,
+        26963217
+      ],
+      "measured_change_db": -6.038842191637582,
+      "expected_change_db": -6.0,
+      "error_db": -0.03884219163758207,
+      "runtime_confirmed": true,
+      "operations": [
+        {
+          "elapsed_seconds": 1.879199999965664e-05,
+          "kind": "option",
+          "args": [
+            "config",
+            "no"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 3.658399999961759e-05,
+          "kind": "option",
+          "args": [
+            "load-scripts",
+            "no"
+          ],
+          "result": -5,
+          "error": "option not found"
+        },
+        {
+          "elapsed_seconds": 4.391699999972687e-05,
+          "kind": "option",
+          "args": [
+            "terminal",
+            "no"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 4.595899999992881e-05,
+          "kind": "option",
+          "args": [
+            "vid",
+            "no"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 5.420899999997175e-05,
+          "kind": "option",
+          "args": [
+            "vo",
+            "null"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 5.73339999996314e-05,
+          "kind": "option",
+          "args": [
+            "idle",
+            "yes"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 5.8249999999926416e-05,
+          "kind": "option",
+          "args": [
+            "keep-open",
+            "yes"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 6.42499999998769e-05,
+          "kind": "option",
+          "args": [
+            "ao",
+            "pcm"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 6.629199999963475e-05,
+          "kind": "option",
+          "args": [
+            "audio-channels",
+            "auto"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 7.170899999975333e-05,
+          "kind": "option",
+          "args": [
+            "ao-pcm-file",
+            "/var/folders/rx/cwp1dm6536789l30qt9hf9rm0000gn/T/echo-runtime-pcm-00qn2shp/output.wav"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 7.620899999993824e-05,
+          "kind": "option",
+          "args": [
+            "ao-pcm-waveheader",
+            "yes"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 7.766699999978144e-05,
+          "kind": "request-log",
+          "args": [
+            "debug"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 0.0004704589999997566,
+          "kind": "initialize",
+          "args": [],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 0.0004938749999996439,
+          "kind": "command",
+          "args": [
+            "af",
+            "set",
+            "@echo_float:lavfi=[aformat=sample_fmts=dblp],@echo_preamp:lavfi=[volume@preamp=volume=1:precision=double],@echo_limiter:lavfi=[alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true]"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 0.0005090839999999375,
+          "kind": "command",
+          "args": [
+            "loadfile",
+            "/var/folders/rx/cwp1dm6536789l30qt9hf9rm0000gn/T/echo-runtime-pcm-00qn2shp/input.wav"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 0.4031460419999999,
+          "kind": "command",
+          "args": [
+            "af-command",
+            "echo_preamp",
+            "preamp:volume",
+            "0.501187233627272"
+          ],
+          "result": 0,
+          "error": null
+        }
+      ],
+      "meaning": "One uninterrupted PCM capture; sample windows exclude initial and command transients. File offsets bound written samples, not real-time latency."
+    },
+    {
+      "name": "runtime_gain_pcm_proof",
+      "case": "normalization_plus_6_db",
+      "input": "/tmp/echo-normalization-fixtures/tone997-48000-2ch-60db.wav",
+      "input_sha256": "88085245b0e0c9577e15968cd66f7f27c188c914480134a630f49463a4afa2c2",
+      "extended_input_sha256": "762ac874b112857c1c3412c996f39ed037c8f92c155f74533a8a9da12f5c7a2a",
+      "extended_input_frames": 28800000,
+      "output_sha256": "0e523677b8944da35a201f3f765454f10c9664c7793c669a974f6c882c5036d3",
+      "output_frames": 27426577,
+      "sample_rate": 48000,
+      "channels": 2,
+      "sample_width_bytes": 2,
+      "command": [
+        "af-command",
+        "echo_preamp",
+        "preamp:volume",
+        "1.99526231496888"
+      ],
+      "command_result": 0,
+      "eof_before_command": false,
+      "time_pos_before_command": 191.22702083333334,
+      "file_bytes_before_command": 36716544,
+      "file_bytes_after_command": 73306112,
+      "command_frame_upper_bound": 18326528,
+      "baseline_window_frames": [
+        4800,
+        28800
+      ],
+      "changed_window_frames": [
+        27378577,
+        27426577
+      ],
+      "measured_change_db": 5.994225373803646,
+      "expected_change_db": 6.0,
+      "error_db": -0.005774626196354049,
+      "runtime_confirmed": true,
+      "operations": [
+        {
+          "elapsed_seconds": 1.5250000000133213e-05,
+          "kind": "option",
+          "args": [
+            "config",
+            "no"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 3.145800000003973e-05,
+          "kind": "option",
+          "args": [
+            "load-scripts",
+            "no"
+          ],
+          "result": -5,
+          "error": "option not found"
+        },
+        {
+          "elapsed_seconds": 3.816700000003337e-05,
+          "kind": "option",
+          "args": [
+            "terminal",
+            "no"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 4.062500000001634e-05,
+          "kind": "option",
+          "args": [
+            "vid",
+            "no"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 4.862500000024639e-05,
+          "kind": "option",
+          "args": [
+            "vo",
+            "null"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 5.1707999999983656e-05,
+          "kind": "option",
+          "args": [
+            "idle",
+            "yes"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 5.258299999999494e-05,
+          "kind": "option",
+          "args": [
+            "keep-open",
+            "yes"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 5.808300000031963e-05,
+          "kind": "option",
+          "args": [
+            "ao",
+            "pcm"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 6.0083000000155096e-05,
+          "kind": "option",
+          "args": [
+            "audio-channels",
+            "auto"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 6.508299999996581e-05,
+          "kind": "option",
+          "args": [
+            "ao-pcm-file",
+            "/var/folders/rx/cwp1dm6536789l30qt9hf9rm0000gn/T/echo-runtime-pcm-vop6vuud/output.wav"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 7.012500000014299e-05,
+          "kind": "option",
+          "args": [
+            "ao-pcm-waveheader",
+            "yes"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 7.141700000001805e-05,
+          "kind": "request-log",
+          "args": [
+            "debug"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 0.0004347080000002279,
+          "kind": "initialize",
+          "args": [],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 0.0004566249999999883,
+          "kind": "command",
+          "args": [
+            "af",
+            "set",
+            "@echo_float:lavfi=[aformat=sample_fmts=dblp],@echo_preamp:lavfi=[volume@preamp=volume=1:precision=double],@echo_limiter:lavfi=[alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true]"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 0.00046925000000008765,
+          "kind": "command",
+          "args": [
+            "loadfile",
+            "/var/folders/rx/cwp1dm6536789l30qt9hf9rm0000gn/T/echo-runtime-pcm-vop6vuud/input.wav"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 0.40295316700000017,
+          "kind": "command",
+          "args": [
+            "af-command",
+            "echo_preamp",
+            "preamp:volume",
+            "1.99526231496888"
+          ],
+          "result": 0,
+          "error": null
+        }
+      ],
+      "meaning": "One uninterrupted PCM capture; sample windows exclude initial and command transients. File offsets bound written samples, not real-time latency."
+    },
+    {
+      "name": "runtime_gain_pcm_proof",
+      "case": "normalization_disable_returns_to_zero",
+      "input": "/tmp/echo-normalization-fixtures/tone997-48000-2ch-60db.wav",
+      "input_sha256": "88085245b0e0c9577e15968cd66f7f27c188c914480134a630f49463a4afa2c2",
+      "extended_input_sha256": "762ac874b112857c1c3412c996f39ed037c8f92c155f74533a8a9da12f5c7a2a",
+      "extended_input_frames": 28800000,
+      "output_sha256": "571bcfe2cc4bb9383e50fb5573cdbf3029cafeb768951883abe2d2931a3de246",
+      "output_frames": 27020049,
+      "sample_rate": 48000,
+      "channels": 2,
+      "sample_width_bytes": 2,
+      "command": [
+        "af-command",
+        "echo_preamp",
+        "preamp:volume",
+        "1"
+      ],
+      "command_result": 0,
+      "eof_before_command": false,
+      "time_pos_before_command": 186.70435416666666,
+      "file_bytes_before_command": 35844096,
+      "file_bytes_after_command": 71577600,
+      "command_frame_upper_bound": 17894400,
+      "baseline_window_frames": [
+        4800,
+        28800
+      ],
+      "changed_window_frames": [
+        26972049,
+        27020049
+      ],
+      "measured_change_db": -5.9825629875457835,
+      "expected_change_db": -6.0,
+      "error_db": 0.01743701245421647,
+      "runtime_confirmed": true,
+      "operations": [
+        {
+          "elapsed_seconds": 1.6000000000016e-05,
+          "kind": "option",
+          "args": [
+            "config",
+            "no"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 3.254099999994153e-05,
+          "kind": "option",
+          "args": [
+            "load-scripts",
+            "no"
+          ],
+          "result": -5,
+          "error": "option not found"
+        },
+        {
+          "elapsed_seconds": 4.079099999998448e-05,
+          "kind": "option",
+          "args": [
+            "terminal",
+            "no"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 4.3290999999889834e-05,
+          "kind": "option",
+          "args": [
+            "vid",
+            "no"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 5.391600000015373e-05,
+          "kind": "option",
+          "args": [
+            "vo",
+            "null"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 5.737499999991513e-05,
+          "kind": "option",
+          "args": [
+            "idle",
+            "yes"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 5.837500000005491e-05,
+          "kind": "option",
+          "args": [
+            "keep-open",
+            "yes"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 6.43750000000054e-05,
+          "kind": "option",
+          "args": [
+            "ao",
+            "pcm"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 6.691600000019449e-05,
+          "kind": "option",
+          "args": [
+            "audio-channels",
+            "auto"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 7.241600000007509e-05,
+          "kind": "option",
+          "args": [
+            "ao-pcm-file",
+            "/var/folders/rx/cwp1dm6536789l30qt9hf9rm0000gn/T/echo-runtime-pcm-9ampi3ij/output.wav"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 7.812499999992895e-05,
+          "kind": "option",
+          "args": [
+            "ao-pcm-waveheader",
+            "yes"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 7.954099999984976e-05,
+          "kind": "request-log",
+          "args": [
+            "debug"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 0.0004508329999999283,
+          "kind": "initialize",
+          "args": [],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 0.0004738330000000346,
+          "kind": "command",
+          "args": [
+            "af",
+            "set",
+            "@echo_float:lavfi=[aformat=sample_fmts=dblp],@echo_preamp:lavfi=[volume@preamp=volume=1.99526231496888:precision=double],@echo_limiter:lavfi=[alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true]"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 0.000488000000000266,
+          "kind": "command",
+          "args": [
+            "loadfile",
+            "/var/folders/rx/cwp1dm6536789l30qt9hf9rm0000gn/T/echo-runtime-pcm-9ampi3ij/input.wav"
+          ],
+          "result": 0,
+          "error": null
+        },
+        {
+          "elapsed_seconds": 0.40295216599999995,
+          "kind": "command",
+          "args": [
+            "af-command",
+            "echo_preamp",
+            "preamp:volume",
+            "1"
+          ],
+          "result": 0,
+          "error": null
+        }
+      ],
+      "meaning": "One uninterrupted PCM capture; sample windows exclude initial and command transients. File offsets bound written samples, not real-time latency."
+    },
+    {
+      "name": "pressure_baseline",
+      "input": "tone997-48000-2ch-0.1db.wav",
+      "input_sha256": "1ffe078232b04470e14609c2258dcc32dfd9ab423f8dac8e578aef6385e20d0e",
+      "gain_db": 0.0,
+      "output_frames": 192000,
+      "sample_rate": 48000,
+      "channels": 2,
+      "sample_width_bytes": 2,
+      "peak_linear": 0.891265869140625,
+      "peak_dbfs": -0.9998544876801003,
+      "at_or_below_full_scale": true,
+      "meaning": "Integer PCM16 peak with the terminal limiter active. It cannot prove the intermediate float chain had no non-finite values, and is not a true-peak measurement."
+    },
+    {
+      "name": "pressure_plus_6_db",
+      "input": "tone997-48000-2ch-0.1db.wav",
+      "input_sha256": "1ffe078232b04470e14609c2258dcc32dfd9ab423f8dac8e578aef6385e20d0e",
+      "gain_db": 6.0,
+      "output_frames": 192000,
+      "sample_rate": 48000,
+      "channels": 2,
+      "sample_width_bytes": 2,
+      "peak_linear": 0.891265869140625,
+      "peak_dbfs": -0.9998544876801003,
+      "at_or_below_full_scale": true,
+      "meaning": "Integer PCM16 peak with the terminal limiter active. It cannot prove the intermediate float chain had no non-finite values, and is not a true-peak measurement."
+    }
+  ],
+  "not_measured": [
+    "30 ms track-to-track gain ramp smoothness (PCM AO is untimed)",
+    "real-time update latency, underruns and device rebuilds",
+    "intermediate float-chain non-finite diagnostics and true-peak",
+    "Windows and Linux distributed runtimes",
+    "BS.1770 loudness measurement or true-peak compliance"
+  ],
+  "invocation": [
+    "python3",
+    "-B",
+    "scripts/audio-effects/normalization_probe.py",
+    "--libmpv",
+    "apps/desktop/src-tauri/vendor/libmpv/macos/libmpv.dylib",
+    "--input",
+    "/tmp/echo-normalization-fixtures/tone997-48000-2ch-60db.wav",
+    "--pressure-input",
+    "/tmp/echo-normalization-fixtures/tone997-48000-2ch-0.1db.wav",
+    "--fixture-manifest",
+    "/tmp/echo-normalization-fixtures/manifest.json",
+    "--manifest",
+    "apps/desktop/src-tauri/vendor/libmpv/macos/manifest.json"
+  ]
+}

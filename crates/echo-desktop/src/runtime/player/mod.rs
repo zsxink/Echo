@@ -26,7 +26,7 @@ use echo_core::domain::ids::SongId;
 use echo_core::domain::state::PlaybackState;
 use echo_core::error::Error;
 
-use crate::player::actor::{FfiSpawnError, PlayerActor, SongResolver};
+use crate::player::actor::{FfiSpawnError, LoudnessLookup, PlayerActor, SongResolver};
 use crate::player::coordinator::PlaybackCoordinator;
 use crate::player::port::{PlayMode, PlayerPort, PlayerSnapshot, VOLUME_EPSILON};
 use crate::player::queue::{QueueItem, QueueRevision, ViewContext};
@@ -186,6 +186,15 @@ impl PlayerController {
             root.resolve_song_path(&song)
         })
     }
+
+    /// Build the per-song loudness lookup over the same repository. A missing
+    /// song or an untagged row yields `None` (0 dB); storage errors are
+    /// returned so the actor can log a diagnostic and degrade safely.
+    #[must_use]
+    pub fn loudness_lookup(deps: &Arc<ScanDeps>) -> LoudnessLookup {
+        let songs = deps.songs.clone();
+        Arc::new(move |song_id| Ok(songs.by_id(song_id)?.and_then(|song| song.loudness_tags())))
+    }
 }
 
 impl PlayerController<Arc<dyn PlayerPort>> {
@@ -200,8 +209,26 @@ impl PlayerController<Arc<dyn PlayerPort>> {
         libmpv_path: &std::path::Path,
         resolver: SongResolver,
     ) -> Result<Self, FfiSpawnError> {
+        Self::spawn_mpv_with_loudness(libmpv_path, resolver, None)
+    }
+
+    /// Production assembly: the actor also receives the loudness lookup.
+    ///
+    /// # Errors
+    /// Propagates [`FfiSpawnError`] when libmpv or the actor thread is
+    /// unavailable.
+    pub fn spawn_mpv_with_loudness(
+        libmpv_path: &std::path::Path,
+        resolver: SongResolver,
+        loudness_lookup: Option<LoudnessLookup>,
+    ) -> Result<Self, FfiSpawnError> {
         let snapshot = Arc::new(RwLock::new(PlayerSnapshot::default()));
-        let actor = PlayerActor::spawn_mpv(libmpv_path, snapshot, Some(resolver))?;
+        let actor = PlayerActor::spawn_mpv_with_loudness(
+            libmpv_path,
+            snapshot,
+            Some(resolver),
+            loudness_lookup,
+        )?;
         let port: Arc<dyn PlayerPort> = Arc::new(actor);
         let coordinator = Arc::new(Mutex::new(PlaybackCoordinator::new(port.clone())));
         Ok(Self { coordinator, port })

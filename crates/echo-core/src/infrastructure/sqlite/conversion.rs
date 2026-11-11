@@ -19,7 +19,7 @@ use crate::domain::entities::{
     LibraryRoot, LyricsCandidate, LyricsLine, RootAvailability, Song, SongAvailability,
 };
 use crate::domain::ids::{PlayCount, RelativeMediaPath, Revision};
-use crate::domain::media::{AudioFormat, AudioParameters};
+use crate::domain::media::{AudioFormat, AudioParameters, LoudnessSource, LoudnessTags};
 use crate::domain::state::OperationState;
 use crate::error::Error;
 
@@ -64,6 +64,21 @@ pub(crate) fn song_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Song> {
         channels: row.get::<_, Option<u16>>(19)?,
         bits_per_sample: row.get::<_, Option<u16>>(20)?,
     };
+    // Old rows have all five loudness columns NULL; an unknown source code is
+    // treated as "no tags" rather than guessing a tagging scheme.
+    let loudness_tags = row
+        .get::<_, Option<String>>(21)?
+        .and_then(|code| LoudnessSource::from_code(&code))
+        .map(|source| {
+            LoudnessTags::new(
+                source,
+                row.get::<_, Option<i32>>(22).ok().flatten(),
+                row.get::<_, Option<i32>>(23).ok().flatten(),
+                row.get::<_, Option<u32>>(24).ok().flatten(),
+                row.get::<_, Option<u32>>(25).ok().flatten(),
+            )
+        })
+        .filter(|tags| tags.has_gain());
     Ok(Song::from_storage(
         id,
         root,
@@ -83,6 +98,7 @@ pub(crate) fn song_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Song> {
         row.get(15)?,
         format,
         audio_parameters,
+        loudness_tags,
     ))
 }
 
@@ -533,6 +549,11 @@ mod tests {
             rusqlite::types::Value::Integer(44_100), // sample_rate
             rusqlite::types::Value::Integer(2),  // channels
             rusqlite::types::Value::Null,        // bits_per_sample
+            rusqlite::types::Value::Text("r128".to_owned()), // loudness_source
+            rusqlite::types::Value::Integer(-5_500), // loudness_track_gain_mdb
+            rusqlite::types::Value::Null,        // loudness_album_gain_mdb
+            rusqlite::types::Value::Null,        // loudness_track_peak_ppm
+            rusqlite::types::Value::Null,        // loudness_album_peak_ppm
         ];
         let song = first_row(&values, song_from_row).expect("song row");
         assert_eq!(song.id(), id);
@@ -553,5 +574,55 @@ mod tests {
         assert_eq!(parameters.sample_rate_hz, Some(44_100));
         assert_eq!(parameters.channels, Some(2));
         assert_eq!(parameters.bits_per_sample, None);
+        assert_eq!(
+            song.loudness_tags(),
+            Some(LoudnessTags::new(
+                LoudnessSource::R128,
+                Some(-5_500),
+                None,
+                None,
+                None,
+            ))
+        );
+    }
+
+    #[test]
+    fn song_from_row_treats_null_loudness_columns_as_untagged() {
+        let id = crate::domain::ids::SongId::new();
+        let root = crate::domain::ids::LibraryRootId::new();
+        let path = RelativeMediaPath::new("a.flac").expect("path");
+        let mut values = vec![
+            rusqlite::types::Value::Text(id.to_string()),
+            rusqlite::types::Value::Text(root.to_string()),
+            rusqlite::types::Value::Text(path.display().to_owned()),
+            rusqlite::types::Value::Text("available".to_owned()),
+            rusqlite::types::Value::Integer(0),
+            rusqlite::types::Value::Integer(0),
+            rusqlite::types::Value::Integer(1),
+            rusqlite::types::Value::Integer(1),
+            rusqlite::types::Value::Null,
+            rusqlite::types::Value::Null,
+            rusqlite::types::Value::Null,
+            rusqlite::types::Value::Null,
+            rusqlite::types::Value::Integer(1),
+            rusqlite::types::Value::Null,
+            rusqlite::types::Value::Null,
+            rusqlite::types::Value::Null,
+            rusqlite::types::Value::Null,
+            rusqlite::types::Value::Null,
+            rusqlite::types::Value::Null,
+            rusqlite::types::Value::Null,
+            rusqlite::types::Value::Null,
+            rusqlite::types::Value::Null,
+            rusqlite::types::Value::Null,
+            rusqlite::types::Value::Null,
+            rusqlite::types::Value::Null,
+            rusqlite::types::Value::Null,
+        ];
+        let song = first_row(&values, song_from_row).expect("legacy row");
+        assert_eq!(song.loudness_tags(), None);
+        values[21] = rusqlite::types::Value::Text("itunnorm".to_owned());
+        let song = first_row(&values, song_from_row).expect("unknown source row");
+        assert_eq!(song.loudness_tags(), None);
     }
 }

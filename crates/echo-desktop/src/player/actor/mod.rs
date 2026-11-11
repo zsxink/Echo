@@ -37,6 +37,7 @@ use std::sync::{mpsc, Arc, Mutex, RwLock};
 use std::thread::JoinHandle;
 
 use echo_core::domain::ids::SongId;
+use echo_core::domain::media::LoudnessTags;
 use echo_core::domain::state::PlaybackState;
 use echo_core::error::Error;
 
@@ -46,10 +47,13 @@ mod effects;
 #[path = "../native_effects.rs"]
 mod native_effects;
 use super::port::{
-    PlayMode, PlayerCommand, PlayerError, PlayerPort, PlayerSnapshot, VOLUME_EPSILON,
+    NormalizationPort, PlayMode, PlayerCommand, PlayerError, PlayerPort, PlayerSnapshot,
+    VOLUME_EPSILON,
 };
 
 mod backend;
+#[path = "handle.rs"]
+mod handle;
 mod harden_options;
 mod mpv_backend;
 #[cfg(test)]
@@ -75,6 +79,11 @@ pub const COMMAND_CAPACITY: usize = 64;
 ///
 /// Returns `Err` when the song or its root is unknown / unbound.
 pub type SongResolver = Arc<dyn Fn(SongId) -> Result<std::path::PathBuf, Error> + Send + Sync>;
+
+/// Reads the scan-derived loudness tags of one library song. Kept separate
+/// from [`SongResolver`] so path resolution and metadata lookup stay focused;
+/// a missing/unknown song degrades to `None` (0 dB), never a playback failure.
+pub type LoudnessLookup = Arc<dyn Fn(SongId) -> Result<Option<LoudnessTags>, Error> + Send + Sync>;
 
 // ---------------------------------------------------------------------------
 // The actor
@@ -123,27 +132,57 @@ impl PlayerActor {
         snapshot: Arc<RwLock<PlayerSnapshot>>,
         resolver: Option<SongResolver>,
     ) -> Result<Self, FfiSpawnError> {
+        Self::spawn_mpv_with_loudness(libmpv_path, snapshot, resolver, None)
+    }
+
+    /// Production entry point: also injects the per-song loudness lookup so
+    /// the actor can compute a track's gain before its first audible sample.
+    ///
+    /// # Errors
+    /// [`FfiSpawnError::Load`] when libmpv cannot be loaded; [`FfiSpawnError::Spawn`]
+    /// when the actor thread cannot be created.
+    pub fn spawn_mpv_with_loudness(
+        libmpv_path: &Path,
+        snapshot: Arc<RwLock<PlayerSnapshot>>,
+        resolver: Option<SongResolver>,
+        loudness_lookup: Option<LoudnessLookup>,
+    ) -> Result<Self, FfiSpawnError> {
         // SAFETY: `MpvSys::load` only dlopens and resolves symbols; the loaded
         // library is owned by the returned `MpvSys` (`_lib`), which is dropped
         // at the end of this scope. No handle is created here.
         unsafe { ffi::MpvSys::load(libmpv_path) }.map_err(FfiSpawnError::Load)?;
         let path = libmpv_path.to_owned();
-        Self::spawn_with(
+        Self::spawn_with_deps(
             move || {
                 // SAFETY: the actor thread owns the MpvBackend from here on.
                 unsafe { MpvBackend::open(&path) }
             },
             snapshot,
             resolver,
+            loudness_lookup,
         )
     }
 
     /// Spawn with a caller-supplied backend factory. Generic over the backend
     /// so tests inject a [`TestBackend`]; the production path uses `MpvBackend`.
+    #[cfg(test)]
     fn spawn_with<F, B>(
         backend_factory: F,
         snapshot: Arc<RwLock<PlayerSnapshot>>,
         resolver: Option<SongResolver>,
+    ) -> Result<Self, FfiSpawnError>
+    where
+        F: FnOnce() -> Result<B, ffi::HandleError> + Send + 'static,
+        B: Backend + Send + 'static,
+    {
+        Self::spawn_with_deps(backend_factory, snapshot, resolver, None)
+    }
+
+    fn spawn_with_deps<F, B>(
+        backend_factory: F,
+        snapshot: Arc<RwLock<PlayerSnapshot>>,
+        resolver: Option<SongResolver>,
+        loudness_lookup: Option<LoudnessLookup>,
     ) -> Result<Self, FfiSpawnError>
     where
         F: FnOnce() -> Result<B, ffi::HandleError> + Send + 'static,
@@ -174,6 +213,7 @@ impl PlayerActor {
                     ActorLoop::new(backend, snapshot_join.clone(), subscribers_join);
                 loop_state.effects = effects::Engine::new(effects_join.clone());
                 loop_state.resolver = resolver;
+                loop_state.loudness_lookup = loudness_lookup;
                 loop_state.run(rx);
                 // Loop exits only on Shutdown / backend shutdown; ordered
                 // teardown happens here, on the actor thread, before joining.
@@ -191,83 +231,6 @@ impl PlayerActor {
             join: Some(join),
             effects,
         })
-    }
-
-    /// Ordered shutdown: stop accepting commands, terminate the backend on the
-    /// actor thread, join the thread. Blocks until teardown completes.
-    /// Takes `&mut self` (not `self`) so a caller can observe
-    /// [`Self::is_stopped`] after teardown; idempotent.
-    pub fn shutdown(&mut self) {
-        let _ = self.tx.send(PlayerCommand::Shutdown);
-        if let Some(join) = self.join.take() {
-            let _ = join.join();
-        }
-        self.stopped.store(true, Ordering::Release);
-    }
-
-    /// Whether the actor has fully shut down.
-    #[must_use]
-    pub fn is_stopped(&self) -> bool {
-        self.stopped.load(Ordering::Acquire)
-    }
-}
-
-impl Drop for PlayerActor {
-    /// Ordered teardown if the caller did not run [`Self::shutdown`] explicitly
-    /// (e.g. the actor is moved around by the runtime). Prevents a leaked
-    /// actor thread at process exit.
-    fn drop(&mut self) {
-        if self.join.is_some() && !self.is_stopped() {
-            let _ = self.tx.send(PlayerCommand::Shutdown);
-            if let Some(join) = self.join.take() {
-                let _ = join.join();
-            }
-            self.stopped.store(true, Ordering::Release);
-        }
-    }
-}
-
-impl PlayerPort for PlayerActor {
-    fn effects_submit(
-        &self,
-        revision: u64,
-        enabled: bool,
-        payload: crate::effects::Payload,
-    ) -> Result<crate::effects::EffectsRuntime, PlayerError> {
-        self.effects.submit(revision, enabled, payload)
-    }
-    fn effects_runtime(&self) -> crate::effects::EffectsRuntime {
-        self.effects.runtime()
-    }
-    fn effects_bypass(&self, revision: u64) -> Result<crate::effects::EffectsRuntime, PlayerError> {
-        self.effects.bypass(revision)
-    }
-
-    fn send(&self, cmd: PlayerCommand) -> Result<(), PlayerError> {
-        self.tx.try_send(cmd).map_err(|_| {
-            // A full or closed channel means the actor cannot accept work now.
-            PlayerError::ActorClosed
-        })
-    }
-
-    fn snapshot(&self) -> PlayerSnapshot {
-        self.snapshot
-            .read()
-            .expect("actor snapshot poisoned")
-            .clone()
-    }
-
-    fn subscribe_snapshots(&self) -> mpsc::Receiver<PlayerSnapshot> {
-        // A real, bounded mailbox: the actor loop fans every published snapshot
-        // into it. The previous "never-delivering placeholder" here made the
-        // whole `player://snapshot` stream a no-op in production — the player
-        // played fine while every snapshot-driven surface stayed blank.
-        let (tx, rx) = mpsc::sync_channel(1);
-        self.subscribers
-            .lock()
-            .expect("player subscribers poisoned")
-            .push(tx);
-        rx
     }
 }
 
@@ -310,6 +273,9 @@ struct ActorLoop<B: Backend> {
     /// `None` in tests that only exercise `LoadTemporary` / command routing;
     /// the production composition root always supplies a resolver.
     resolver: Option<SongResolver>,
+    /// Resolves a library `SongId` → embedded loudness tags on the actor
+    /// thread; `None` in tests and for temporary playback items.
+    loudness_lookup: Option<LoudnessLookup>,
     /// The pause state the most recent load / transport command **wants** mpv
     /// to be in.
     ///
@@ -359,6 +325,7 @@ impl<B: Backend> ActorLoop<B> {
                 .checked_sub(std::time::Duration::from_secs(1))
                 .unwrap(),
             resolver: None,
+            loudness_lookup: None,
             // A fresh actor has nothing loaded, so "not paused" is the only
             // intent that can be true once a file actually loads.
             intended_paused: false,
@@ -666,6 +633,7 @@ impl<B: Backend> ActorLoop<B> {
                 // because a prior primed load left mpv with `pause=yes` and mpv
                 // does not clear that on a new file (see `intended_paused`).
                 self.intended_paused = false;
+                self.effects.set_tags(self.lookup_loudness(song_id));
                 self.begin_load();
                 if let Some(path) = self.resolver.as_ref().and_then(|r| (r)(song_id).ok()) {
                     self.load_path(&path);
@@ -683,6 +651,7 @@ impl<B: Backend> ActorLoop<B> {
                 // duration + cover) while mpv's pause flag guarantees no sound
                 // until the user presses 播放.
                 self.intended_paused = true;
+                self.effects.set_tags(self.lookup_loudness(song_id));
                 self.begin_load();
                 if let Some(path) = self.resolver.as_ref().and_then(|r| (r)(song_id).ok()) {
                     self.load_path(&path);
@@ -704,6 +673,7 @@ impl<B: Backend> ActorLoop<B> {
                 session_id: _,
             } => {
                 self.intended_paused = false;
+                self.effects.set_tags(None);
                 self.begin_load();
                 self.load_path(&path);
             }
@@ -893,6 +863,25 @@ impl<B: Backend> ActorLoop<B> {
     /// the two library-song resolver branches and `LoadTemporary` — MUST call
     /// this first, so a `Loading` or `Failed` snapshot never carries the
     /// `position`/`duration` left over from the previously loaded file.
+    /// Never let a metadata lookup failure stop playback: unknown songs,
+    /// temporary items and corrupt rows simply get 0 dB.
+    fn lookup_loudness(&self, song_id: SongId) -> Option<LoudnessTags> {
+        let Some(lookup) = &self.loudness_lookup else {
+            return None;
+        };
+        match lookup(song_id) {
+            Ok(tags) => tags,
+            Err(error) => {
+                tracing::warn!(
+                    song_id = %song_id,
+                    error = %error,
+                    "loudness tag lookup failed; using neutral gain"
+                );
+                None
+            }
+        }
+    }
+
     fn begin_load(&mut self) -> u64 {
         self.effects_pause_confirmed = self.effects.begin_load(&mut self.backend);
         self.load_completed = false;

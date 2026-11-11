@@ -11,6 +11,7 @@ import { OverlayTier, useOverlay } from "../../app/overlays";
 import { playerStore, useAudioEffects, usePlayerUi } from "../../player/playerStore";
 import type { EffectsSnapshotDto, EqCurve } from "../../ipc/ipc-types.generated";
 import { EffectsDialog, type EffectsDialogAction } from "./EffectsDialog";
+import { NormalizationControls } from "./NormalizationControls";
 import { EffectsPresets } from "./EffectsPresets";
 import { EqualizerEditor } from "./EqualizerEditor";
 import { NEUTRAL_CURVE } from "./eqCurve";
@@ -299,6 +300,7 @@ export function EffectsPanel() {
               </div>
             )}
           </div>
+          <NormalizationControls />
           <span className="sr-only" aria-live="polite">
             {announcement}
           </span>

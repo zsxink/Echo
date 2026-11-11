@@ -7,7 +7,12 @@
  * snapshot so a scenario can assert what each edit produced — the real
  * pipeline is Core's and is covered by the Rust suite.
  */
-import type { EffectsSnapshotDto, EqCurve } from "../src/ipc/ipc-types.generated";
+import type {
+  EffectsSnapshotDto,
+  EqCurve,
+  NormalizationPreference,
+  NormalizationSnapshotDto,
+} from "../src/ipc/ipc-types.generated";
 import type { Command, Handler } from "./mock-bridge-commands";
 
 /** Build the audio-effects handler table for the mock backend. */
@@ -16,6 +21,15 @@ export function buildEffectsHandlers(): Partial<Record<Command, Handler>> {
     gainsDb: [3, 4, 2, 0, -1.5, -2, -0.5, 2, 3, 2],
     preampMode: "auto" as const,
     requestedPreampDb: 0,
+  };
+  let normalizationSnapshot: NormalizationSnapshotDto = {
+    preference: {
+      schemaVersion: 1,
+      enabled: false,
+      mode: "track",
+      preampDb: 0,
+    },
+    runtime: { gainDb: 0, status: "disabled", reason: null },
   };
   let effectsSnapshot: EffectsSnapshotDto = {
     document: {
@@ -73,6 +87,18 @@ export function buildEffectsHandlers(): Partial<Record<Command, Handler>> {
   };
 
   return {
+    get_loudness_normalization: () => normalizationSnapshot,
+    set_loudness_normalization: ({ preference }) => {
+      normalizationSnapshot = {
+        preference: preference as NormalizationPreference,
+        runtime: {
+          gainDb: 0,
+          status: (preference as NormalizationPreference).enabled ? "noTags" : "disabled",
+          reason: null,
+        },
+      };
+      return normalizationSnapshot;
+    },
     get_audio_effects_snapshot: () => effectsSnapshot,
     select_audio_effects_preset: ({ id }) => {
       const preset = effectsSnapshot.presets.find((item) => item.id === String(id));

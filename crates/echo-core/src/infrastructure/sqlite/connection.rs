@@ -30,6 +30,7 @@ mod migrations {
         include_str!("migrations/0029_drop_sync_binding_protocol_version.sql");
     pub const RETAINED_PROJECTION_INDEXES: &str =
         include_str!("migrations/0030_retained_projection_indexes.sql");
+    pub const SONG_LOUDNESS_TAGS: &str = include_str!("migrations/0031_song_loudness_tags.sql");
     pub const INITIAL: &str = include_str!("migrations/0001_initial.sql");
     pub const LIBRARY_ASSETS: &str = include_str!("migrations/0002_library_assets.sql");
     pub const ROOT_WRITE_SAFETY: &str = include_str!("migrations/0003_root_write_safety.sql");
@@ -131,6 +132,7 @@ pub(crate) fn apply_migrations(connection: &mut Connection) -> Result<(), Error>
             (28, migrations::LIBRARY_DURABILITY),
             (29, migrations::DROP_SYNC_BINDING_PROTOCOL_VERSION),
             (30, migrations::RETAINED_PROJECTION_INDEXES),
+            (31, migrations::SONG_LOUDNESS_TAGS),
         ],
     )
 }

@@ -44,6 +44,9 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 mod effects;
+mod normalization;
+
+pub use normalization::NormalizationStoreState;
 
 /// The notch player defaults to on: on a notched Mac it is the intended
 /// out-of-the-box experience, and on a Mac without a notch the preference is
@@ -244,6 +247,10 @@ struct RawDoc {
     /// Opaque versioned payload; its validation belongs to the effects service.
     #[serde(skip_serializing_if = "Option::is_none")]
     effects: Option<serde_json::Value>,
+    /// Independent versioned normalization preference; validation belongs to
+    /// the normalization service, not to this storage primitive.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    normalization: Option<serde_json::Value>,
     /// Future desktop fields survive writes from older applications.
     #[serde(flatten)]
     unknown: serde_json::Map<String, serde_json::Value>,
@@ -531,6 +538,7 @@ struct ParsedDoc {
     playback_session: Option<PlaybackSessionValue>,
     corruption: bool,
     effects: Option<serde_json::Value>,
+    normalization: Option<serde_json::Value>,
     unknown: serde_json::Map<String, serde_json::Value>,
 }
 
@@ -558,6 +566,7 @@ impl ParsedDoc {
                 "window",
                 "playbackSession",
                 "effects",
+                "normalization",
             ] {
                 doc.unknown.remove(key);
             }
@@ -565,6 +574,7 @@ impl ParsedDoc {
             return Self::unparseable();
         }
         doc.effects = value.get("effects").cloned();
+        doc.normalization = value.get("normalization").cloned();
 
         match value.get("theme") {
             Some(serde_json::Value::String(s)) => match s.as_str() {
@@ -631,6 +641,7 @@ impl ParsedDoc {
             window: self.window,
             playback_session: self.playback_session,
             effects: self.effects,
+            normalization: self.normalization,
             unknown: self.unknown,
         }
     }

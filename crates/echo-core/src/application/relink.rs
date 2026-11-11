@@ -245,6 +245,7 @@ impl RelinkPlanner {
             file.mtime_ns,
             file.meta.format,
         );
+        song.apply_loudness(file.meta.loudness);
     }
 }
 
@@ -273,6 +274,7 @@ pub(crate) fn song_from_parsed(
         file.mtime_ns,
         file.meta.format,
     );
+    entity.apply_loudness(file.meta.loudness);
     entity
 }
 

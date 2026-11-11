@@ -3,6 +3,7 @@
 
 mod derived;
 mod document;
+pub mod loudness;
 pub mod math;
 mod model;
 pub mod naming;

@@ -172,3 +172,35 @@ mod restore_prime;
 mod session_saver;
 mod snapshot;
 mod stats;
+
+#[test]
+fn loudness_lookup_reads_scan_derived_tags_and_degrades_for_unknown_songs() {
+    use echo_core::application::testing::scan_fixture::ScanFixture;
+    use echo_core::domain::entities::Song;
+    use echo_core::domain::media::{LoudnessSource, LoudnessTags};
+
+    let fixture = ScanFixture::new();
+    let tags = LoudnessTags::new(
+        LoudnessSource::ReplayGain2,
+        Some(-6_000),
+        None,
+        Some(900_000),
+        None,
+    );
+    let mut song = Song::new(
+        SongId::new(),
+        fixture.root,
+        RelativeMediaPath::new("a.flac").expect("relative path"),
+        Revision::INITIAL,
+    );
+    song.apply_loudness(Some(tags));
+    SongRepository::upsert(&*fixture.deps.songs, &song).expect("seed song");
+
+    let lookup = PlayerController::loudness_lookup(&fixture.deps);
+    assert_eq!(lookup(song.id()).expect("lookup"), Some(tags));
+    assert_eq!(
+        lookup(SongId::new()).expect("unknown song degrades"),
+        None,
+        "an unknown song is 0 dB, not a playback failure"
+    );
+}

@@ -30,6 +30,7 @@ pub fn generated_typescript() -> String {
     out.push_str("export type LibraryDurabilityReasonDto = 'operationRejected' | 'recoveryRequired' | 'projectionPending' | 'unresolvedProjection' | 'legacyUnverified';\n\n");
     out.push_str("export type LibraryDurabilityOutcomeDto =\n  | { readonly kind: 'notSaved'; readonly reason: LibraryDurabilityReasonDto }\n  | { readonly kind: 'savedPendingRecovery'; readonly operationId: string | null; readonly reason: LibraryDurabilityReasonDto }\n  | { readonly kind: 'savedPendingProjection'; readonly operationId: string | null; readonly reason: LibraryDurabilityReasonDto }\n  | { readonly kind: 'complete'; readonly operationId: string | null }\n  | { readonly kind: 'recoveryPartial'; readonly reason: LibraryDurabilityReasonDto };\n\n");
     out.push_str(super::effects::typescript());
+    out.push_str(super::normalization::typescript());
     out.push_str(super::playback_retry::typescript());
     out.push_str(super::sync::typescript());
 
@@ -284,6 +285,8 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly discover_hosts: readonly DiscoveredHost[];\n");
     out.push_str("  readonly create_sync_pairing_code: SyncPairingCode;\n");
     out.push_str("  readonly request_sync_pairing: SyncStatus;\n");
+    out.push_str("  readonly get_loudness_normalization: NormalizationSnapshotDto;\n");
+    out.push_str("  readonly set_loudness_normalization: NormalizationSnapshotDto;\n");
     for command in [
         "get_audio_effects_snapshot",
         "select_audio_effects_preset",

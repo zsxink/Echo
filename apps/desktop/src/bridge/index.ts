@@ -23,6 +23,7 @@ import type {
   EqCurve,
   IpcCommandResultMap,
   IpcErrorDto,
+  NormalizationPreference,
   SyncCommandArguments,
 } from "../ipc/ipc-types.generated";
 
@@ -43,6 +44,8 @@ interface BridgeCommandArguments extends SyncCommandArguments {
   rename_audio_effects_preset: [args: { id: string; name: string }];
   delete_audio_effects_preset: [args: { id: string }];
   retry_audio_effects: EmptyArgs;
+  get_loudness_normalization: EmptyArgs;
+  set_loudness_normalization: [args: { preference: NormalizationPreference }];
   get_bootstrap_state: EmptyArgs;
   library_status: EmptyArgs;
   retry_library_operation: [args: { root: string; operation: string }];

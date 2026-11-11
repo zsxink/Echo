@@ -1,4 +1,5 @@
 use super::*;
+use crate::domain::media::{LoudnessSource, LoudnessTags};
 
 fn fixtures_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -49,6 +50,90 @@ fn tags_and_parameters_parse_from_fixtures() {
     // Duration/format are probe-owned, never tag-owned.
     assert!(m4a.duration.is_none());
     assert!(m4a.warnings.is_empty());
+    // Fixtures carry no loudness tags: no value and no diagnostic noise.
+    assert!(mp3.loudness.is_none());
+    assert!(flac.loudness.is_none());
+    assert!(m4a.loudness.is_none());
+}
+
+/// Write a real container tag into a copied fixture, so the loudness parser is
+/// exercised through `read_from_file` rather than only through hand-built Tags.
+fn write_loudness_fixture(fixture: &str, items: Vec<(ItemKey, &str)>) -> std::path::PathBuf {
+    use lofty::tag::{ItemValue, TagItem};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(fixture);
+    std::fs::copy(fixtures_dir().join(fixture), &path).unwrap();
+    let mut tagged = lofty::read_from_path(&path).unwrap();
+    let has_primary = tagged.primary_tag().is_some();
+    let tag = if has_primary {
+        tagged.primary_tag_mut().expect("checked above")
+    } else {
+        tagged.first_tag_mut().expect("fixture carries a tag")
+    };
+    for (key, value) in items {
+        tag.insert_unchecked(TagItem::new(key, ItemValue::Text(value.to_owned())));
+    }
+    tagged
+        .save_to_path(&path, lofty::config::WriteOptions::default())
+        .unwrap();
+    std::mem::forget(dir);
+    path
+}
+
+#[test]
+fn replaygain_tags_parse_from_a_real_flac_container() {
+    let path = write_loudness_fixture(
+        "tone-short.flac",
+        vec![
+            (ItemKey::ReplayGainTrackGain, "-6.54 dB"),
+            (ItemKey::ReplayGainTrackPeak, "0.98765"),
+            (ItemKey::ReplayGainAlbumGain, "-8.00 dB"),
+            (ItemKey::ReplayGainAlbumPeak, "0.999"),
+        ],
+    );
+    let meta = read_from_file(&path, &InputLimits::defaults()).unwrap();
+    let tags = meta.loudness.expect("ReplayGain tags are read");
+    assert_eq!(tags.source, LoudnessSource::ReplayGain2);
+    assert_eq!(LoudnessTags::gain_db(tags.track_gain_mdb), Some(-6.54));
+    assert_eq!(LoudnessTags::peak(tags.track_peak_ppm), Some(0.98765));
+    assert!(meta.warnings.is_empty(), "{:?}", meta.warnings);
+}
+
+#[test]
+fn r128_tags_parse_from_a_real_opus_container() {
+    let path = write_loudness_fixture(
+        "tone-short.opus",
+        vec![
+            (ItemKey::Unknown("R128_TRACK_GAIN".to_owned()), "-1408"),
+            (ItemKey::Unknown("R128_ALBUM_GAIN".to_owned()), "-1792"),
+        ],
+    );
+    let meta = read_from_file(&path, &InputLimits::defaults()).unwrap();
+    let tags = meta.loudness.expect("R128 tags are read");
+    assert_eq!(tags.source, LoudnessSource::R128);
+    assert_eq!(LoudnessTags::gain_db(tags.track_gain_mdb), Some(-5.5));
+    assert_eq!(LoudnessTags::gain_db(tags.album_gain_mdb), Some(-7.0));
+    assert_eq!(tags.track_peak_ppm, None);
+    assert!(meta.warnings.is_empty(), "{:?}", meta.warnings);
+}
+
+#[test]
+fn malformed_loudness_tags_are_a_warning_not_a_song_failure() {
+    let path = write_loudness_fixture(
+        "tone-short.mp3",
+        vec![(ItemKey::ReplayGainTrackGain, "not-a-number")],
+    );
+    let meta = read_from_file(&path, &InputLimits::defaults()).unwrap();
+    assert_eq!(meta.title.as_deref(), Some("Echo Tone"));
+    assert!(meta.loudness.is_none());
+    assert!(
+        meta.warnings
+            .iter()
+            .any(|warning| warning.kind == ParseWarningKind::LoudnessTag),
+        "{:?}",
+        meta.warnings
+    );
 }
 
 #[test]

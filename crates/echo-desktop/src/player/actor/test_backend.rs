@@ -159,6 +159,8 @@ impl Backend for TestBackend {
         _: &crate::effects::Payload,
         _: crate::effects::ProcessingEnvironment,
         _: &crate::effects::math::EffectsAnalysis,
+        _: f64,
+        _: bool,
     ) -> Result<bool, String> {
         self.effects_ready.as_ref().map_or_else(
             || Err("native effects capability unavailable".to_owned()),

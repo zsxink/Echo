@@ -88,6 +88,8 @@ pub(super) fn bootstrap_main() {
             commands_audio_effects::rename_audio_effects_preset,
             commands_audio_effects::delete_audio_effects_preset,
             commands_audio_effects::retry_audio_effects,
+            commands_normalization::get_loudness_normalization,
+            commands_normalization::set_loudness_normalization,
             commands::get_bootstrap_state,
             commands::library_status,
             commands::retry_library_operation,

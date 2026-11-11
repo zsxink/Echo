@@ -6,6 +6,8 @@ use std::path::Path;
 #[derive(Default)]
 struct Driver {
     applies: Vec<Payload>,
+    /// (combined preamp dB, gain-only) for every applied configuration.
+    applied_gains: Vec<(f64, bool)>,
     bypasses: usize,
     properties: Vec<BackendProperty>,
     fail_apply: bool,
@@ -28,8 +30,11 @@ impl Backend for Driver {
         payload: &Payload,
         _: ProcessingEnvironment,
         _: &crate::effects::math::EffectsAnalysis,
+        combined_preamp_db: f64,
+        gain_only: bool,
     ) -> Result<bool, String> {
         self.applies.push(payload.clone());
+        self.applied_gains.push((combined_preamp_db, gain_only));
         if self.fail_apply {
             Err("injected effect failure".to_owned())
         } else {
@@ -325,4 +330,155 @@ fn synchronous_bypass_waits_for_the_actor_and_shutdown_wakes_waiters() {
     );
     shared.close();
     assert!(shared.submit(2, false, Payload::default()).is_err());
+}
+
+// ---------------------------------------------------------------------------
+// Loudness normalization (issue #101): independent gain layer
+// ---------------------------------------------------------------------------
+
+use crate::effects::loudness::{NormalizationMode, NormalizationPreference, NormalizationStatus};
+use echo_core::domain::media::{LoudnessSource, LoudnessTags};
+
+fn enabled_preference(preamp_db: f64) -> NormalizationPreference {
+    NormalizationPreference {
+        enabled: true,
+        mode: NormalizationMode::Track,
+        preamp_db,
+        ..NormalizationPreference::default()
+    }
+}
+
+#[test]
+fn normalization_only_session_holds_first_sample_and_bypasses_the_preset_state() {
+    let shared = Shared::default();
+    let mut engine = Engine::new(shared.clone());
+    let mut driver = Driver::default();
+    shared.set_normalization(enabled_preference(0.0)).unwrap();
+    // No effects target was submitted: the neutral target created by
+    // set_normalization still drives the pause barrier and the gain stage.
+    engine.begin_load(&mut driver);
+    assert_eq!(
+        driver.properties.last(),
+        Some(&BackendProperty::Pause(true)),
+        "gain-only stage must guard the first sample"
+    );
+    environment(&mut engine, 48_000.0, 2.0);
+    assert!(engine.tick(&mut driver, true, true));
+    assert_eq!(driver.applies.len(), 1);
+    assert_eq!(driver.applied_gains.last(), Some(&(0.0, true)));
+    assert_eq!(shared.runtime().applied, AppliedState::Bypassed);
+    assert_eq!(
+        shared.normalization_runtime().status,
+        NormalizationStatus::NoTags
+    );
+}
+
+#[test]
+fn tagged_track_gain_reaches_the_backend_and_is_not_reported_as_effects_applied() {
+    let shared = Shared::default();
+    let mut engine = Engine::new(shared.clone());
+    let mut driver = Driver::default();
+    shared.set_normalization(enabled_preference(0.0)).unwrap();
+    environment(&mut engine, 48_000.0, 2.0);
+    engine.set_tags(Some(LoudnessTags::new(
+        LoudnessSource::ReplayGain2,
+        Some(-6_000),
+        None,
+        Some(900_000),
+        None,
+    )));
+    assert!(engine.tick(&mut driver, true, true));
+    assert_eq!(driver.applied_gains.last(), Some(&(-6.0, true)));
+    assert_eq!(shared.runtime().applied, AppliedState::Bypassed);
+    let runtime = shared.normalization_runtime();
+    assert_eq!(runtime.status, NormalizationStatus::Applied);
+    assert!((runtime.gain_db - (-6.0)).abs() < 1e-9);
+}
+
+#[test]
+fn tag_and_preference_changes_invalidate_the_applied_configuration() {
+    let shared = Shared::default();
+    let mut engine = Engine::new(shared.clone());
+    let mut driver = Driver::default();
+    shared.set_normalization(enabled_preference(0.0)).unwrap();
+    environment(&mut engine, 48_000.0, 2.0);
+    let tags = LoudnessTags::new(LoudnessSource::ReplayGain2, Some(-4_000), None, None, None);
+    engine.set_tags(Some(tags));
+    assert!(engine.tick(&mut driver, true, true));
+    assert!(
+        engine.tick(&mut driver, true, true),
+        "unchanged config is cached"
+    );
+    assert_eq!(driver.applies.len(), 1);
+
+    engine.set_tags(Some(LoudnessTags::new(
+        LoudnessSource::R128,
+        Some(-2_000),
+        None,
+        None,
+        None,
+    )));
+    assert!(engine.tick(&mut driver, true, true));
+    assert_eq!(driver.applies.len(), 2, "new track recomputes its gain");
+    assert_eq!(driver.applied_gains.last(), Some(&(3.0, true)));
+
+    shared.set_normalization(enabled_preference(1.0)).unwrap();
+    assert!(engine.tick(&mut driver, true, true));
+    assert_eq!(
+        driver.applies.len(),
+        3,
+        "preference change recomputes its gain"
+    );
+    assert_eq!(driver.applied_gains.last(), Some(&(4.0, true)));
+}
+
+#[test]
+fn disabling_normalization_bypasses_without_leaving_a_gain_stage() {
+    let shared = Shared::default();
+    let mut engine = Engine::new(shared.clone());
+    let mut driver = Driver::default();
+    shared.set_normalization(enabled_preference(0.0)).unwrap();
+    environment(&mut engine, 48_000.0, 2.0);
+    assert!(engine.tick(&mut driver, true, true));
+    shared
+        .set_normalization(NormalizationPreference::default())
+        .unwrap();
+    assert!(engine.tick(&mut driver, true, true));
+    assert_eq!(driver.bypasses, 1);
+    assert_eq!(shared.runtime().applied, AppliedState::Bypassed);
+    assert_eq!(
+        shared.normalization_runtime().status,
+        NormalizationStatus::Disabled
+    );
+}
+
+#[test]
+fn failed_native_configuration_degrades_to_zero_db_without_stopping_playback() {
+    let shared = Shared::default();
+    let mut engine = Engine::new(shared.clone());
+    let mut driver = Driver {
+        fail_apply: true,
+        ..Driver::default()
+    };
+    shared.set_normalization(enabled_preference(0.0)).unwrap();
+    environment(&mut engine, 48_000.0, 2.0);
+    assert!(engine.tick(&mut driver, true, true));
+    assert!(shared.normalization_runtime().reason.is_some());
+    assert_eq!(shared.runtime().applied, AppliedState::Failed);
+    assert_eq!(driver.bypasses, 1, "failure confirms a safe bypass");
+}
+
+#[test]
+fn invalid_preference_is_rejected_by_the_mailbox() {
+    let shared = Shared::default();
+    assert!(shared
+        .set_normalization(NormalizationPreference {
+            preamp_db: 0.25,
+            ..enabled_preference(0.0)
+        })
+        .is_err());
+    assert_eq!(
+        shared.normalization_runtime().status,
+        NormalizationStatus::Disabled
+    );
 }

@@ -35,6 +35,7 @@ mod sync_song_projection;
 mod controlled_order;
 mod durability_migration;
 mod lifecycle;
+mod loudness;
 pub(super) mod playback_fixture;
 mod resource_retention;
 mod sync_cache_cleanup;
