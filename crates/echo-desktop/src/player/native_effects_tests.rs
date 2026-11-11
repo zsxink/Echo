@@ -281,6 +281,12 @@ fn complete(native: &mut NativeEffects) {
     native.ramp.as_mut().unwrap().started = Instant::now().checked_sub(TRANSITION).unwrap();
 }
 
+/// Deterministically park an in-flight ramp at its midpoint. Wall-clock
+/// polling is not a stable way to observe an intermediate gain command.
+fn halfway(native: &mut NativeEffects) {
+    native.ramp.as_mut().unwrap().started = Instant::now().checked_sub(TRANSITION / 2).unwrap();
+}
+
 #[test]
 fn chain_is_typed_float_named_and_uses_three_argument_commands() {
     let mut native = NativeEffects::default();
@@ -900,6 +906,19 @@ fn track_gain_change_ramp_reaches_the_new_target_without_a_hard_cut() {
 
     // A new track asks for a different gain; the same graph is reused and the
     // gain is interpolated from the previous value.
+    assert!(!native
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            2.0,
+            true,
+            capture(&mut commands)
+        )
+        .unwrap());
+    // Drive one midpoint tick, then the final tick; neither depends on how
+    // much wall time happened to pass between calls.
+    halfway(&mut native);
     assert!(!native
         .apply(
             &payload,

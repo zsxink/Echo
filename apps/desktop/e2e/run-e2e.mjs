@@ -692,10 +692,14 @@ async function main() {
         clientHeight: scroll?.clientHeight, scrollHeight: scroll?.scrollHeight,
         bandsClientWidth: bands?.clientWidth, bandsScrollWidth: bands?.scrollWidth,
         bandCount: bandControls.length,
+        equalizerRanges: panel?.querySelectorAll('.effects-body input[type="range"]').length,
+        normalizationRanges: panel?.querySelectorAll('.normalization-controls input[type="range"]').length,
+        normalizationBox: panel?.querySelector('[data-testid="normalization-controls"]')?.getBoundingClientRect(),
+        narrowMedia: matchMedia('(max-width: 760px)').matches,
         controlsFit: Boolean(box) && bandControls.every((control) => { const r = control.getBoundingClientRect(); return r.left >= box.left && r.right <= box.right; }) };
     })()`);
     await assert(
-      `(() => { const p = document.querySelector('[data-testid="effects-panel"] .effects-panel')?.getBoundingClientRect(); const s = document.querySelector('.effects-body'); const b = document.querySelector('.eq-bands'); const controls = [...(b?.querySelectorAll('input[type="range"]') ?? [])]; return innerWidth === 390 && p && p.left >= 0 && p.right <= innerWidth && p.top >= 0 && p.bottom <= innerHeight && s?.scrollHeight >= s?.clientHeight && b?.scrollWidth <= b?.clientWidth && controls.length === 10 && controls.every((node) => { const r = node.getBoundingClientRect(); return r.left >= p.left && r.right <= p.right; }) && document.querySelectorAll('[data-testid="effects-panel"] input[type="range"]').length === 11; })()`,
+      `(() => { const p = document.querySelector('[data-testid="effects-panel"] .effects-panel')?.getBoundingClientRect(); const s = document.querySelector('.effects-body'); const b = document.querySelector('.eq-bands'); const controls = [...(b?.querySelectorAll('input[type="range"]') ?? [])]; const norm = document.querySelector('[data-testid="normalization-controls"]'); const nb = norm?.getBoundingClientRect(); return innerWidth === 390 && p && p.left >= 0 && p.right <= innerWidth && p.top >= 0 && p.bottom <= innerHeight && s?.scrollHeight >= s?.clientHeight && b?.scrollWidth <= b?.clientWidth && controls.length === 10 && controls.every((node) => { const r = node.getBoundingClientRect(); return r.left >= p.left && r.right <= p.right; }) && document.querySelectorAll('.effects-body input[type="range"]').length === 11 && Boolean(norm) && Boolean(nb) && nb.left >= p.left && nb.right <= p.right && document.querySelectorAll('.normalization-controls input[type="range"]').length === 1; })()`,
       `effects: panel overflows the narrow viewport or clips editor controls (${JSON.stringify(narrowLayout)})`,
     );
     const narrowShot = await cdp.call("Page.captureScreenshot", {
