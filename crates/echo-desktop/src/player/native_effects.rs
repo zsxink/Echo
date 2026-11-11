@@ -469,3 +469,7 @@ mod tests;
 #[cfg(test)]
 #[path = "native_effects_transition_tests.rs"]
 mod transition_tests;
+
+#[cfg(test)]
+#[path = "native_effects_normalization_tests.rs"]
+mod normalization_tests;
