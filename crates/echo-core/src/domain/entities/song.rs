@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use crate::domain::ids::{LibraryRootId, PlayCount, RelativeMediaPath, Revision, SongId};
-use crate::domain::media::{AudioFormat, AudioParameters};
+use crate::domain::media::{AudioFormat, AudioParameters, LoudnessTags};
 
 // ---------------------------------------------------------------------------
 // Song
@@ -78,6 +78,9 @@ pub struct Song {
     /// sample) from the metadata reader at scan time (task 6.4). Default-empty
     /// for imported seeds and rows written before migration 0004.
     audio_parameters: AudioParameters,
+    /// Embedded loudness tags from the metadata reader at scan time. Empty for
+    /// rows written before the loudness migration; never a user-owned field.
+    loudness_tags: Option<LoudnessTags>,
 }
 
 impl Song {
@@ -120,6 +123,7 @@ impl Song {
             file_mtime_ns: None,
             format: None,
             audio_parameters: AudioParameters::default(),
+            loudness_tags: None,
         }
     }
 
@@ -198,6 +202,11 @@ impl Song {
     pub const fn audio_parameters(&self) -> AudioParameters {
         self.audio_parameters
     }
+    /// Embedded loudness tags read at the last scan, if the file carries any.
+    #[must_use]
+    pub const fn loudness_tags(&self) -> Option<LoudnessTags> {
+        self.loudness_tags
+    }
 
     /// Record the scan facts of one processed file (hash, size, mtime, format).
     ///
@@ -237,6 +246,16 @@ impl Song {
         self.format = Some(format);
         self.audio_parameters = audio_parameters;
         self.bump();
+    }
+
+    /// Record the loudness tags parsed from the media file. A scan that finds
+    /// no usable tags clears the previous value (external tag edits must not
+    /// leave a stale gain behind), but never touches user-owned state.
+    pub fn apply_loudness(&mut self, tags: Option<LoudnessTags>) {
+        if self.loudness_tags != tags {
+            self.loudness_tags = tags;
+            self.bump();
+        }
     }
 
     /// Change the relative path, keeping the identity and associations.
@@ -356,6 +375,7 @@ impl Song {
         file_mtime_ns: Option<i64>,
         format: Option<AudioFormat>,
         audio_parameters: AudioParameters,
+        loudness_tags: Option<LoudnessTags>,
     ) -> Self {
         Self {
             id,
@@ -376,6 +396,7 @@ impl Song {
             file_mtime_ns,
             format,
             audio_parameters,
+            loudness_tags,
         }
     }
 

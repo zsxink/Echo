@@ -1,4 +1,5 @@
 use super::*;
+use crate::player::port::NormalizationPort;
 
 #[test]
 fn auto_advance_loads_the_next_track_when_a_song_naturally_ends() {
@@ -77,6 +78,8 @@ struct DroppedTerminalPort {
     fake: Arc<FakePlayer>,
     sender: Mutex<Option<std::sync::mpsc::SyncSender<crate::player::port::PlayerSnapshot>>>,
 }
+
+impl NormalizationPort for DroppedTerminalPort {}
 
 impl PlayerPort for DroppedTerminalPort {
     fn send(&self, command: PlayerCommand) -> Result<(), crate::player::port::PlayerError> {

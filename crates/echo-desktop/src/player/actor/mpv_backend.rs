@@ -315,12 +315,19 @@ impl Backend for MpvBackend {
         payload: &crate::effects::Payload,
         environment: crate::effects::ProcessingEnvironment,
         analysis: &crate::effects::math::EffectsAnalysis,
+        combined_preamp_db: f64,
+        gain_only: bool,
     ) -> Result<bool, String> {
         self.confirm_effects_configuration();
         let mut effects = std::mem::take(&mut self.effects);
-        let result = effects.apply(payload, environment, analysis, |args| {
-            self.effects_command(args)
-        });
+        let result = effects.apply(
+            payload,
+            environment,
+            analysis,
+            combined_preamp_db,
+            gain_only,
+            |args| self.effects_command(args),
+        );
         self.effects = effects;
         result
     }

@@ -46,6 +46,7 @@ pub fn refresh_file_index(stored: &mut Song, incoming: &Song) -> Result<(), Erro
         format,
         incoming.audio_parameters(),
     );
+    stored.apply_loudness(incoming.loudness_tags());
     Ok(())
 }
 

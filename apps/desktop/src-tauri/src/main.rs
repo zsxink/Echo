@@ -53,6 +53,7 @@ mod app_menu;
 mod commands;
 mod commands_audio_effects;
 mod commands_file_open;
+mod commands_normalization;
 mod commands_notch;
 mod cover_payload;
 mod cover_preview;
@@ -502,11 +503,13 @@ fn wire_composition(
     // the command layer drives.  Do not substitute FakePlayer here: it makes
     // the UI report a successful play transition while producing no sound.
     let resolver = player::PlayerController::resolver(&routed.deps);
+    let loudness_lookup = player::PlayerController::loudness_lookup(&routed.deps);
     let libmpv = bundled_libmpv(app.handle()).ok_or_else(|| {
         "bundled libmpv is missing; playback cannot start (run the platform build staging for this OS)".to_owned()
     })?;
-    let controller = player::PlayerController::spawn_mpv(&libmpv, resolver)
-        .map_err(|error| format!("start libmpv player: {error}"))?;
+    let controller =
+        player::PlayerController::spawn_mpv_with_loudness(&libmpv, resolver, Some(loudness_lookup))
+            .map_err(|error| format!("start libmpv player: {error}"))?;
     let player_source: Arc<std::sync::Mutex<Option<String>>> =
         Arc::new(std::sync::Mutex::new(None));
     // Session persistence (task 8.9 落盘接线): the saver thread throttles
@@ -515,7 +518,7 @@ fn wire_composition(
         echo_desktop::player::session::StateStoreSession::new(local_state.clone()),
     );
     let effects = Arc::new(echo_desktop::effects_service::EffectsService::restore(
-        local_state,
+        local_state.clone(),
         Arc::new(
             echo_desktop::effects_service::player_adapter::PlayerEffectsAdapter::new(
                 controller.port.clone(),
@@ -523,6 +526,15 @@ fn wire_composition(
         ),
     ));
     app.manage(effects.clone());
+    // The independent normalization preference is restored once and shared by
+    // every window; the actor owns the computed gain facts.
+    let normalization = Arc::new(
+        echo_desktop::normalization_service::NormalizationService::restore(
+            local_state,
+            controller.port.clone(),
+        ),
+    );
+    app.manage(normalization);
     // Playback statistics (task 8.10): feed the real snapshot stream into the
     // accumulator so a qualified listen reaches Core's idempotent
     // directory-first playback recorder (play_count / 最近播放). Without this the accumulator

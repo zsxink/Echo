@@ -15,6 +15,7 @@
 pub mod effects;
 pub mod effects_service;
 pub mod ipc;
+pub mod normalization_service;
 pub mod platform;
 pub mod player;
 pub mod runtime;

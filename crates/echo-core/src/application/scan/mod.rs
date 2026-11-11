@@ -319,6 +319,7 @@ impl<'a> StartScan<'a> {
             parsed.file.meta.format,
             parsed.file.meta.parameters,
         );
+        song.apply_loudness(parsed.file.meta.loudness);
         // Check that the file stayed stable throughout extraction, but retain
         // the host's logical resource declarations and shared metadata.
         super::scan_resources::verify_parsed_audio(self.deps, root, &parsed)?;
@@ -540,6 +541,7 @@ impl<'a> StartScan<'a> {
                                 parsed.file.meta.format,
                                 parsed.file.meta.parameters,
                             );
+                            entity.apply_loudness(parsed.file.meta.loudness);
                             planner
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -587,7 +589,7 @@ impl<'a> StartScan<'a> {
         entity: Option<Song>,
         parsed: &ParsedOutcome,
     ) -> Result<(), Error> {
-        let song = entity.unwrap_or_else(|| {
+        let mut song = entity.unwrap_or_else(|| {
             Song::with_added_at(
                 self.deps.ids.new_song_id(),
                 root,
@@ -596,6 +598,7 @@ impl<'a> StartScan<'a> {
                 self.wall_clock_ms(),
             )
         });
+        song.apply_loudness(parsed.file.meta.loudness);
         if let Some(original) = durable::published_index_refresh(self.deps, &song, parsed)? {
             return self.persist_parsed_index(original, parsed, None);
         }

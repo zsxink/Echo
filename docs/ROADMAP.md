@@ -154,4 +154,4 @@ P0 功能已在当前实现中交付，包括九个内置 EQ 预设与空间效�
 
 三平台实际安装包的响应、峰值、可听更新延迟、连续播放、CPU 和匹配响度 A/B 仍是发布门槛。工具、单元测试或授权不替代原生音频证据。
 
-P1（混响、响度归一化、导入导出含 AutoEq 适配、设备绑定）独立 change 排期，不阻塞 P0 交付，不包含在本次界面中。详细验收见 introduce-audio-effects-equalizer。
+P1（混响、导入导出含 AutoEq 适配、设备绑定）仍按独立 change 排期，不阻塞 P0 交付。响度归一化已由 `introduce-loudness-normalization` 独立 change 交付：读取内嵌标签、独立开关与偏好、复用既有前置增益节点、切歌平滑过渡，规格见 `openspec/specs/loudness-normalization/spec.md`。macOS 实际分发运行库上的持续 PCM 捕获（增益前后输出、最小链结构、压力峰值）已完成并经独立复核；Windows / Linux 真机验证延后，仍是该能力的发布门槛，证据状态见 `openspec/changes/archive/2026-11-11-introduce-loudness-normalization/native-gate.md` 与同目录 `evidence/`；工具、单元测试或 UI 回执不替代原生音频证据，也不从 macOS 继承结论。P0 详细验收见 introduce-audio-effects-equalizer。

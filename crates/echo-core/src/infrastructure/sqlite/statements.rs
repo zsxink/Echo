@@ -105,9 +105,39 @@ pub(crate) fn song_full_snapshot_payload(
 }
 
 #[allow(clippy::too_many_lines)]
+/// The five local loudness columns (migration 0031) in column order. These
+/// are scan-derived facts and deliberately absent from the sync payload.
+struct LoudnessColumns {
+    source: Option<String>,
+    track_gain_mdb: Option<i64>,
+    album_gain_mdb: Option<i64>,
+    track_peak_ppm: Option<i64>,
+    album_peak_ppm: Option<i64>,
+}
+
+fn loudness_row(song: &Song) -> LoudnessColumns {
+    let Some(tags) = song.loudness_tags() else {
+        return LoudnessColumns {
+            source: None,
+            track_gain_mdb: None,
+            album_gain_mdb: None,
+            track_peak_ppm: None,
+            album_peak_ppm: None,
+        };
+    };
+    LoudnessColumns {
+        source: Some(tags.source.code().to_owned()),
+        track_gain_mdb: tags.track_gain_mdb.map(i64::from),
+        album_gain_mdb: tags.album_gain_mdb.map(i64::from),
+        track_peak_ppm: tags.track_peak_ppm.map(i64::from),
+        album_peak_ppm: tags.album_peak_ppm.map(i64::from),
+    }
+}
+
 pub(crate) fn upsert_song(connection: &Connection, song: &Song) -> Result<(), Error> {
     super::sync_projection::ensure_song_live(connection, &song.id().to_string())?;
     let now = now_ms();
+    let loudness = loudness_row(song);
     let title = song.title().map(ToOwned::to_owned);
     let artist = song.artist().map(ToOwned::to_owned);
     let album = song.album().map(ToOwned::to_owned);
@@ -117,7 +147,7 @@ pub(crate) fn upsert_song(connection: &Connection, song: &Song) -> Result<(), Er
     // Those columns can only change through their dedicated mutations, and a
     // concurrent scan writing back must never roll a favorite or play count
     // backward.
-    connection.execute("INSERT INTO songs (uuid, library_root_uuid, relative_path, normalized_relative_path, title, artist, album, title_sort, artist_sort, album_sort, duration_ms, is_favorite, play_count, added_at, availability, revision, blake3_hash, file_size, file_mtime_ns, format, bitrate_bps, sample_rate_hz, channels, bits_per_sample, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?25) ON CONFLICT(uuid) DO UPDATE SET library_root_uuid = excluded.library_root_uuid, relative_path = excluded.relative_path, normalized_relative_path = excluded.normalized_relative_path, title = excluded.title, artist = excluded.artist, album = excluded.album, title_sort = excluded.title_sort, artist_sort = excluded.artist_sort, album_sort = excluded.album_sort, duration_ms = excluded.duration_ms, revision = excluded.revision, blake3_hash = excluded.blake3_hash, file_size = excluded.file_size, file_mtime_ns = excluded.file_mtime_ns, format = excluded.format, bitrate_bps = excluded.bitrate_bps, sample_rate_hz = excluded.sample_rate_hz, channels = excluded.channels, bits_per_sample = excluded.bits_per_sample, updated_at = excluded.updated_at", params![song.id().to_string(), song.root().to_string(), song.path().display(), song.path().identity_key(), title, artist, album, normalized_key(song.title().unwrap_or("")), normalized_key(song.artist().unwrap_or("")), normalized_key(song.album().unwrap_or("")), song.duration().map(|duration| i64::try_from(duration.as_millis()).unwrap_or(i64::MAX)), i64::from(song.favorite()), i64::try_from(song.play_count().as_u64()).unwrap_or(i64::MAX), i64::try_from(song.added_at()).unwrap_or(i64::MAX), availability_to_db(song.availability()), i64::try_from(song.revision().as_u64()).unwrap_or(i64::MAX), song.blake3_hash(), song.file_size().map(|size| i64::try_from(size).unwrap_or(i64::MAX)), song.file_mtime_ns(), song.format().map(super::conversion::audio_format_to_db), song.audio_parameters().bitrate_bps.and_then(|v| i64::try_from(v).ok()), song.audio_parameters().sample_rate_hz.map(i64::from), song.audio_parameters().channels.map(i64::from), song.audio_parameters().bits_per_sample.map(i64::from), now]).map_err(map_constraint)?;
+    connection.execute("INSERT INTO songs (uuid, library_root_uuid, relative_path, normalized_relative_path, title, artist, album, title_sort, artist_sort, album_sort, duration_ms, is_favorite, play_count, added_at, availability, revision, blake3_hash, file_size, file_mtime_ns, format, bitrate_bps, sample_rate_hz, channels, bits_per_sample, loudness_source, loudness_track_gain_mdb, loudness_album_gain_mdb, loudness_track_peak_ppm, loudness_album_peak_ppm, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?26, ?27, ?28, ?29, ?30, ?25, ?25) ON CONFLICT(uuid) DO UPDATE SET library_root_uuid = excluded.library_root_uuid, relative_path = excluded.relative_path, normalized_relative_path = excluded.normalized_relative_path, title = excluded.title, artist = excluded.artist, album = excluded.album, title_sort = excluded.title_sort, artist_sort = excluded.artist_sort, album_sort = excluded.album_sort, duration_ms = excluded.duration_ms, revision = excluded.revision, blake3_hash = excluded.blake3_hash, file_size = excluded.file_size, file_mtime_ns = excluded.file_mtime_ns, format = excluded.format, bitrate_bps = excluded.bitrate_bps, sample_rate_hz = excluded.sample_rate_hz, channels = excluded.channels, bits_per_sample = excluded.bits_per_sample, loudness_source = excluded.loudness_source, loudness_track_gain_mdb = excluded.loudness_track_gain_mdb, loudness_album_gain_mdb = excluded.loudness_album_gain_mdb, loudness_track_peak_ppm = excluded.loudness_track_peak_ppm, loudness_album_peak_ppm = excluded.loudness_album_peak_ppm, updated_at = excluded.updated_at", params![song.id().to_string(), song.root().to_string(), song.path().display(), song.path().identity_key(), title, artist, album, normalized_key(song.title().unwrap_or("")), normalized_key(song.artist().unwrap_or("")), normalized_key(song.album().unwrap_or("")), song.duration().map(|duration| i64::try_from(duration.as_millis()).unwrap_or(i64::MAX)), i64::from(song.favorite()), i64::try_from(song.play_count().as_u64()).unwrap_or(i64::MAX), i64::try_from(song.added_at()).unwrap_or(i64::MAX), availability_to_db(song.availability()), i64::try_from(song.revision().as_u64()).unwrap_or(i64::MAX), song.blake3_hash(), song.file_size().map(|size| i64::try_from(size).unwrap_or(i64::MAX)), song.file_mtime_ns(), song.format().map(super::conversion::audio_format_to_db), song.audio_parameters().bitrate_bps.and_then(|v| i64::try_from(v).ok()), song.audio_parameters().sample_rate_hz.map(i64::from), song.audio_parameters().channels.map(i64::from), song.audio_parameters().bits_per_sample.map(i64::from), now, loudness.source, loudness.track_gain_mdb, loudness.album_gain_mdb, loudness.track_peak_ppm, loudness.album_peak_ppm]).map_err(map_constraint)?;
     maintain_search(connection, song)?;
     touch_root(connection, song.root())?;
     // Sync foundation (task 3.11): a song write is a syncable fact — append its
@@ -141,10 +171,13 @@ pub(crate) fn upsert_song(connection: &Connection, song: &Song) -> Result<(), Er
 /// artwork or lyrics parsed from its previous bytes.
 pub(crate) fn refresh_song_file_index(connection: &Connection, song: &Song) -> Result<(), Error> {
     let parameters = song.audio_parameters();
+    let loudness = loudness_row(song);
     let changed = connection
         .execute(
             "UPDATE songs SET file_mtime_ns=?1, format=?2, bitrate_bps=?3, availability='available',
-           sample_rate_hz=?4, channels=?5, bits_per_sample=?6
+           sample_rate_hz=?4, channels=?5, bits_per_sample=?6,
+           loudness_source=?12, loudness_track_gain_mdb=?13, loudness_album_gain_mdb=?14,
+           loudness_track_peak_ppm=?15, loudness_album_peak_ppm=?16
          WHERE uuid=?7 AND library_root_uuid=?8 AND normalized_relative_path=?9
            AND blake3_hash=?10 AND file_size=?11
            AND NOT EXISTS(SELECT 1 FROM sync_song_aliases a WHERE a.alias_song_uuid=songs.uuid)
@@ -179,6 +212,11 @@ pub(crate) fn refresh_song_file_index(connection: &Connection, song: &Song) -> R
                 song.path().identity_key(),
                 song.blake3_hash(),
                 song.file_size().and_then(|value| i64::try_from(value).ok()),
+                loudness.source,
+                loudness.track_gain_mdb,
+                loudness.album_gain_mdb,
+                loudness.track_peak_ppm,
+                loudness.album_peak_ppm,
             ],
         )
         .map_err(storage)?;

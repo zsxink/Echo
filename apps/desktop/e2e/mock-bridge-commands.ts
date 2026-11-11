@@ -75,6 +75,8 @@ export type Command =
   | "rename_audio_effects_preset"
   | "delete_audio_effects_preset"
   | "retry_audio_effects"
+  | "get_loudness_normalization"
+  | "set_loudness_normalization"
   | "retry_library_operation"
   | "library_recovery_status"
   | "retry_library_projection"

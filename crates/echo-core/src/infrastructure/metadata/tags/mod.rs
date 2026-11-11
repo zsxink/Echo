@@ -118,6 +118,9 @@ fn read_from_reader<R: std::io::Read + std::io::Seek>(
         .map_err(|source| corrupt("tag read", &source.to_string()))?;
 
     let mut parsed = ParsedMetadata::default();
+    // Loudness tags are gathered across every container (ReplayGain 2.0 wins
+    // over R128); malformed tags only add a non-fatal warning.
+    parsed.loudness = loudness::read_all(tagged.tags().iter(), &mut parsed.warnings);
     // A WAV may carry both RIFF INFO and ID3v2 chunks. Read every tag instead
     // of stopping at the primary tag: text commonly lives in INFO while the
     // cover/lyrics live in ID3v2.
@@ -592,6 +595,8 @@ fn corrupt(operation: &str, reason: &str) -> Error {
         reason: reason.to_owned(),
     }
 }
+
+mod loudness;
 
 #[cfg(test)]
 mod tests;

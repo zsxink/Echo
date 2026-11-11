@@ -73,9 +73,11 @@ impl AfCommandSyntax {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 struct Configuration {
     payload: Payload,
+    /// True when only the gain stage (no equalizer / spatial nodes) is active.
+    gain_only: bool,
     environment: ProcessingEnvironment,
     gains: [f64; 10],
     width: f64,
@@ -117,6 +119,8 @@ impl NativeEffects {
         payload: &Payload,
         environment: ProcessingEnvironment,
         analysis: &EffectsAnalysis,
+        combined_preamp_db: f64,
+        gain_only: bool,
         mut command: impl FnMut(&[String]) -> Result<(), String>,
     ) -> Result<bool, String> {
         if self.command_syntax == AfCommandSyntax::Unavailable {
@@ -124,6 +128,7 @@ impl NativeEffects {
         }
         let target = Configuration {
             payload: payload.clone(),
+            gain_only,
             environment,
             gains: match payload {
                 Payload::Eq(curve) => curve.gains_db,
@@ -133,33 +138,42 @@ impl NativeEffects {
                 Payload::Spatial(spatial) => spatial.width,
                 Payload::Eq(_) => 1.0,
             },
-            preamp: analysis.effective_preamp_db,
+            preamp: combined_preamp_db,
             peak_gain: analysis.peak_gain_db,
-            // Manual settings keep their strict floor during interpolation;
-            // automatic compensation is released continuously with the curve.
-            headroom: (analysis.effective_preamp_db + analysis.peak_gain_db.max(0.0))
-                .clamp(0.0, AUTO_HEADROOM_DB),
+            // The ramp's protective ceiling is `-peak + headroom`. A positive
+            // normalization gain must raise that ceiling by exactly its own
+            // amount, otherwise the EQ protection bound would silently cancel
+            // the boost. Negative gains keep the original P0 floor.
+            headroom: {
+                let lift = (combined_preamp_db - analysis.effective_preamp_db).max(0.0);
+                (analysis.effective_preamp_db + analysis.peak_gain_db.max(0.0) + lift)
+                    .clamp(0.0, AUTO_HEADROOM_DB + lift)
+            },
         };
+        // The preamp is part of the target: a per-track normalization gain
+        // change must start a fresh 30 ms ramp instead of being cached as an
+        // unchanged configuration.
         let changed = self.reconfirm
             || self.ramp.as_ref().map_or_else(
                 || {
-                    self.current.as_ref().is_none_or(|current| {
-                        current.payload != *payload || current.environment != environment
-                    })
+                    self.current
+                        .as_ref()
+                        .is_none_or(|current| *current != target)
                 },
-                |ramp| {
-                    ramp.bypass
-                        || ramp.target.payload != *payload
-                        || ramp.target.environment != environment
-                },
+                |ramp| ramp.bypass || ramp.target != target,
             );
+        let active = if gain_only {
+            [false; 10]
+        } else {
+            analysis.active_bands
+        };
         let result = (|| {
             self.check_confirmation()?;
             if self.install_pending {
                 return Ok(false);
             }
             let installed = if changed {
-                let installed = self.start(target, analysis.active_bands, false, &mut command)?;
+                let installed = self.start(target, active, false, &mut command)?;
                 self.reconfirm = false;
                 installed
             } else {
@@ -242,6 +256,7 @@ impl NativeEffects {
     ) -> Result<bool, String> {
         let compatible = self.current.as_ref().is_some_and(|current| {
             current.environment == target.environment
+                && current.gain_only == target.gain_only
                 && std::mem::discriminant(&current.payload)
                     == std::mem::discriminant(&target.payload)
         });
@@ -395,7 +410,7 @@ impl NativeEffects {
         ];
         let mut labels = vec!["echo_float".to_owned(), "echo_preamp".to_owned()];
         match target.payload {
-            Payload::Eq(_) => {
+            Payload::Eq(_) if !target.gain_only => {
                 for (index, frequency) in BAND_FREQUENCIES.iter().enumerate() {
                     if !active[index] {
                         continue;
@@ -404,12 +419,14 @@ impl NativeEffects {
                     labels.push(format!("echo_eq{index}"));
                 }
             }
-            Payload::Spatial(_) => {
+            Payload::Spatial(_) if !target.gain_only => {
                 // Width is fixed in the user payload. The internal neutral
                 // value only supports protected enable/bypass transitions.
                 filters.push("@echo_spatial:lavfi=[extrastereo@spatial=m=1:c=false]".to_owned());
                 labels.push("echo_spatial".to_owned());
             }
+            // A gain-only stage deliberately installs no EQ / spatial node.
+            _ => {}
         }
         filters.push(format!("@echo_limiter:lavfi=[{LIMITER}]"));
         labels.push("echo_limiter".to_owned());
@@ -452,3 +469,7 @@ mod tests;
 #[cfg(test)]
 #[path = "native_effects_transition_tests.rs"]
 mod transition_tests;
+
+#[cfg(test)]
+#[path = "native_effects_normalization_tests.rs"]
+mod normalization_tests;

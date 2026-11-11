@@ -49,6 +49,93 @@ impl std::fmt::Display for AudioFormat {
     }
 }
 
+/// Which embedded loudness tagging scheme produced a [`LoudnessTags`] value.
+///
+/// `ReplayGain` 2.0 tags are expressed in dB relative to -18 LUFS; R128 tags
+/// are Q7.8 fixed-point values relative to -23 LUFS. The desktop rule layer
+/// owns the conversion and the alignment between the two references.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LoudnessSource {
+    ReplayGain2,
+    R128,
+}
+
+impl LoudnessSource {
+    /// Stable database encoding (never a display string).
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::ReplayGain2 => "replaygain2",
+            Self::R128 => "r128",
+        }
+    }
+
+    /// Decode a database value; unknown codes are treated as absent.
+    #[must_use]
+    pub fn from_code(value: &str) -> Option<Self> {
+        match value {
+            "replaygain2" => Some(Self::ReplayGain2),
+            "r128" => Some(Self::R128),
+            _ => None,
+        }
+    }
+}
+
+/// Per-track loudness tags read from the media file, never written back.
+///
+/// Values are stored as fixed-point integers (milli-dB and parts-per-million
+/// of full scale) so the metadata bag and the [`Song`](crate::domain::entities::Song)
+/// entity keep their `Eq` identity: float fields would make every comparison
+/// and every persisted row ambiguous. The desktop rule layer converts them to
+/// `f64` dB / amplitude at the point of use.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LoudnessTags {
+    pub source: LoudnessSource,
+    /// Track gain in milli-dB (`dB * 1000`).
+    pub track_gain_mdb: Option<i32>,
+    /// Album gain in milli-dB (`dB * 1000`).
+    pub album_gain_mdb: Option<i32>,
+    /// Track sample peak as amplitude * `1_000_000`.
+    pub track_peak_ppm: Option<u32>,
+    /// Album sample peak as amplitude * `1_000_000`.
+    pub album_peak_ppm: Option<u32>,
+}
+
+impl LoudnessTags {
+    #[must_use]
+    pub const fn new(
+        source: LoudnessSource,
+        track_gain_mdb: Option<i32>,
+        album_gain_mdb: Option<i32>,
+        track_peak_ppm: Option<u32>,
+        album_peak_ppm: Option<u32>,
+    ) -> Self {
+        Self {
+            source,
+            track_gain_mdb,
+            album_gain_mdb,
+            track_peak_ppm,
+            album_peak_ppm,
+        }
+    }
+
+    /// Whether any usable gain is present.
+    #[must_use]
+    pub const fn has_gain(self) -> bool {
+        self.track_gain_mdb.is_some() || self.album_gain_mdb.is_some()
+    }
+
+    #[must_use]
+    pub fn gain_db(value: Option<i32>) -> Option<f64> {
+        Some(f64::from(value?) / 1_000.0)
+    }
+
+    #[must_use]
+    pub fn peak(value: Option<u32>) -> Option<f64> {
+        Some(f64::from(value?) / 1_000_000.0)
+    }
+}
+
 /// Audio stream parameters from the media probe.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct AudioParameters {
@@ -86,6 +173,9 @@ pub struct ParsedMetadata {
     /// The format family (from the probe, not the extension).
     pub format: AudioFormat,
     pub parameters: AudioParameters,
+    /// Embedded loudness tags (`ReplayGain` 2.0 / R128), when present and valid.
+    /// Scan-derived facts: the file itself is never modified.
+    pub loudness: Option<LoudnessTags>,
     /// Raw embedded lyrics text (before LRC parsing), when present and within
     /// the input limit.
     pub embedded_lyrics: Option<String>,
@@ -123,6 +213,8 @@ pub enum ParseWarningKind {
     CoverLimit,
     /// A field could not be decoded and was dropped.
     TagDecode,
+    /// An embedded loudness tag was malformed or uses an unsupported encoding.
+    LoudnessTag,
 }
 
 impl ParseWarningKind {
@@ -134,6 +226,7 @@ impl ParseWarningKind {
             Self::LyricsLimit => "lyrics_limit",
             Self::CoverLimit => "cover_limit",
             Self::TagDecode => "tag_decode",
+            Self::LoudnessTag => "loudness_tag",
         }
     }
 }
@@ -181,6 +274,7 @@ mod tests {
         assert!(md.duration.is_none());
         assert!(md.embedded_lyrics.is_none());
         assert!(md.cover.is_none());
+        assert!(md.loudness.is_none());
         assert!(md.warnings.is_empty());
     }
 
@@ -190,6 +284,31 @@ mod tests {
         assert_eq!(ParseWarningKind::LyricsLimit.code(), "lyrics_limit");
         assert_eq!(ParseWarningKind::CoverLimit.code(), "cover_limit");
         assert_eq!(ParseWarningKind::TagDecode.code(), "tag_decode");
+        assert_eq!(ParseWarningKind::LoudnessTag.code(), "loudness_tag");
+    }
+
+    #[test]
+    fn loudness_source_codes_round_trip() {
+        for source in [LoudnessSource::ReplayGain2, LoudnessSource::R128] {
+            assert_eq!(LoudnessSource::from_code(source.code()), Some(source));
+        }
+        assert_eq!(LoudnessSource::from_code("itunnorm"), None);
+    }
+
+    #[test]
+    fn loudness_tags_fixed_point_conversion() {
+        let tags = LoudnessTags::new(
+            LoudnessSource::ReplayGain2,
+            Some(-6_540),
+            None,
+            Some(987_650),
+            None,
+        );
+        assert!(tags.has_gain());
+        assert_eq!(LoudnessTags::gain_db(tags.track_gain_mdb), Some(-6.54));
+        assert_eq!(LoudnessTags::peak(tags.track_peak_ppm), Some(0.98765));
+        assert_eq!(LoudnessTags::gain_db(None), None);
+        assert_eq!(LoudnessTags::peak(None), None);
     }
 
     #[test]

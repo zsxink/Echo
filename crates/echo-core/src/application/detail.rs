@@ -57,6 +57,30 @@ impl From<AudioParameters> for SongAudioParams {
     }
 }
 
+/// Embedded loudness tags in a serde-friendly, fixed-point shape (domain
+/// types do not derive serde; the DTO is the IPC boundary).
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SongLoudness {
+    /// `replaygain2` or `r128` — the tagging scheme, not a measured loudness.
+    pub source: String,
+    pub track_gain_mdb: Option<i32>,
+    pub album_gain_mdb: Option<i32>,
+    pub track_peak_ppm: Option<u32>,
+    pub album_peak_ppm: Option<u32>,
+}
+
+impl From<crate::domain::media::LoudnessTags> for SongLoudness {
+    fn from(value: crate::domain::media::LoudnessTags) -> Self {
+        Self {
+            source: value.source.code().to_owned(),
+            track_gain_mdb: value.track_gain_mdb,
+            album_gain_mdb: value.album_gain_mdb,
+            track_peak_ppm: value.track_peak_ppm,
+            album_peak_ppm: value.album_peak_ppm,
+        }
+    }
+}
+
 /// The read-only detail of one song, safe to serialize to the UI.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SongDetail {
@@ -73,6 +97,9 @@ pub struct SongDetail {
     pub format: Option<String>,
     /// Audio stream parameters read at scan time (may be empty for older rows).
     pub audio: SongAudioParams,
+    /// Embedded loudness tags read at scan time; `None` for untagged files
+    /// and for rows written before the loudness migration.
+    pub loudness: Option<SongLoudness>,
     pub play_count: u64,
     pub favorite: bool,
     /// When the song was added (insertion order key).
@@ -131,6 +158,7 @@ impl<'a> GetSongDetail<'a> {
             duration_s: song.duration().map(|d| d.as_secs()),
             format: song.format().map(|f| f.extension().to_owned()),
             audio: song.audio_parameters().into(),
+            loudness: song.loudness_tags().map(SongLoudness::from),
             play_count: song.play_count().as_u64(),
             favorite: song.favorite(),
             added_at: song.added_at(),
@@ -335,6 +363,37 @@ mod tests {
         assert_eq!(detail.availability, "available");
         assert_eq!(detail.audio.sample_rate_hz, Some(44_100));
         assert_eq!(detail.lyrics, LyricsAvailability::None, "no lyrics stored");
+        assert_eq!(
+            detail.loudness, None,
+            "rows without tags report no loudness"
+        );
+    }
+
+    #[test]
+    fn detail_exposes_loudness_tags_from_the_last_scan() {
+        use crate::domain::media::{LoudnessSource, LoudnessTags};
+
+        let db = MemoryDatabase::new();
+        let root = LibraryRootId::new();
+        LibraryRepository::upsert(&db, &LibraryRoot::new(root, ".".into(), true, true))
+            .expect("active root");
+        let mut song = seed(&db, root);
+        song.apply_loudness(Some(LoudnessTags::new(
+            LoudnessSource::R128,
+            Some(-5_500),
+            None,
+            None,
+            None,
+        )));
+        SongRepository::upsert(&db, &song).expect("update");
+
+        let detail = GetSongDetail::new(&db, &db, &db)
+            .execute(song.id())
+            .expect("detail");
+        let loudness = detail.loudness.expect("tags are projected");
+        assert_eq!(loudness.source, "r128");
+        assert_eq!(loudness.track_gain_mdb, Some(-5_500));
+        assert_eq!(loudness.track_peak_ppm, None);
     }
 
     #[test]
@@ -404,6 +463,13 @@ mod tests {
                 channels: Some(2),
                 bits_per_sample: Some(16),
             },
+            loudness: Some(SongLoudness {
+                source: "replaygain2".to_owned(),
+                track_gain_mdb: Some(-6_540),
+                album_gain_mdb: Some(-8_000),
+                track_peak_ppm: Some(987_650),
+                album_peak_ppm: Some(999_000),
+            }),
             play_count: 12,
             favorite: true,
             added_at: 1_704_000_000,
@@ -431,6 +497,13 @@ mod tests {
     "sample_rate_hz": 44100,
     "channels": 2,
     "bits_per_sample": 16
+  },
+  "loudness": {
+    "source": "replaygain2",
+    "track_gain_mdb": -6540,
+    "album_gain_mdb": -8000,
+    "track_peak_ppm": 987650,
+    "album_peak_ppm": 999000
   },
   "play_count": 12,
   "favorite": true,

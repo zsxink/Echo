@@ -197,7 +197,28 @@ pub enum PlayMode {
 /// thread. [`crate::player::FakePlayer`] is the in-process test double
 /// that processes commands immediately — it proves the coordinator, queue,
 /// statistics and platform-control logic works without loading libmpv.
-pub trait PlayerPort: Send + Sync {
+/// Focused port for the independent normalization layer. Kept as a supertrait
+/// so `PlayerPort` stays within the six-method interface budget while trait
+/// objects still dispatch normalization commands to the real actor.
+pub trait NormalizationPort: Send + Sync {
+    /// Publish the user's preference. Backends without a gain stage accept it
+    /// as a no-op; their runtime still reports the honest `Disabled` status.
+    /// # Errors
+    /// `ActorClosed` when the actor mailbox is gone.
+    fn normalization_submit(
+        &self,
+        _preference: crate::effects::loudness::NormalizationPreference,
+    ) -> Result<(), PlayerError> {
+        Ok(())
+    }
+
+    /// The actor's last computed facts, never a UI receipt.
+    fn normalization_runtime(&self) -> crate::effects::loudness::NormalizationRuntime {
+        crate::effects::loudness::NormalizationRuntime::default()
+    }
+}
+
+pub trait PlayerPort: NormalizationPort + Send + Sync {
     /// Send a command to the player actor.
     ///
     /// # Errors
@@ -260,6 +281,19 @@ pub trait PlayerPort: Send + Sync {
 /// A shared, owned player port — lets the composition root pass `Arc<dyn
 /// PlayerPort>` where a concrete owned player is expected (e.g. the
 /// coordinator's generic `P: PlayerPort`).
+impl NormalizationPort for std::sync::Arc<dyn PlayerPort> {
+    fn normalization_submit(
+        &self,
+        preference: crate::effects::loudness::NormalizationPreference,
+    ) -> Result<(), PlayerError> {
+        (**self).normalization_submit(preference)
+    }
+
+    fn normalization_runtime(&self) -> crate::effects::loudness::NormalizationRuntime {
+        (**self).normalization_runtime()
+    }
+}
+
 impl PlayerPort for std::sync::Arc<dyn PlayerPort> {
     fn effects_submit(
         &self,

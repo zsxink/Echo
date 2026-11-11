@@ -97,7 +97,13 @@ fn candidate_get_meta_requires_configured_nodes_and_rejects_a_failed_graph() {
     let payload = Payload::default();
     let analysis = crate::effects::math::analyze(&payload, environment).unwrap();
     assert!(!backend
-        .apply_effects(&payload, environment, &analysis)
+        .apply_effects(
+            &payload,
+            environment,
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+        )
         .unwrap());
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     let mut ready = false;
@@ -106,7 +112,13 @@ fn candidate_get_meta_requires_configured_nodes_and_rejects_a_failed_graph() {
             backend.effects_reconfigured();
         }
         if backend
-            .apply_effects(&payload, environment, &analysis)
+            .apply_effects(
+                &payload,
+                environment,
+                &analysis,
+                analysis.effective_preamp_db,
+                false,
+            )
             .unwrap()
         {
             ready = true;
@@ -155,7 +167,13 @@ fn candidate_get_meta_requires_configured_nodes_and_rejects_a_failed_graph() {
             .audio_filter_configured(&backend.sys, "echo_bad")
     });
     assert!(backend
-        .apply_effects(&payload, environment, &analysis)
+        .apply_effects(
+            &payload,
+            environment,
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+        )
         .is_err());
     backend.terminate();
 }
@@ -186,7 +204,13 @@ fn candidate_nonzero_eq_survives_reconfiguration_reassert_then_bypasses() {
         }
         backend.confirm_effects_configuration();
         if backend
-            .apply_effects(&payload, environment, &analysis)
+            .apply_effects(
+                &payload,
+                environment,
+                &analysis,
+                analysis.effective_preamp_db,
+                false,
+            )
             .unwrap()
         {
             applied = true;
@@ -206,7 +230,13 @@ fn candidate_nonzero_eq_survives_reconfiguration_reassert_then_bypasses() {
         }
         backend.confirm_effects_configuration();
         if backend
-            .apply_effects(&payload, environment, &analysis)
+            .apply_effects(
+                &payload,
+                environment,
+                &analysis,
+                analysis.effective_preamp_db,
+                false,
+            )
             .unwrap()
         {
             restored = true;

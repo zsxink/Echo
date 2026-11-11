@@ -66,6 +66,24 @@ export interface EffectsSnapshotDto {
   readonly recoveryReason?: string;
 }
 
+export type NormalizationMode = 'track' | 'album';
+export type NormalizationStatus = 'disabled' | 'noTags' | 'applied' | 'clampedByPeak' | 'limitedByCap';
+export interface NormalizationPreference {
+  readonly schemaVersion: number;
+  readonly enabled: boolean;
+  readonly mode: NormalizationMode;
+  readonly preampDb: number;
+}
+export interface NormalizationRuntime {
+  readonly gainDb: number;
+  readonly status: NormalizationStatus;
+  readonly reason: string | null;
+}
+export interface NormalizationSnapshotDto {
+  readonly preference: NormalizationPreference;
+  readonly runtime: NormalizationRuntime;
+  readonly recoveryReason?: string | null;
+}
 export type PlaybackRetryReasonDto = 'notSaved' | 'savedPendingRecovery' | 'savedPendingProjection' | 'libraryUnavailable' | 'inactiveLibrary' | 'authorChanged' | 'libraryChanged' | 'missingSong' | 'enrollmentPending';
 
 export interface PlaybackRetryStatusDto {
@@ -410,6 +428,8 @@ export interface IpcCommandResultMap {
   readonly discover_hosts: readonly DiscoveredHost[];
   readonly create_sync_pairing_code: SyncPairingCode;
   readonly request_sync_pairing: SyncStatus;
+  readonly get_loudness_normalization: NormalizationSnapshotDto;
+  readonly set_loudness_normalization: NormalizationSnapshotDto;
   readonly get_audio_effects_snapshot: EffectsSnapshotDto;
   readonly select_audio_effects_preset: EffectsSnapshotDto;
   readonly edit_audio_equalizer: EffectsSnapshotDto;

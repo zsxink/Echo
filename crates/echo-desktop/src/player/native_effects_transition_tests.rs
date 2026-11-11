@@ -17,12 +17,26 @@ fn settled(payload: &Payload, rate: u32) -> NativeEffects {
     let mut native = NativeEffects::default();
     let analysis = analyze(payload, environment(rate)).unwrap();
     native
-        .apply(payload, environment(rate), &analysis, |_| Ok(()))
+        .apply(
+            payload,
+            environment(rate),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |_| Ok(()),
+        )
         .unwrap();
     native.reconfirm();
     native.configured();
     native
-        .apply(payload, environment(rate), &analysis, |_| Ok(()))
+        .apply(
+            payload,
+            environment(rate),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |_| Ok(()),
+        )
         .unwrap();
     advance_to(&mut native, 1.0, &mut |_| Ok(()));
     native
@@ -44,10 +58,17 @@ fn initial_eq_installs_neutral_preamp_before_the_ramp() {
     let mut native = NativeEffects::default();
     let mut commands = Vec::new();
     native
-        .apply(&payload, environment(48_000), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(48_000),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            },
+        )
         .unwrap();
     assert!(commands[0][2].contains("volume@preamp=volume=1:precision=double"));
     assert_eq!(native.current.as_ref().unwrap().preamp, 0.0);
@@ -65,10 +86,17 @@ fn rock_reconfirmation_preserves_preamp_without_positive_gain_sum_dip() {
     native.reconfirm();
     native.configured();
     native
-        .apply(&payload, environment(48_000), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(48_000),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            },
+        )
         .unwrap();
     advance_to(&mut native, 0.5, &mut |args| {
         commands.push(args.to_vec());
@@ -95,21 +123,28 @@ fn rebuilt_graph_reasserts_protection_before_restoring_eq() {
     native.reconfirm();
     native.configured();
     native
-        .apply(&payload, environment(48_000), &analysis, |args| {
-            commands.push(args.to_vec());
-            if args[1] == "echo_preamp" {
-                backend_preamp = 20.0 * args[3].parse::<f64>().unwrap().log10();
-            } else if let Some(index) = args[1].strip_prefix("echo_eq") {
-                backend_gains[index.parse::<usize>().unwrap()] = args[3].parse().unwrap();
-                if backend_gains[index.parse::<usize>().unwrap()] > 0.0 {
-                    assert!(
-                        backend_preamp < -4.0,
-                        "protection must precede restored boosts"
-                    );
+        .apply(
+            &payload,
+            environment(48_000),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                if args[1] == "echo_preamp" {
+                    backend_preamp = 20.0 * args[3].parse::<f64>().unwrap().log10();
+                } else if let Some(index) = args[1].strip_prefix("echo_eq") {
+                    backend_gains[index.parse::<usize>().unwrap()] = args[3].parse().unwrap();
+                    if backend_gains[index.parse::<usize>().unwrap()] > 0.0 {
+                        assert!(
+                            backend_preamp < -4.0,
+                            "protection must precede restored boosts"
+                        );
+                    }
                 }
-            }
-            Ok(())
-        })
+                Ok(())
+            },
+        )
         .unwrap();
     assert!(
         commands
@@ -142,7 +177,14 @@ fn manual_preamp_edit_is_interpolated_before_the_final_tick() {
     });
     let analysis = analyze(&payload, environment(48_000)).unwrap();
     native
-        .apply(&payload, environment(48_000), &analysis, |_| Ok(()))
+        .apply(
+            &payload,
+            environment(48_000),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |_| Ok(()),
+        )
         .unwrap();
     advance_to(&mut native, 0.5, &mut |_| Ok(()));
     assert!((native.current.as_ref().unwrap().preamp + 9.0).abs() < 0.02);
@@ -161,7 +203,14 @@ fn retained_inactive_high_band_does_not_attenuate_low_rate_edit() {
     let payload = Payload::Eq(curve);
     let analysis = analyze(&payload, environment(22_050)).unwrap();
     native
-        .apply(&payload, environment(22_050), &analysis, |_| Ok(()))
+        .apply(
+            &payload,
+            environment(22_050),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |_| Ok(()),
+        )
         .unwrap();
     advance_to(&mut native, 0.5, &mut |_| Ok(()));
     let current = native.current.as_ref().unwrap();
@@ -186,7 +235,14 @@ fn mixed_sign_edit_protects_each_command_state_with_manual_floor() {
     let payload = Payload::Eq(curve);
     let analysis = analyze(&payload, environment(48_000)).unwrap();
     native
-        .apply(&payload, environment(48_000), &analysis, |_| Ok(()))
+        .apply(
+            &payload,
+            environment(48_000),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |_| Ok(()),
+        )
         .unwrap();
     for fraction in [0.25, 0.5, 0.75, 1.0] {
         advance_to(&mut native, fraction, &mut |args| {
@@ -250,7 +306,14 @@ fn rebuilt_mixed_curve_restores_cuts_before_boosts_even_when_disabling() {
         };
         if enabled {
             native
-                .apply(&payload, environment(48_000), &analysis, &mut observe)
+                .apply(
+                    &payload,
+                    environment(48_000),
+                    &analysis,
+                    analysis.effective_preamp_db,
+                    false,
+                    &mut observe,
+                )
                 .unwrap();
         } else {
             native.bypass(&mut observe).unwrap();
@@ -302,13 +365,20 @@ fn reenabling_partial_spatial_bypass_uses_current_width_without_rebuilding() {
     let width = native.current.as_ref().unwrap().width;
     let analysis = analyze(&payload, environment(48_000)).unwrap();
     native
-        .apply(&payload, environment(48_000), &analysis, |args| {
-            assert_eq!(
-                args[0], "af-command",
-                "partial bypass must not rebuild the chain"
-            );
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(48_000),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                assert_eq!(
+                    args[0], "af-command",
+                    "partial bypass must not rebuild the chain"
+                );
+                Ok(())
+            },
+        )
         .unwrap();
     assert_eq!(native.ramp.as_ref().unwrap().from.width, width);
 }

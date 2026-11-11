@@ -99,11 +99,17 @@ pub(super) trait Backend {
     /// actor rolls back to the last authoritative snapshot.
     fn write_property(&mut self, prop: BackendProperty) -> bool;
 
+    /// Apply one configuration to the native graph. `combined_preamp_db` is
+    /// the already-computed EQ protection + normalization gain; `gain_only`
+    /// installs the minimal `aformat → volume → limiter` chain without any
+    /// equalizer / spatial node.
     fn apply_effects(
         &mut self,
         _payload: &crate::effects::Payload,
         _environment: crate::effects::ProcessingEnvironment,
         _analysis: &crate::effects::math::EffectsAnalysis,
+        _combined_preamp_db: f64,
+        _gain_only: bool,
     ) -> Result<bool, String> {
         Err("native effects capability unavailable".to_owned())
     }

@@ -57,10 +57,17 @@ fn unknown_af_command_signature_fails_before_installing_audio_filters() {
     let analysis = crate::effects::math::analyze(&payload, environment()).unwrap();
     let mut commands = Vec::new();
     assert!(native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            }
+        )
         .is_err());
     assert!(commands.is_empty());
 }
@@ -72,25 +79,46 @@ fn separate_target_runtime_updates_keep_equalizer_and_preamp_targets_isolated() 
     let payload = Payload::Eq(EqCurve::default());
     let analysis = crate::effects::math::analyze(&payload, environment()).unwrap();
     native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            },
+        )
         .unwrap();
     native.reconfirm();
     native.configured();
     native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            },
+        )
         .unwrap();
     complete(&mut native);
     native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            },
+        )
         .unwrap();
 
     let mut edited = EqCurve::default();
@@ -98,17 +126,31 @@ fn separate_target_runtime_updates_keep_equalizer_and_preamp_targets_isolated() 
     let edited = Payload::Eq(edited);
     let analysis = crate::effects::math::analyze(&edited, environment()).unwrap();
     native
-        .apply(&edited, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &edited,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            },
+        )
         .unwrap();
     complete(&mut native);
     native
-        .apply(&edited, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &edited,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            },
+        )
         .unwrap();
 
     let updates = commands
@@ -157,6 +199,8 @@ fn reconfiguration_reasserts_equalizer_filter_type_targets() {
                 &payload,
                 environment(),
                 &analysis,
+                analysis.effective_preamp_db,
+                false,
                 &mut accept_filter_type_targets,
             )
             .unwrap();
@@ -167,6 +211,8 @@ fn reconfiguration_reasserts_equalizer_filter_type_targets() {
                 &payload,
                 environment(),
                 &analysis,
+                analysis.effective_preamp_db,
+                false,
                 &mut accept_filter_type_targets,
             )
             .unwrap();
@@ -176,6 +222,8 @@ fn reconfiguration_reasserts_equalizer_filter_type_targets() {
                 &payload,
                 environment(),
                 &analysis,
+                analysis.effective_preamp_db,
+                false,
                 &mut accept_filter_type_targets,
             )
             .unwrap();
@@ -187,6 +235,8 @@ fn reconfiguration_reasserts_equalizer_filter_type_targets() {
                 &payload,
                 environment(),
                 &analysis,
+                analysis.effective_preamp_db,
+                false,
                 &mut accept_filter_type_targets,
             )
             .unwrap();
@@ -221,14 +271,20 @@ fn reconfiguration_reasserts_equalizer_filter_type_targets() {
     }
 }
 
-fn environment() -> ProcessingEnvironment {
+pub(super) fn environment() -> ProcessingEnvironment {
     ProcessingEnvironment {
         sample_rate: 48_000,
         channel_layout: ChannelLayout::Stereo,
     }
 }
-fn complete(native: &mut NativeEffects) {
+pub(super) fn complete(native: &mut NativeEffects) {
     native.ramp.as_mut().unwrap().started = Instant::now().checked_sub(TRANSITION).unwrap();
+}
+
+/// Deterministically park an in-flight ramp at its midpoint. Wall-clock
+/// polling is not a stable way to observe an intermediate gain command.
+pub(super) fn halfway(native: &mut NativeEffects) {
+    native.ramp.as_mut().unwrap().started = Instant::now().checked_sub(TRANSITION / 2).unwrap();
 }
 
 #[test]
@@ -240,18 +296,32 @@ fn chain_is_typed_float_named_and_uses_three_argument_commands() {
     let payload = Payload::Eq(curve);
     let analysis = crate::effects::math::analyze(&payload, environment()).unwrap();
     assert!(!native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            }
+        )
         .unwrap());
     assert_eq!(commands.len(), 1);
     assert_eq!(commands[0][..2], ["af", "add"]);
     assert!(!native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            }
+        )
         .unwrap());
     assert_eq!(
         commands.len(),
@@ -261,17 +331,31 @@ fn chain_is_typed_float_named_and_uses_three_argument_commands() {
     native.reconfirm();
     native.configured();
     assert!(!native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            }
+        )
         .unwrap());
     complete(&mut native);
     assert!(native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            }
+        )
         .unwrap());
     let graph = commands[0][2].clone();
     assert!(graph.contains("aformat=sample_fmts=dblp"));
@@ -302,10 +386,17 @@ fn sample_rate_boundary_omits_inactive_band_without_losing_the_curve() {
     };
     let analysis = crate::effects::math::analyze(&payload, environment).unwrap();
     native
-        .apply(&payload, environment, &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment,
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            },
+        )
         .unwrap();
     assert!(!commands[0][2].contains("equalizer@eq9="));
     assert_eq!(analysis.effective_preamp_db, 0.0);
@@ -319,26 +410,61 @@ fn reconfiguration_reconfirms_once_and_does_not_restart_the_ramp_each_tick() {
     let mut command = |_: &[String]| Ok(());
 
     assert!(!native
-        .apply(&payload, environment(), &analysis, &mut command)
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            &mut command
+        )
         .unwrap());
     native.reconfirm();
     native.configured();
     assert!(!native
-        .apply(&payload, environment(), &analysis, &mut command)
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            &mut command
+        )
         .unwrap());
     complete(&mut native);
     assert!(native
-        .apply(&payload, environment(), &analysis, &mut command)
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            &mut command
+        )
         .unwrap());
 
     native.reconfirm();
     native.configured();
     assert!(!native
-        .apply(&payload, environment(), &analysis, &mut command)
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            &mut command
+        )
         .unwrap());
     complete(&mut native);
     assert!(native
-        .apply(&payload, environment(), &analysis, &mut command)
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            &mut command
+        )
         .unwrap());
     assert!(!native.reconfirm);
 }
@@ -350,27 +476,48 @@ fn absent_reconfiguration_cannot_be_replaced_by_the_transition_clock() {
     let analysis = crate::effects::math::analyze(&payload, environment()).unwrap();
     let mut commands = Vec::new();
     native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            },
+        )
         .unwrap();
     native.installed_at = Some(Instant::now().checked_sub(TRANSITION).unwrap());
     native.configured(); // A configured graph alone cannot replace reconfig.
     assert!(!native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            }
+        )
         .unwrap());
     assert!(native.install_pending);
     assert_eq!(commands.len(), 1);
 
     native.installed_at = Some(Instant::now().checked_sub(CONFIGURATION_TIMEOUT).unwrap());
-    let result = native.apply(&payload, environment(), &analysis, |args| {
-        commands.push(args.to_vec());
-        Ok(())
-    });
+    let result = native.apply(
+        &payload,
+        environment(),
+        &analysis,
+        analysis.effective_preamp_db,
+        false,
+        |args| {
+            commands.push(args.to_vec());
+            Ok(())
+        },
+    );
     assert!(result.unwrap_err().contains("confirmation timed out"));
     assert_eq!(commands.len(), 2);
     assert_eq!(commands[1][..2], ["af", "remove"]);
@@ -384,20 +531,39 @@ fn reconfiguration_without_initialized_nodes_remains_pending() {
     let payload = Payload::Eq(EqCurve::default());
     let analysis = crate::effects::math::analyze(&payload, environment()).unwrap();
     native
-        .apply(&payload, environment(), &analysis, |_| Ok(()))
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |_| Ok(()),
+        )
         .unwrap();
     native.reconfirm();
     assert!(!native
-        .apply(&payload, environment(), &analysis, |_| {
-            panic!("unconfigured nodes cannot receive runtime commands")
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |_| { panic!("unconfigured nodes cannot receive runtime commands") }
+        )
         .unwrap());
     native.failed("native audio filter failed or was disabled");
     let mut commands = Vec::new();
-    let result = native.apply(&payload, environment(), &analysis, |args| {
-        commands.push(args.to_vec());
-        Ok(())
-    });
+    let result = native.apply(
+        &payload,
+        environment(),
+        &analysis,
+        analysis.effective_preamp_db,
+        false,
+        |args| {
+            commands.push(args.to_vec());
+            Ok(())
+        },
+    );
     assert!(result.unwrap_err().contains("failed or was disabled"));
     assert_eq!(commands[0][..2], ["af", "remove"]);
 }
@@ -408,7 +574,14 @@ fn disabling_an_unconfirmed_install_cleans_it_without_waiting_or_applying() {
     let payload = Payload::Eq(EqCurve::default());
     let analysis = crate::effects::math::analyze(&payload, environment()).unwrap();
     native
-        .apply(&payload, environment(), &analysis, |_| Ok(()))
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |_| Ok(()),
+        )
         .unwrap();
     let mut commands = Vec::new();
     assert!(native
@@ -429,27 +602,48 @@ fn fixed_spatial_payload_uses_internal_width_ramp_from_neutral() {
     let analysis = crate::effects::math::analyze(&payload, environment()).unwrap();
     let mut commands = Vec::new();
     native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            },
+        )
         .unwrap();
 
     assert!(commands[0][2].contains("extrastereo@spatial=m=1:c=false"));
     native.reconfirm();
     native.configured();
     native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            },
+        )
         .unwrap();
     complete(&mut native);
     native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            },
+        )
         .unwrap();
 
     assert!(commands.iter().any(|args| args[0] == "af-command"
@@ -464,25 +658,46 @@ fn disabling_a_partial_edit_ramps_to_neutral_then_removes_owned_filters() {
     let analysis = crate::effects::math::analyze(&payload, environment()).unwrap();
     let mut commands = Vec::new();
     native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            },
+        )
         .unwrap();
     native.reconfirm();
     native.configured();
     native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            },
+        )
         .unwrap();
     complete(&mut native);
     native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            },
+        )
         .unwrap();
     assert!(!native
         .bypass(|args| {
@@ -510,28 +725,49 @@ fn an_injected_command_failure_does_not_publish_a_success_or_reenable() {
     let analysis = crate::effects::math::analyze(&payload, environment()).unwrap();
     let mut commands = Vec::new();
     assert!(!native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            }
+        )
         .unwrap());
     native.reconfirm();
     native.configured();
     assert!(!native
-        .apply(&payload, environment(), &analysis, |args| {
-            commands.push(args.to_vec());
-            Ok(())
-        })
+        .apply(
+            &payload,
+            environment(),
+            &analysis,
+            analysis.effective_preamp_db,
+            false,
+            |args| {
+                commands.push(args.to_vec());
+                Ok(())
+            }
+        )
         .unwrap());
     complete(&mut native);
-    let result = native.apply(&payload, environment(), &analysis, |args| {
-        commands.push(args.to_vec());
-        if args[0] == "af-command" {
-            Err("injected command error".to_owned())
-        } else {
-            Ok(())
-        }
-    });
+    let result = native.apply(
+        &payload,
+        environment(),
+        &analysis,
+        analysis.effective_preamp_db,
+        false,
+        |args| {
+            commands.push(args.to_vec());
+            if args[0] == "af-command" {
+                Err("injected command error".to_owned())
+            } else {
+                Ok(())
+            }
+        },
+    );
     assert!(result.is_err());
     assert!(native.current.is_none());
     assert_eq!(commands.last().unwrap()[1], "remove");

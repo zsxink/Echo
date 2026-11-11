@@ -28,7 +28,9 @@ use std::sync::{mpsc, Arc, Mutex};
 use echo_core::domain::ids::PlaybackSessionId;
 use echo_core::domain::state::PlaybackState;
 
-use super::port::{PlayMode, PlayerCommand, PlayerError, PlayerPort, PlayerSnapshot};
+use super::port::{
+    NormalizationPort, PlayMode, PlayerCommand, PlayerError, PlayerPort, PlayerSnapshot,
+};
 
 /// In-process fake player for tests. Implements [`PlayerPort`] by processing
 /// commands synchronously and maintaining a mutable snapshot.
@@ -189,6 +191,8 @@ impl Default for FakePlayer {
         Self::new()
     }
 }
+
+impl NormalizationPort for FakePlayer {}
 
 impl PlayerPort for FakePlayer {
     #[allow(clippy::too_many_lines)] // Test adapter mirrors all PlayerCommand variants in one place.

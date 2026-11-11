@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { EffectsSnapshotDto } from "../../ipc/ipc-types.generated";
+import type { EffectsSnapshotDto, NormalizationSnapshotDto } from "../../ipc/ipc-types.generated";
 import { bridge } from "../../bridge";
 import { EMPTY_SNAPSHOT, playerStore } from "../../player/playerStore";
 import { EffectsPanel } from "./EffectsPanel";
@@ -53,9 +53,20 @@ function snapshot(): EffectsSnapshotDto {
     safePreampDb: -2,
   };
 }
+function normalizationSnapshot(): NormalizationSnapshotDto {
+  return {
+    preference: { schemaVersion: 1, enabled: false, mode: "track", preampDb: 0 },
+    runtime: { gainDb: 0, status: "disabled", reason: null },
+  };
+}
 function openPanel(effects: EffectsSnapshotDto) {
   playerStore.publishEffects(effects);
-  call.mockResolvedValue(effects);
+  call.mockImplementation(((command: string) => {
+    if (command === "get_loudness_normalization" || command === "set_loudness_normalization") {
+      return Promise.resolve(normalizationSnapshot());
+    }
+    return Promise.resolve(effects);
+  }) as typeof call);
   render(
     <>
       <EffectsTrigger />
@@ -136,10 +147,17 @@ describe("audio effects shared player state", () => {
   it("retries snapshot read failures with GET only until the read succeeds", async () => {
     const effects = snapshot();
     playerStore.publishEffects(effects);
-    call
-      .mockRejectedValueOnce(new Error("read failed"))
-      .mockRejectedValueOnce(new Error("read failed again"))
-      .mockResolvedValueOnce(effects);
+    let reads = 0;
+    call.mockImplementation(((command: string) => {
+      if (command === "get_loudness_normalization" || command === "set_loudness_normalization") {
+        return Promise.resolve(normalizationSnapshot());
+      }
+      if (command === "get_audio_effects_snapshot") {
+        reads += 1;
+        return reads <= 2 ? Promise.reject(new Error("read failed")) : Promise.resolve(effects);
+      }
+      return Promise.resolve(effects);
+    }) as typeof call);
     render(
       <>
         <EffectsTrigger />
@@ -150,15 +168,17 @@ describe("audio effects shared player state", () => {
 
     await waitFor(() => expect(screen.getByText("读取音效失败，请重试。")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
-    await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(reads).toBe(2));
     expect(screen.getByText("读取音效失败，请重试。")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
-    await waitFor(() => expect(call).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(reads).toBe(3));
     await waitFor(() =>
       expect(screen.queryByText("读取音效失败，请重试。")).not.toBeInTheDocument(),
     );
-    expect(call.mock.calls.map(([name]) => name)).toEqual([
+    expect(
+      call.mock.calls.map(([name]) => name).filter((name) => name === "get_audio_effects_snapshot"),
+    ).toEqual([
       "get_audio_effects_snapshot",
       "get_audio_effects_snapshot",
       "get_audio_effects_snapshot",
