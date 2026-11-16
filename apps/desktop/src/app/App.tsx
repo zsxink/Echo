@@ -35,7 +35,7 @@
  * lives here.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { bridge, reportBridgeFailure } from "../bridge";
 import { useImport } from "../features/import";
@@ -49,6 +49,7 @@ import { coverClass } from "../features/library/coverClass";
 import { LibraryWorkspace } from "../features/library/LibraryWorkspace";
 import { ScanReportDialog } from "../features/library/ScanReportDialog";
 import { CollectionDirectory } from "../features/library/CollectionDirectory";
+import { CollectionNavigationProvider } from "../features/library";
 import { PlaylistCreateDialog } from "../features/playlists/PlaylistNameDialog";
 import { PlaylistsView } from "../features/playlists/PlaylistsView";
 import { SettingsView } from "../features/settings/SettingsView";
@@ -83,6 +84,24 @@ function isLibraryViewKind(view: string): view is LibraryViewKind {
   return LIBRARY_VIEW_KINDS.includes(view);
 }
 
+/** The user-facing title of a library view (the same labels the sidebar uses). */
+function libraryViewTitle(view: LibraryViewKind, playlistName: string | null): string {
+  switch (view) {
+    case "playlist":
+      return playlistName ?? "歌单";
+    case "recent":
+      return "最近添加";
+    case "favorites":
+      return "喜欢的音乐";
+    case "artists":
+      return "歌手";
+    case "albums":
+      return "专辑";
+    case "all":
+      return "全部歌曲";
+  }
+}
+
 export function App() {
   const [scanIssues, setScanIssues] = useState<readonly ScanIssueDto[]>([]);
   const {
@@ -93,6 +112,11 @@ export function App() {
     playlists,
     reloadPlaylists,
     selectView,
+    collectionTarget,
+    collectionSource,
+    openCollection,
+    consumeCollectionTarget,
+    returnToSource,
     nav,
     sidebarRef,
     sidebarOpen,
@@ -238,18 +262,24 @@ export function App() {
   }, [selectView, runImport, setSettingsOpen, settingsOpen, activeRoot, scanning, statusRefresh]);
 
   const activePlaylist = playlists.find((playlist) => playlist.id === activePlaylistId) ?? null;
-  const viewTitle =
-    libraryView === "playlist"
-      ? (activePlaylist?.name ?? "歌单")
-      : libraryView === "recent"
-        ? "最近添加"
-        : libraryView === "favorites"
-          ? "喜欢的音乐"
-          : libraryView === "artists"
-            ? "歌手"
-            : libraryView === "albums"
-              ? "专辑"
-              : "全部歌曲";
+  const viewTitle = libraryViewTitle(libraryView, activePlaylist?.name ?? null);
+  // The detail's back entry names the view the link jump came from, so
+  // “返回” never leaves the user guessing which view will appear.
+  const sourceTitle = collectionSource
+    ? libraryViewTitle(
+        collectionSource.view,
+        playlists.find((playlist) => playlist.id === collectionSource.playlistId)?.name ?? null,
+      )
+    : null;
+  const returnLabel = sourceTitle ? `返回${sourceTitle}` : undefined;
+  const openArtist = useCallback(
+    (artistKey: string) => openCollection({ kind: "artist", artistKey }),
+    [openCollection],
+  );
+  const openAlbum = useCallback(
+    (albumKey: string) => openCollection({ kind: "album", albumKey }),
+    [openCollection],
+  );
 
   const navItem = (
     view: LibraryViewKind,
@@ -271,202 +301,208 @@ export function App() {
 
   return (
     <ShellNavProvider value={nav}>
-      <div
-        className={`app${status.configured ? "" : " app-initial"}`}
-        id="app-shell"
-        data-testid="echo-shell"
-        data-echo-theme={theme}
-      >
-        {/* macOS overlay titlebar drag handle — see `.titlebar-drag` in
+      <CollectionNavigationProvider openArtist={openArtist} openAlbum={openAlbum}>
+        <div
+          className={`app${status.configured ? "" : " app-initial"}`}
+          id="app-shell"
+          data-testid="echo-shell"
+          data-echo-theme={theme}
+        >
+          {/* macOS overlay titlebar drag handle — see `.titlebar-drag` in
             app-extras.css. `tauri.conf.json` sets `titleBarStyle: "Overlay"` +
             `hiddenTitle: true`, so no native titlebar drags the window and the
             top `--titlebar-inset` strip (28px in the WebView, 0px in a plain
             browser preview) must declare itself draggable instead. */}
-        <div className="titlebar-drag" data-tauri-drag-region aria-hidden="true" />
+          <div className="titlebar-drag" data-tauri-drag-region aria-hidden="true" />
 
-        {/* Windows caption buttons (issue #76): `decorations: false` leaves no
+          {/* Windows caption buttons (issue #76): `decorations: false` leaves no
             native — □ ×, so the shell draws them in the top-right safe-area
             strip. Renders nothing on macOS/Linux/web. */}
-        <WindowControls />
+          <WindowControls />
 
-        {/* 标题栏导入/设置：Windows 在窗口控件左侧，macOS 在右上角安全区条。
+          {/* 标题栏导入/设置：Windows 在窗口控件左侧，macOS 在右上角安全区条。
             未配置资料库前入口无意义（设置浮层只在工作区渲染），随侧边栏一起
             出现；导入在只读库同样隐藏。 */}
-        {status.configured ? (
-          <TitlebarActions
-            importing={importing}
-            showImport={!status.readOnly}
-            onImport={() => void runImport()}
-            onSettings={() => setSettingsOpen(true)}
-          />
-        ) : null}
-
-        {status.configured ? (
-          <>
-            <aside
-              id="app-sidebar"
-              className="sidebar"
-              data-testid="sidebar"
-              aria-label="音乐库导航"
-              ref={sidebarRef}
-            >
-              <div className="brand-area" data-testid="brand-area">
-                <div className="brand" aria-label="Echo，本地音乐播放器">
-                  <span className="brand-mark" aria-hidden="true">
-                    <Icon name="note" />
-                  </span>
-                  <span className="brand-name">Echo</span>
-                </div>
-              </div>
-
-              <nav className="nav-group" aria-label="主导航">
-                <span className="nav-label">音乐库</span>
-                {navItem("all", "全部歌曲", "library", "all")}
-                {navItem("recent", "最近添加", "recent", "recent")}
-                {navItem("favorites", "喜欢的音乐", "heart", "favorites")}
-                {navItem("artists", "歌手", "artist", "artists")}
-                {navItem("albums", "专辑", "album", "albums")}
-              </nav>
-
-              <nav className="nav-group playlist-navigation" aria-label="歌单">
-                <div className="nav-section-head">
-                  <span className="nav-label">歌单</span>
-                  <button
-                    type="button"
-                    className="playlist-create"
-                    aria-label="添加歌单"
-                    title="添加歌单"
-                    disabled={status.readOnly || !status.activeRoot || status.unavailable}
-                    onClick={() => setPlaylistNameOpen(true)}
-                    data-testid="create-playlist"
-                  >
-                    <Icon name="plus" />
-                  </button>
-                </div>
-                <div className="playlist-list" role="list">
-                  {playlists.map((playlist) => (
-                    <button
-                      key={playlist.id}
-                      type="button"
-                      role="listitem"
-                      className={`nav-item playlist-item${
-                        libraryView === "playlist" && activePlaylistId === playlist.id
-                          ? " active"
-                          : ""
-                      }`}
-                      aria-current={
-                        libraryView === "playlist" && activePlaylistId === playlist.id
-                          ? "page"
-                          : undefined
-                      }
-                      onClick={() => selectView("playlist", playlist.id)}
-                    >
-                      <span
-                        className={`cover playlist-cover ${coverClass(playlist.id)}${playlist.coverKey ? " has-image" : ""}`}
-                        aria-hidden="true"
-                      >
-                        {playlist.coverKey ? (
-                          <img src={bridge.assetUrl(playlist.coverKey, "list")} alt="" />
-                        ) : null}
-                      </span>
-                      <span className="playlist-name">{playlist.name}</span>
-                      {/* `memberCount` is authoritative from the backend — no
-                          need to open the playlist to know its size. */}
-                      <span className="nav-count" data-testid={`playlist-count-${playlist.id}`}>
-                        {playlist.memberCount}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </nav>
-            </aside>
-
-            <button
-              type="button"
-              className="sidebar-scrim"
-              aria-label="关闭侧边栏"
-              hidden={!sidebarOpen}
-              onClick={() => closeSidebar()}
-              data-testid="sidebar-mask"
+          {status.configured ? (
+            <TitlebarActions
+              importing={importing}
+              showImport={!status.readOnly}
+              onImport={() => void runImport()}
+              onSettings={() => setSettingsOpen(true)}
             />
+          ) : null}
 
-            <section className="workspace" data-testid="workspace">
-              {status.unavailable ? (
-                <LibraryStatusView status={status} />
-              ) : libraryView === "playlist" && activePlaylistId ? (
-                <PlaylistsView
-                  playlistId={activePlaylistId}
-                  title={viewTitle}
-                  coverKey={
-                    playlists.find((playlist) => playlist.id === activePlaylistId)?.coverKey
-                  }
-                  automaticCoverKey={
-                    playlists.find((playlist) => playlist.id === activePlaylistId)
-                      ?.automaticCoverKey
-                  }
-                  hasCustomCover={
-                    playlists.find((playlist) => playlist.id === activePlaylistId)?.hasCustomCover
-                  }
-                  root={status.activeRoot ?? ""}
-                  existingNames={playlists.map((playlist) => playlist.name)}
-                  readOnly={status.readOnly}
-                  onDeleted={() => {
-                    selectView("all");
-                    reloadPlaylists();
-                  }}
-                  onLibraryChanged={reloadPlaylists}
-                />
-              ) : libraryView === "artists" || libraryView === "albums" ? (
-                <CollectionDirectory
-                  kind={libraryView === "artists" ? "artist" : "album"}
-                  root={status.activeRoot ?? ""}
-                  readOnly={status.readOnly}
-                  onLibraryChanged={reloadPlaylists}
-                />
-              ) : (
-                <LibraryWorkspace
-                  view={libraryView}
-                  title={viewTitle}
-                  root={status.activeRoot ?? ""}
-                  readOnly={status.readOnly}
-                  onLibraryChanged={reloadPlaylists}
-                />
-              )}
+          {status.configured ? (
+            <>
+              <aside
+                id="app-sidebar"
+                className="sidebar"
+                data-testid="sidebar"
+                aria-label="音乐库导航"
+                ref={sidebarRef}
+              >
+                <div className="brand-area" data-testid="brand-area">
+                  <div className="brand" aria-label="Echo，本地音乐播放器">
+                    <span className="brand-mark" aria-hidden="true">
+                      <Icon name="note" />
+                    </span>
+                    <span className="brand-name">Echo</span>
+                  </div>
+                </div>
 
-              {settingsOpen ? <SettingsView onClose={() => setSettingsOpen(false)} /> : null}
-              {renderImportDialog()}
-            </section>
-          </>
-        ) : (
-          <ChooseRootView onActivated={status.refresh} />
-        )}
+                <nav className="nav-group" aria-label="主导航">
+                  <span className="nav-label">音乐库</span>
+                  {navItem("all", "全部歌曲", "library", "all")}
+                  {navItem("recent", "最近添加", "recent", "recent")}
+                  {navItem("favorites", "喜欢的音乐", "heart", "favorites")}
+                  {navItem("artists", "歌手", "artist", "artists")}
+                  {navItem("albums", "专辑", "album", "albums")}
+                </nav>
 
-        <ImmersivePlayer />
+                <nav className="nav-group playlist-navigation" aria-label="歌单">
+                  <div className="nav-section-head">
+                    <span className="nav-label">歌单</span>
+                    <button
+                      type="button"
+                      className="playlist-create"
+                      aria-label="添加歌单"
+                      title="添加歌单"
+                      disabled={status.readOnly || !status.activeRoot || status.unavailable}
+                      onClick={() => setPlaylistNameOpen(true)}
+                      data-testid="create-playlist"
+                    >
+                      <Icon name="plus" />
+                    </button>
+                  </div>
+                  <div className="playlist-list" role="list">
+                    {playlists.map((playlist) => (
+                      <button
+                        key={playlist.id}
+                        type="button"
+                        role="listitem"
+                        className={`nav-item playlist-item${
+                          libraryView === "playlist" && activePlaylistId === playlist.id
+                            ? " active"
+                            : ""
+                        }`}
+                        aria-current={
+                          libraryView === "playlist" && activePlaylistId === playlist.id
+                            ? "page"
+                            : undefined
+                        }
+                        onClick={() => selectView("playlist", playlist.id)}
+                      >
+                        <span
+                          className={`cover playlist-cover ${coverClass(playlist.id)}${playlist.coverKey ? " has-image" : ""}`}
+                          aria-hidden="true"
+                        >
+                          {playlist.coverKey ? (
+                            <img src={bridge.assetUrl(playlist.coverKey, "list")} alt="" />
+                          ) : null}
+                        </span>
+                        <span className="playlist-name">{playlist.name}</span>
+                        {/* `memberCount` is authoritative from the backend — no
+                          need to open the playlist to know its size. */}
+                        <span className="nav-count" data-testid={`playlist-count-${playlist.id}`}>
+                          {playlist.memberCount}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </nav>
+              </aside>
 
-        <QueuePanel triggerRef={queueTriggerRef} />
-        <EffectsPanel />
+              <button
+                type="button"
+                className="sidebar-scrim"
+                aria-label="关闭侧边栏"
+                hidden={!sidebarOpen}
+                onClick={() => closeSidebar()}
+                data-testid="sidebar-mask"
+              />
 
-        <PlayerBar root={status.activeRoot ?? undefined} queueTriggerRef={queueTriggerRef} />
+              <section className="workspace" data-testid="workspace">
+                {status.unavailable ? (
+                  <LibraryStatusView status={status} />
+                ) : libraryView === "playlist" && activePlaylistId ? (
+                  <PlaylistsView
+                    playlistId={activePlaylistId}
+                    title={viewTitle}
+                    coverKey={
+                      playlists.find((playlist) => playlist.id === activePlaylistId)?.coverKey
+                    }
+                    automaticCoverKey={
+                      playlists.find((playlist) => playlist.id === activePlaylistId)
+                        ?.automaticCoverKey
+                    }
+                    hasCustomCover={
+                      playlists.find((playlist) => playlist.id === activePlaylistId)?.hasCustomCover
+                    }
+                    root={status.activeRoot ?? ""}
+                    existingNames={playlists.map((playlist) => playlist.name)}
+                    readOnly={status.readOnly}
+                    onDeleted={() => {
+                      selectView("all");
+                      reloadPlaylists();
+                    }}
+                    onLibraryChanged={reloadPlaylists}
+                  />
+                ) : libraryView === "artists" || libraryView === "albums" ? (
+                  <CollectionDirectory
+                    kind={libraryView === "artists" ? "artist" : "album"}
+                    root={status.activeRoot ?? ""}
+                    readOnly={status.readOnly}
+                    onLibraryChanged={reloadPlaylists}
+                    target={collectionTarget}
+                    onTargetConsumed={consumeCollectionTarget}
+                    onReturnToSource={collectionSource ? returnToSource : undefined}
+                    returnLabel={returnLabel}
+                  />
+                ) : (
+                  <LibraryWorkspace
+                    view={libraryView}
+                    title={viewTitle}
+                    root={status.activeRoot ?? ""}
+                    readOnly={status.readOnly}
+                    onLibraryChanged={reloadPlaylists}
+                  />
+                )}
 
-        <ToastView />
-        <FileDropOverlay />
-        {scanIssues.length > 0 ? (
-          <ScanReportDialog issues={scanIssues} onClose={() => setScanIssues([])} />
-        ) : null}
+                {settingsOpen ? <SettingsView onClose={() => setSettingsOpen(false)} /> : null}
+                {renderImportDialog()}
+              </section>
+            </>
+          ) : (
+            <ChooseRootView onActivated={status.refresh} />
+          )}
 
-        {playlistNameOpen ? (
-          <PlaylistCreateDialog
-            existingNames={playlists.map((playlist) => playlist.name)}
-            root={status.activeRoot}
-            onClose={() => setPlaylistNameOpen(false)}
-            onCreated={(_name, createdId) => {
-              setPlaylistNameOpen(false);
-              reloadPlaylists();
-              if (createdId) selectView("playlist", createdId);
-            }}
-          />
-        ) : null}
-      </div>
+          <ImmersivePlayer />
+
+          <QueuePanel triggerRef={queueTriggerRef} />
+          <EffectsPanel />
+
+          <PlayerBar root={status.activeRoot ?? undefined} queueTriggerRef={queueTriggerRef} />
+
+          <ToastView />
+          <FileDropOverlay />
+          {scanIssues.length > 0 ? (
+            <ScanReportDialog issues={scanIssues} onClose={() => setScanIssues([])} />
+          ) : null}
+
+          {playlistNameOpen ? (
+            <PlaylistCreateDialog
+              existingNames={playlists.map((playlist) => playlist.name)}
+              root={status.activeRoot}
+              onClose={() => setPlaylistNameOpen(false)}
+              onCreated={(_name, createdId) => {
+                setPlaylistNameOpen(false);
+                reloadPlaylists();
+                if (createdId) selectView("playlist", createdId);
+              }}
+            />
+          ) : null}
+        </div>
+      </CollectionNavigationProvider>
     </ShellNavProvider>
   );
 }

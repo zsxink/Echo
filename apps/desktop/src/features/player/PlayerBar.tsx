@@ -37,6 +37,7 @@ import { Icon } from "../../app/Icon";
 import { formatDuration } from "../library";
 import { useSongDetail } from "./useSongDetail";
 import { invalidateLibrary, setSongFavorite } from "../library";
+import { useOptionalCollectionNavigation } from "../library";
 
 import { EffectsTrigger } from "./EffectsTrigger";
 import { savedLibraryOperation } from "../../bridge/libraryPersistence";
@@ -54,6 +55,9 @@ export function PlayerBar({
   const snapshot = usePlayerSnapshot();
   const ui = usePlayerUi();
   const detail = useSongDetail(snapshot.currentSongId);
+  // Issue #118: the bar is chrome outside the workspace, so it asks the shell
+  // through the same optional context the list rows use.
+  const navigation = useOptionalCollectionNavigation();
   // A cover asset can disappear under a live key (the cache is garbage-collected
   // outside the referenced keep-set). A broken image would be worse than the
   // vinyl placeholder, so a load failure falls back to it — remembered per song
@@ -140,13 +144,14 @@ export function PlayerBar({
       <PlayerProgress duration={duration} disabled={!hasCurrent} />
 
       <div className="player-track">
-        <button
-          type="button"
+        {/* Issue #118 — the card is a container, not a button: the artist is a
+            navigation link, and a link inside a button is neither valid HTML nor
+            reachable by keyboard. The cover+title stay one 展开 button; its
+            stretched hit area (CSS `::after`) keeps the whole card clickable,
+            while the link sits above it. */}
+        <div
           className="player-track-card"
-          aria-label="展开当前歌曲详情"
-          aria-expanded={ui.immersiveOpen}
-          onClick={() => playerStore.setImmersiveOpen(!ui.immersiveOpen)}
-          data-testid="now-playing-trigger"
+          data-immersive-open={ui.immersiveOpen ? "true" : undefined}
         >
           <div className={`mini-cover${artwork ? " has-image" : ""}`} aria-hidden="true">
             {artwork ? (
@@ -154,19 +159,39 @@ export function PlayerBar({
             ) : null}
           </div>
           <div className="player-track-text">
-            <b>
-              {title ? (
-                title
-              ) : (
-                // 空播放态 — an empty song slot, not a "未在播放" sentence.
-                <span className="player-track-placeholder" aria-hidden="true">
-                  —
-                </span>
-              )}
-            </b>
-            {subline ? <span>{subline}</span> : null}
+            <button
+              type="button"
+              className="player-track-expand"
+              aria-label="展开当前歌曲详情"
+              aria-expanded={ui.immersiveOpen}
+              onClick={() => playerStore.setImmersiveOpen(!ui.immersiveOpen)}
+              data-testid="now-playing-trigger"
+            >
+              <b>
+                {title ? (
+                  title
+                ) : (
+                  // 空播放态 — an empty song slot, not a "未在播放" sentence.
+                  <span className="player-track-placeholder" aria-hidden="true">
+                    —
+                  </span>
+                )}
+              </b>
+            </button>
+            {detail?.artistKey && navigation ? (
+              <button
+                type="button"
+                className="player-track-link"
+                aria-label={`打开歌手 ${detail.artist ?? ""}`}
+                onClick={() => navigation.openArtist(detail.artistKey as string)}
+              >
+                {detail.artist}
+              </button>
+            ) : subline ? (
+              <span>{subline}</span>
+            ) : null}
           </div>
-        </button>
+        </div>
         {isTemporary ? (
           importResult ? (
             <span className="player-import-result" data-testid="player-import-result">

@@ -18,6 +18,7 @@ import { PlayerProgress } from "./PlayerProgress";
 import { playerStore } from "../../player/playerStore";
 import type { UiPlayerSnapshot, UiQueueProjection } from "../../player/playerStore";
 import { invalidateCovers } from "../../app/coverArt";
+import { CollectionNavigationProvider } from "../library";
 
 // Bridge calls are mocked globally by setup.ts; capture them for assertion.
 let capturedInvoke: ReturnType<typeof vi.fn>;
@@ -549,7 +550,9 @@ describe("PlayerBar — 非沉浸播放模式视觉语义 (DP-R12)", () => {
   });
 
   it("switches to 随机播放 with a neutral button and leaves the queue alone", () => {
-    capturedInvoke.mockResolvedValue(null);
+    // `Once`, not a standing implementation: the latter would outlive this test
+    // and answer every later `invoke` (including `song_detail`) with null.
+    capturedInvoke.mockResolvedValueOnce(null);
     publishMode("sequential");
     render(<PlayerBar />);
 
@@ -623,5 +626,150 @@ describe("PlayerBar queue trigger (fix-queue-trigger-toggle)", () => {
     const queueTriggerRef = createRef<HTMLButtonElement>();
     render(<PlayerBar queueTriggerRef={queueTriggerRef} />);
     expect(queueTriggerRef.current).toBe(screen.getByTestId("queue-trigger"));
+  });
+});
+
+/**
+ * Issue #118 — the 当前播放区 carries the artist as a navigation link.
+ *
+ * The card used to be one `<button>`, which cannot hold a second control. It is
+ * now a container: the cover+title remain the 展开 entry point (`aria-expanded`
+ * intact) and the artist link is its sibling, so neither nests in the other.
+ */
+describe("PlayerBar artist link (issue #118)", () => {
+  function renderInProvider(overrides: Partial<UiPlayerSnapshot> = {}) {
+    const openArtist = vi.fn();
+    const openAlbum = vi.fn();
+    playerStore.publish({
+      state: "playing",
+      position: 30,
+      duration: 120,
+      volume: 0.8,
+      muted: false,
+      currentQueueEntryId: "entry-1",
+      currentSongId: "song-abc",
+      queueLen: 3,
+      mode: "sequential",
+      currentTitle: null,
+      currentCanImport: false,
+      queueRevision: 0,
+      ...overrides,
+    });
+    // @ts-expect-error - the test hook installed by setup.ts
+    globalThis.__echoTest.setInvoke("song_detail", {
+      songId: "song-abc",
+      relativePath: "a.mp3",
+      title: "心房",
+      artist: "陈婧霏",
+      album: "猩红",
+      artistKey: "陈婧霏",
+      albumKey: "猩红",
+      durationS: 120,
+      playCount: 0,
+      favorite: false,
+      hasCover: false,
+      availability: "available",
+    });
+    render(
+      <CollectionNavigationProvider openArtist={openArtist} openAlbum={openAlbum}>
+        <PlayerBar />
+      </CollectionNavigationProvider>,
+    );
+    return { openArtist, openAlbum };
+  }
+
+  it("still opens the immersive player from the expand entry", async () => {
+    renderInProvider();
+    await screen.findByRole("button", { name: "打开歌手 陈婧霏" });
+
+    const expand = screen.getByTestId("now-playing-trigger");
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    // 展开入口与歌手链接是并列控件：一个 button 不能包含另一个（HTML 与键盘
+    // 契约都不允许），两者各占一处可聚焦位置。
+    const artistLink = screen.getByRole("button", { name: "打开歌手 陈婧霏" });
+    expect(expand.contains(artistLink)).toBe(false);
+    expect(artistLink.contains(expand)).toBe(false);
+    fireEvent.click(expand);
+
+    expect(playerStore.getUi().immersiveOpen).toBe(true);
+    expect(expand).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("navigates to the artist without touching playback, the current song or the queue", async () => {
+    const { openArtist } = renderInProvider();
+    await screen.findByRole("button", { name: "打开歌手 陈婧霏" });
+    const before = playerStore.getSnapshot();
+    capturedInvoke.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "打开歌手 陈婧霏" }));
+
+    expect(openArtist).toHaveBeenCalledWith("陈婧霏");
+    expect(playerStore.getSnapshot()).toEqual(before);
+    // No transport command left the bar for a navigation gesture.
+    expect(capturedInvoke).not.toHaveBeenCalledWith("player_control", expect.anything());
+    expect(playerStore.getUi().immersiveOpen).toBe(false);
+  });
+
+  it("keeps the plain subline for a temporary item", () => {
+    playerStore.publish({
+      state: "playing",
+      position: 0,
+      duration: 120,
+      volume: 1,
+      muted: false,
+      currentQueueEntryId: "temp-1",
+      currentSongId: null,
+      queueLen: 1,
+      mode: "sequential",
+      currentTitle: "晴天.mp3",
+      currentCanImport: true,
+      queueRevision: 0,
+    });
+    render(
+      <CollectionNavigationProvider openArtist={vi.fn()} openAlbum={vi.fn()}>
+        <PlayerBar />
+      </CollectionNavigationProvider>,
+    );
+
+    expect(screen.queryByRole("button", { name: /打开歌手/ })).toBeNull();
+    // A temporary item's subline falls back to the duration, as before.
+    expect(screen.getByTestId("now-playing-trigger")).toHaveTextContent("晴天.mp3");
+  });
+
+  it("keeps the plain subline when no navigation provider is installed", async () => {
+    playerStore.publish({
+      state: "playing",
+      position: 30,
+      duration: 120,
+      volume: 1,
+      muted: false,
+      currentQueueEntryId: "entry-1",
+      currentSongId: "song-abc",
+      queueLen: 1,
+      mode: "sequential",
+      currentTitle: null,
+      currentCanImport: false,
+      queueRevision: 0,
+    });
+    // @ts-expect-error - the test hook installed by setup.ts
+    globalThis.__echoTest.setInvoke("song_detail", {
+      songId: "song-abc",
+      relativePath: "a.mp3",
+      title: "心房",
+      artist: "陈婧霏",
+      album: "猩红",
+      artistKey: "陈婧霏",
+      albumKey: "猩红",
+      durationS: 120,
+      playCount: 0,
+      favorite: false,
+      hasCover: false,
+      availability: "available",
+    });
+    render(<PlayerBar />);
+
+    // The artist still shows as text; it is just not a control.
+    expect(await screen.findByText("陈婧霏")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /打开歌手/ })).toBeNull();
   });
 });

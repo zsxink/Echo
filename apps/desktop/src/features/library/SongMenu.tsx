@@ -329,6 +329,12 @@ export function SongMenu({
           song={song}
           onClose={() => setDetailOpen(false)}
           onReveal={() => void reveal()}
+          // Issue #118: a link inside the detail navigates away, so both layers
+          // this component owns must close first — the dialog and the menu.
+          onNavigate={() => {
+            setDetailOpen(false);
+            onClose();
+          }}
         />
       ) : null}
     </>

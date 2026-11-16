@@ -385,6 +385,110 @@ describe("Library directory views", () => {
 });
 
 /**
+ * Issue #118 — 歌曲列表里的歌手/专辑链接直达聚合详情。
+ *
+ * The shell half of the feature: a link in a list row records the source view,
+ * switches the workspace to the matching directory and hands the group key over
+ * as a one-shot target; the detail's back entry restores the source view.
+ */
+describe("Collection navigation links (issue #118)", () => {
+  const mocks = (
+    globalThis as unknown as {
+      __echoTest: { setInvoke: (command: string, value: unknown) => void };
+    }
+  ).__echoTest;
+
+  const SONG = {
+    id: "song-1",
+    title: "晴天",
+    artist: "周杰伦",
+    album: "叶惠美",
+    artistKey: "周杰伦",
+    albumKey: "叶惠美",
+    durationS: 239,
+    favorite: false,
+    playCount: 0,
+    availability: "available" as const,
+    relativePath: "jay/qingtian.flac",
+  };
+  const ARTIST = {
+    kind: "artist",
+    artistKey: "周杰伦",
+    artist: "周杰伦",
+    name: "周杰伦",
+    songCount: 1,
+    coverKey: null,
+    hasCustomCover: false,
+  };
+
+  async function activateLibrary() {
+    await act(async () => {
+      render(<App />);
+    });
+    mocks.setInvoke("choose_library_root", {
+      configured: true,
+      readOnly: false,
+      activeRoot: "root-1",
+    });
+    mocks.setInvoke("library_status", {
+      configured: true,
+      readOnly: false,
+      unavailable: false,
+      scanning: false,
+      activeRoot: "root-1",
+    });
+    mocks.setInvoke("all_songs", { items: [SONG], isLast: true, nextCursor: null });
+    mocks.setInvoke("playlists", []);
+    mocks.setInvoke("library_counts", {
+      all: 1,
+      recent: 1,
+      favorites: 1,
+      artists: 1,
+      albums: 1,
+    });
+    mocks.setInvoke("catalog_collections", [ARTIST]);
+    mocks.setInvoke("catalog_collection_songs", [SONG]);
+    fireEvent.click(screen.getByRole("button", { name: "选择音乐库目录" }));
+    await screen.findByTestId("workspace");
+  }
+
+  it("opens the artist detail from a list-row link and returns to the source view", async () => {
+    await activateLibrary();
+    await screen.findByText("晴天");
+    expect(screen.getByTestId("library-workspace")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "打开歌手 周杰伦" }));
+
+    // The workspace is the artist directory, already inside 周杰伦's detail:
+    // the directory grid never paints, and the back entry names the source view.
+    expect(await screen.findByRole("button", { name: "返回全部歌曲" })).toBeInTheDocument();
+    const directory = screen.getByTestId("artist-directory");
+    expect(directory.querySelector(".collection-open")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "返回全部歌曲" }));
+
+    // Back on the source view (全部歌曲), not on the artist directory.
+    expect(await screen.findByTestId("library-workspace")).toBeInTheDocument();
+    expect(screen.getByTestId("view-title")).toHaveTextContent("全部歌曲");
+  });
+
+  it("does not reopen the jumped-to group after returning to the directory", async () => {
+    await activateLibrary();
+    await screen.findByText("晴天");
+
+    fireEvent.click(screen.getByRole("button", { name: "打开歌手 周杰伦" }));
+    fireEvent.click(await screen.findByRole("button", { name: "返回全部歌曲" }));
+    await screen.findByTestId("library-workspace");
+
+    // The directory is now the user's own browsing state: the consumed target
+    // must not pull the detail open again.
+    fireEvent.click(screen.getByRole("button", { name: /^歌手/ }));
+    expect(await screen.findByRole("button", { name: "打开歌手 周杰伦" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^返回/ })).not.toBeInTheDocument();
+  });
+});
+
+/**
  * SHELL-IMP 品牌区导入入口 (playlist-search-locate-import 5.2).
  *
  * The import entry moved from `LibraryWorkspace` up to the shell's brand area,

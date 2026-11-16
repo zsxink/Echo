@@ -93,6 +93,8 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly title?: string;\n");
     out.push_str("  readonly artist?: string;\n");
     out.push_str("  readonly album?: string;\n");
+    out.push_str("  readonly artistKey?: string;\n");
+    out.push_str("  readonly albumKey?: string;\n");
     out.push_str("  readonly durationS?: number;\n");
     out.push_str("  readonly favorite: boolean;\n");
     out.push_str("  readonly playCount: number;\n");
@@ -200,6 +202,8 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly title?: string;\n");
     out.push_str("  readonly artist?: string;\n");
     out.push_str("  readonly album?: string;\n");
+    out.push_str("  readonly artistKey?: string;\n");
+    out.push_str("  readonly albumKey?: string;\n");
     out.push_str("  readonly durationS?: number;\n");
     out.push_str("  readonly format?: string;\n");
     out.push_str("  readonly playCount: number;\n");

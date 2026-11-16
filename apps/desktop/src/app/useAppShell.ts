@@ -28,6 +28,21 @@ import { type ShellNav } from "./shell";
 type LibraryStatus = ReturnType<typeof useLibraryStatus>;
 type PlaylistList = ReturnType<typeof useLibraryPlaylists>["playlists"];
 
+/**
+ * A one-shot request to switch to an artist/album directory and open one
+ * group. The key is Core's stable grouping identity — the shell only carries
+ * it, never derives it from a display label.
+ */
+export type CollectionTarget =
+  | { readonly kind: "artist"; readonly artistKey: string }
+  | { readonly kind: "album"; readonly albumKey: string };
+
+/** Where a link-initiated directory jump came from, for the detail's back entry. */
+export interface CollectionSource {
+  readonly view: LibraryViewKind;
+  readonly playlistId: string | null;
+}
+
 export interface AppShell {
   readonly theme: string;
   readonly status: LibraryStatus;
@@ -36,6 +51,11 @@ export interface AppShell {
   readonly playlists: PlaylistList;
   readonly reloadPlaylists: () => void;
   readonly selectView: (view: LibraryViewKind, playlistId?: string | null) => void;
+  readonly collectionTarget: CollectionTarget | null;
+  readonly collectionSource: CollectionSource | null;
+  readonly openCollection: (target: CollectionTarget) => void;
+  readonly consumeCollectionTarget: () => void;
+  readonly returnToSource: () => void;
   readonly nav: ShellNav;
   readonly sidebarRef: RefObject<HTMLElement>;
   readonly sidebarOpen: boolean;
@@ -51,6 +71,16 @@ export function useAppShell(): AppShell {
   const status = useLibraryStatus();
   const [libraryView, setLibraryView] = useState<LibraryViewKind>("all");
   const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null);
+  const [collectionTarget, setCollectionTarget] = useState<CollectionTarget | null>(null);
+  const [collectionSource, setCollectionSource] = useState<CollectionSource | null>(null);
+  // `openCollection` must read the view that is current *now* without being
+  // re-created on every render (the provider value stays stable), and it must
+  // know whether a target is already pending to preserve the first source.
+  const libraryViewRef = useRef(libraryView);
+  libraryViewRef.current = libraryView;
+  const activePlaylistIdRef = useRef(activePlaylistId);
+  activePlaylistIdRef.current = activePlaylistId;
+  const collectionTargetRef = useRef<CollectionTarget | null>(null);
   const [playlistNameOpen, setPlaylistNameOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Narrow-screen sidebar toggle (task 12.3): the sidebar collapses behind the
@@ -75,9 +105,41 @@ export function useAppShell(): AppShell {
   const selectView = useCallback((view: LibraryViewKind, playlistId?: string | null) => {
     setLibraryView(view);
     setActivePlaylistId(playlistId ?? null);
+    // Leaving the current view invalidates any pending jump: a target that was
+    // never consumed must not open a stale group later, and a source without
+    // its jump is meaningless.
+    collectionTargetRef.current = null;
+    setCollectionTarget(null);
+    setCollectionSource(null);
     // Selecting a view closes the narrow-screen sidebar (task 12.3).
     setSidebarOpen(false);
   }, []);
+
+  const openCollection = useCallback((target: CollectionTarget) => {
+    // Rapid clicks replace the pending target but keep the *first* source:
+    // that is still where the user was before the jump chain started.
+    if (collectionTargetRef.current === null) {
+      setCollectionSource({
+        view: libraryViewRef.current,
+        playlistId: activePlaylistIdRef.current,
+      });
+    }
+    collectionTargetRef.current = target;
+    setCollectionTarget(target);
+    setLibraryView(target.kind === "artist" ? "artists" : "albums");
+    setActivePlaylistId(null);
+    setSidebarOpen(false);
+  }, []);
+
+  const consumeCollectionTarget = useCallback(() => {
+    collectionTargetRef.current = null;
+    setCollectionTarget(null);
+  }, []);
+
+  const returnToSource = useCallback(() => {
+    if (!collectionSource) return;
+    selectView(collectionSource.view, collectionSource.playlistId);
+  }, [collectionSource, selectView]);
 
   // The macOS application menu mirrors the active view as its 视图 check state
   // (issue #73). Reporting on every change — the first render included — keeps
@@ -109,6 +171,11 @@ export function useAppShell(): AppShell {
     playlists,
     reloadPlaylists,
     selectView,
+    collectionTarget,
+    collectionSource,
+    openCollection,
+    consumeCollectionTarget,
+    returnToSource,
     nav,
     sidebarRef,
     sidebarOpen,

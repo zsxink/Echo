@@ -3158,6 +3158,54 @@
       ]
     },
     {
+      "id": "DAS-R29-S01",
+      "title": "侧边栏切换清除未消费目标",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/app/useAppShell.test.tsx",
+          "name": "selectView clears an unconsumed target and the source"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R29-S02",
+      "title": "目标只消费一次",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/app/useAppShell.test.tsx",
+          "name": "consumes only the target and keeps the source for the return"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R29-S03",
+      "title": "直接进入目录不产生来源记录",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/app/useAppShell.test.tsx",
+          "name": "entering a directory directly produces no source record"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R29-S04",
+      "title": "来源记录支持返回",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/app/useAppShell.test.tsx",
+          "name": "returnToSource restores the recorded view and playlist"
+        }
+      ]
+    },
+    {
       "id": "DP-R01-S01",
       "title": "播放资料库歌曲",
       "command": "cargo test -p echo-desktop --all-features --test player_smoke",
@@ -4206,6 +4254,18 @@
       ]
     },
     {
+      "id": "IL-R01-S04",
+      "title": "播放栏歌手链接",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/player/PlayerBar.test.tsx",
+          "name": "navigates to the artist without touching playback, the current song or the queue"
+        }
+      ]
+    },
+    {
       "id": "IL-R02-S01",
       "title": "切换播放模式",
       "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
@@ -4268,6 +4328,23 @@
         {
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
+        }
+      ]
+    },
+    {
+      "id": "IL-R03-S04",
+      "title": "沉浸式播放器中的歌手与专辑链接",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/player/ImmersivePlayer.test.tsx",
+          "name": "closes the immersive surface before navigating to the artist"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/features/player/ImmersivePlayer.test.tsx",
+          "name": "closes the immersive surface before navigating to the album"
         }
       ]
     },
@@ -6217,6 +6294,83 @@
           "kind": "vitest",
           "target": "src/features/library/favoriteMutation.test.ts",
           "name": "counts a repeated unlike once even when the row is still the pre-write value"
+        }
+      ]
+    },
+    {
+      "id": "LE-R23-S01",
+      "title": "点击行内歌手链接",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/library/SongRow.test.tsx",
+          "name": "navigates to the artist without starting playback"
+        }
+      ]
+    },
+    {
+      "id": "LE-R23-S02",
+      "title": "点击行内专辑链接",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/library/SongRow.test.tsx",
+          "name": "navigates to the album without starting playback"
+        }
+      ]
+    },
+    {
+      "id": "LE-R23-S03",
+      "title": "键盘激活行内链接",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/library/SongRow.test.tsx",
+          "name": "treats Enter/Space on a link the same as a click"
+        }
+      ]
+    },
+    {
+      "id": "LE-R23-S04",
+      "title": "多选模式下链接仍可导航",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/library/SongRow.test.tsx",
+          "name": "keeps the selection set intact in multi-select mode"
+        }
+      ]
+    },
+    {
+      "id": "LE-R23-S05",
+      "title": "未知元数据保持纯文本",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/library/SongRow.test.tsx",
+          "name": "renders no link when the read model has no grouping key"
+        }
+      ]
+    },
+    {
+      "id": "LE-R23-S06",
+      "title": "歌曲详情对话框中的链接",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/library/SongMenu.test.tsx",
+          "name": "closes the detail and the menu before navigating from the artist link"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/features/library/SongMenu.test.tsx",
+          "name": "closes the detail and the menu before navigating from the album link"
         }
       ]
     },

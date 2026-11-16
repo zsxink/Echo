@@ -32,6 +32,7 @@ import { formatTrackDuration } from "./duration";
 import { Icon } from "../../app/Icon";
 import type { MenuAnchor } from "./SongMenu";
 import { coverClass } from "./coverClass";
+import { useOptionalCollectionNavigation } from "./collectionNavigationContext";
 
 export interface SongRowProps {
   readonly song: SongView;
@@ -107,6 +108,11 @@ export function SongRow({
   const unavailable = missing || pendingDelete;
   const title = song.title ?? "未命名歌曲";
   const artist = song.artist ?? "未知艺人";
+  const navigation = useOptionalCollectionNavigation();
+  // Core decides navigability: a key is present only for real metadata, so a
+  // song filed under 未知艺人/未知专辑 stays plain text (issue #118).
+  const artistKey = song.artistKey;
+  const albumKey = song.albumKey;
   // A cover asset can disappear under a live key (the cache is garbage-collected
   // outside the referenced keep-set). A broken image would be worse than the
   // prototype's placeholder, so the first load failure falls back to it.
@@ -229,7 +235,23 @@ export function SongRow({
               ) : null}
             </div>
             <div className="track-artist">
-              {artist}
+              {artistKey && navigation ? (
+                <button
+                  type="button"
+                  className="track-artist-link"
+                  aria-label={`打开歌手 ${artist}`}
+                  onClick={(event) => {
+                    // A link is a row control: it must not also start playback
+                    // or toggle the row's bulk selection.
+                    event.stopPropagation();
+                    navigation.openArtist(artistKey);
+                  }}
+                >
+                  {artist}
+                </button>
+              ) : (
+                artist
+              )}
               {unavailable ? (
                 <span className="availability-tag">{missing ? "不可用" : "待删除"}</span>
               ) : null}
@@ -239,7 +261,23 @@ export function SongRow({
       </td>
 
       <td className="album">
-        <div className="track-album">{song.album ?? ""}</div>
+        <div className="track-album">
+          {albumKey && song.album && navigation ? (
+            <button
+              type="button"
+              className="track-album-link"
+              aria-label={`打开专辑 ${song.album}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                navigation.openAlbum(albumKey);
+              }}
+            >
+              {song.album}
+            </button>
+          ) : (
+            (song.album ?? "")
+          )}
+        </div>
       </td>
 
       <td className="track-time">{formatTrackDuration(song.durationS)}</td>

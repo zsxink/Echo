@@ -5,6 +5,9 @@ import { resetLibraryInvalidations as resetInvalidations } from "./libraryInvali
 import { resetFavoriteMutations } from "./favoriteMutation";
 
 export { LibraryWorkspace } from "./LibraryWorkspace";
+export { CollectionNavigationProvider } from "./collectionNavigation";
+export { useOptionalCollectionNavigation } from "./collectionNavigationContext";
+export type { CollectionNavigation } from "./collectionNavigationContext";
 export { SongList } from "./SongList";
 export { formatDuration } from "./duration";
 export { SongMenu } from "./SongMenu";

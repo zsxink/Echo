@@ -71,15 +71,30 @@
 .queue-popover .queue-title { flex: none; margin-bottom: var(--space-2); padding-bottom: var(--space-2); border-bottom: 1px solid var(--border-soft); }
 .playerbar { position: relative; grid-column: 1 / 3; grid-row: 2; border-top: 1px solid var(--border); background: var(--bg); display: grid; grid-template-columns: minmax(260px, 1fr) minmax(400px, 1.2fr) minmax(260px, 1fr); align-items: center; gap: var(--space-6); padding: var(--space-3) var(--space-6); }
 .player-track { display: flex; align-items: center; min-width: 0; gap: var(--space-2); }
-.player-track-card { min-width: 0; min-height: 56px; margin: -4px; padding: 4px; border: 0; border-radius: var(--radius-md); background: transparent; display: flex; flex: 1; gap: var(--space-3); align-items: center; text-align: left; color: var(--fg); cursor: pointer; transition: background var(--motion-fast) var(--ease-standard); }
+/* Issue #118 — the card is a container, not a button: it holds the 展开 entry
+   point and the artist navigation link side by side, so neither is nested in
+   the other. `data-immersive-open` mirrors the old `[aria-expanded]` paint. */
+.player-track-card { position: relative; min-width: 0; min-height: 56px; margin: -4px; padding: 4px; border-radius: var(--radius-md); background: transparent; display: flex; flex: 1; gap: var(--space-3); align-items: center; text-align: left; color: var(--fg); transition: background var(--motion-fast) var(--ease-standard); }
 .player-track-card:hover { background: var(--surface); }
-.player-track-card[aria-expanded="true"] { background: var(--surface-warm); }
+.player-track-card[data-immersive-open="true"] { background: var(--surface-warm); }
+/* 封面 + 标题 are the expand control. Its stretched pseudo-element keeps the
+   whole card clickable, exactly as the old single-button card was; the artist
+   link sits above that layer, so the two gestures never collide. */
+.player-track-expand { display: block; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.player-track-expand::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.player-track-expand:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
 .mini-cover { width: 48px; height: 48px; flex: none; border-radius: 50%; background: repeating-radial-gradient(circle at center, color-mix(in oklab, var(--fg), black 18%) 0 2px, color-mix(in oklab, var(--fg), black 34%) 3px 4px); position: relative; }
 .mini-cover::after { content: ""; position: absolute; inset: 12px; border-radius: 50%; border: 1px solid color-mix(in oklab, var(--accent-on), transparent 30%); }
-.player-track-text { min-width: 0; }
+.player-track-text { min-width: 0; flex: 1; }
 .player-track-text b, .player-track-text span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .player-track-text b { font-size: var(--text-sm); }
 .player-track-text span { color: var(--muted); font-size: var(--text-xs); }
+/* The artist link keeps the subline's type and colour — only the affordance is
+   added, and it never widens the card (ellipsis at narrow widths). */
+.player-track-link { position: relative; z-index: 1; display: block; max-width: 100%; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: var(--text-xs); text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-track-link:hover { color: var(--accent-strong); text-decoration: underline; }
+.player-track-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
+.player-track-link[hidden] { display: none; }
 .controls { display: grid; gap: var(--space-2); justify-items: center; }
 .control-buttons { display: flex; align-items: center; gap: var(--space-3); }
 .control { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; border: 0; color: var(--fg-2); background: transparent; cursor: pointer; border-radius: 50%; position: relative; }
@@ -193,6 +208,12 @@
 .now-playing-info { grid-area: info; min-width: 0; max-width: 620px; align-self: start; padding-bottom: 0; transform: translateY(var(--tonearm-info-offset, 0px)); }
 .now-playing-popover .now-title { color: var(--accent-on); font-size: clamp(var(--text-2xl), 4vw, var(--text-3xl)); }
 .song-meta { margin: var(--space-4) 0 0; color: color-mix(in oklab, var(--accent-on), transparent 34%); font-size: var(--text-sm); }
+/* Issue #118 — 歌手 / 专辑 in the immersive surface are the same navigation
+   links as the list rows, dressed as the surrounding sentence: no button
+   chrome, inherited type, an underline only on hover/focus. */
+.song-meta-link { padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; }
+.song-meta-link:hover { color: var(--accent-on); text-decoration: underline; }
+.song-meta-link:focus-visible { outline: 2px solid var(--accent-on); outline-offset: 2px; border-radius: var(--radius-sm); }
 .now-playing-popover::-webkit-scrollbar, .now-playing-popover .lyrics::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .now-playing-popover .lyrics { grid-area: lyrics; min-width: 0; max-width: 620px; height: calc(2.25em * 5); align-self: start; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--space-3) 0 0; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; scrollbar-width: none; }
 .now-playing-popover .lyrics:focus-visible { outline: none; border-radius: var(--radius-sm); box-shadow: var(--focus-ring); }
@@ -209,9 +230,9 @@ body.player-mode-open .playerbar { position: relative; z-index: 9; background: c
 body.player-mode-open .progress-line, body.player-mode-open .volume-line { --slider-track-height: 2px; }
 body.player-mode-open .playerbar .player-track-card { color: var(--accent-on); background: transparent; }
 body.player-mode-open .playerbar .player-track-card:hover { background: color-mix(in oklab, var(--accent-on), transparent 87%); }
-body.player-mode-open .playerbar .player-track-card[aria-expanded="true"] { background: transparent; }
-body.player-mode-open .playerbar .player-track-card[aria-expanded="true"]:hover { background: color-mix(in oklab, var(--accent-on), transparent 87%); }
-body.player-mode-open .playerbar .player-track-text span, body.player-mode-open .playerbar .progress-line { color: color-mix(in oklab, var(--accent-on), transparent 42%); }
+body.player-mode-open .playerbar .player-track-card[data-immersive-open="true"] { background: transparent; }
+body.player-mode-open .playerbar .player-track-card[data-immersive-open="true"]:hover { background: color-mix(in oklab, var(--accent-on), transparent 87%); }
+body.player-mode-open .playerbar .player-track-text span, body.player-mode-open .playerbar .player-track-link, body.player-mode-open .playerbar .progress-line { color: color-mix(in oklab, var(--accent-on), transparent 42%); }
 body.player-mode-open .playerbar .control, body.player-mode-open .playerbar .row-action { color: color-mix(in oklab, var(--accent-on), transparent 26%); }
 body.player-mode-open .playerbar .control:hover, body.player-mode-open .playerbar .row-action:hover { color: var(--accent-on); background: color-mix(in oklab, var(--accent-on), transparent 90%); }
 body.player-mode-open .playerbar .control-play { color: var(--accent-on); background: transparent; }

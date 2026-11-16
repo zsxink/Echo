@@ -353,7 +353,7 @@ Rust dependencies (595 packages, conservative superset)
   quick-xml 0.41.0 | MIT | https://github.com/tafia/quick-xml
   quinn 0.11.9 | MIT OR Apache-2.0 | https://github.com/quinn-rs/quinn
   quinn-proto 0.11.19 | MIT OR Apache-2.0 | https://github.com/quinn-rs/quinn
-  quinn-udp 0.5.14 | MIT OR Apache-2.0 | https://github.com/quinn-rs/quinn
+  quinn-udp 0.5.16 | MIT OR Apache-2.0 | https://github.com/quinn-rs/quinn
   quote 1.0.47 | MIT OR Apache-2.0 | https://github.com/dtolnay/quote
   r-efi 5.3.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later | https://github.com/r-efi/r-efi
   r-efi 6.0.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later | https://github.com/r-efi/r-efi
@@ -381,7 +381,7 @@ Rust dependencies (595 packages, conservative superset)
   rusqlite 0.41.1 | MIT | https://github.com/rusqlite/rusqlite
   rustc_version 0.4.1 | MIT OR Apache-2.0 | https://github.com/djc/rustc-version-rs
   rustc-hash 2.1.3 | Apache-2.0 OR MIT | https://github.com/rust-lang/rustc-hash
-  rustix 1.1.5 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/bytecodealliance/rustix
+  rustix 1.1.6 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/bytecodealliance/rustix
   rustls 0.23.46 | Apache-2.0 OR ISC OR MIT | https://github.com/rustls/rustls
   rustls-pki-types 1.15.1 | MIT OR Apache-2.0 | https://github.com/rustls/pki-types
   rustls-webpki 0.103.16 | ISC | https://github.com/rustls/webpki

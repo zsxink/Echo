@@ -5,7 +5,7 @@
 - 本表逐项覆盖 specs 中的全部 Scenario；稳定 ID 不得复用，标题调整时保留原 ID。
 - 场景 ID 由 spec 标题派生；每行必须给出可执行验收命令，且该场景在 `scripts/verify/scenario-commands.mjs` 的 `SCENARIOS` 中声明非空 `evidence`（命令可执行 + 证据可观测）。人工举证由 `docs/native-attestation-playbook.md` 与 `artifacts/native-attestations/<ID>.log` 承担，字段与判定见 `check-native-attestation.mjs`。
 - 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表与场景清单的 ID 集合完全相等，并逐项执行；命令按域聚合后逐条断言 evidence 目标在输出中被观测到，缺失、重复、无命令、无证据、证据未观测或失败均返回非零。
-- 当前基线：152 个 Requirement，609 个 Scenario（#152 收藏同步投影新增 1 个 Requirement / 6 个 Scenario；#117 窗口文件投放新增 3 个 Requirement / 23 个 Scenario；0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16、封面载荷受控与预览回收 9、内嵌封面解码与 MIME 约束 5、封面原件内容真实性校验 8、封面选图预览受控缩略图 5）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
+- 当前基线：153 个 Requirement，621 个 Scenario（#118 歌曲行歌手/专辑链接新增 1 个 Requirement / 6 个 Scenario，壳层导航目标新增 1 个 Requirement / 4 个 Scenario，播放栏与沉浸式播放器各新增 1 个 Scenario；#152 收藏同步投影新增 1 个 Requirement / 6 个 Scenario；#117 窗口文件投放新增 3 个 Requirement / 23 个 Scenario；0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16、封面载荷受控与预览回收 9、内嵌封面解码与 MIME 约束 5、封面原件内容真实性校验 8、封面选图预览受控缩略图 5）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
 
 ## ci-release-pipeline
 
@@ -160,6 +160,10 @@
 | DAS-R28-S01 | 投放路径与到达时机必须与文件打开通道一致 | 特殊字符文件名不被二次解码 | issue-117 | React | `pnpm verify:scenario DAS-R28-S01` |
 | DAS-R28-S02 | 投放路径与到达时机必须与文件打开通道一致 | 监听器未就绪时到达的投放 | issue-117 | Desktop | `pnpm verify:scenario DAS-R28-S02` |
 | DAS-R28-S03 | 投放路径与到达时机必须与文件打开通道一致 | 三平台行为一致 | issue-117 | Desktop/Gate | `pnpm verify:scenario DAS-R28-S03` |
+| DAS-R29-S01 | 一次性聚合导航目标与来源记录 | 侧边栏切换清除未消费目标 | issue-118 | React | `pnpm verify:scenario DAS-R29-S01` |
+| DAS-R29-S02 | 一次性聚合导航目标与来源记录 | 目标只消费一次 | issue-118 | React | `pnpm verify:scenario DAS-R29-S02` |
+| DAS-R29-S03 | 一次性聚合导航目标与来源记录 | 直接进入目录不产生来源记录 | issue-118 | React | `pnpm verify:scenario DAS-R29-S03` |
+| DAS-R29-S04 | 一次性聚合导航目标与来源记录 | 来源记录支持返回 | issue-118 | React | `pnpm verify:scenario DAS-R29-S04` |
 
 ## desktop-playback
 
@@ -261,12 +265,14 @@
 | IL-R01-S01 | 常驻播放栏必须始终提供当前播放与基础控制 | 开始播放歌曲 | 10.4, 11.1 | React/E2E | `pnpm verify:scenario -- IL-R01-S01` |
 | IL-R01-S02 | 常驻播放栏必须始终提供当前播放与基础控制 | 播放项没有封面 | 10.4, 11.1 | React/E2E | `pnpm verify:scenario -- IL-R01-S02` |
 | IL-R01-S03 | 常驻播放栏必须始终提供当前播放与基础控制 | 当前播放结束 | 10.4, 11.1 | React/E2E | `pnpm verify:scenario -- IL-R01-S03` |
+| IL-R01-S04 | 常驻播放栏必须始终提供当前播放与基础控制 | 播放栏歌手链接 | issue-118 | React | `pnpm verify:scenario -- IL-R01-S04` |
 | IL-R02-S01 | 播放栏的传输控制与播放模式必须可预测 | 切换播放模式 | 8.6, 8.8, 11.1 | Desktop/React | `pnpm verify:scenario -- IL-R02-S01` |
 | IL-R02-S02 | 播放栏的传输控制与播放模式必须可预测 | 静音后恢复 | 8.6, 8.8, 11.1 | Desktop/React | `pnpm verify:scenario -- IL-R02-S02` |
 | IL-R02-S03 | 播放栏的传输控制与播放模式必须可预测 | 播放器命令失败 | 8.6, 8.8, 11.1 | Desktop/React | `pnpm verify:scenario -- IL-R02-S03` |
 | IL-R03-S01 | 沉浸式播放器必须展示封面、元信息并保持基础控制 | 展开沉浸式播放器 | 11.3 | React/E2E | `pnpm verify:scenario -- IL-R03-S01` |
 | IL-R03-S02 | 沉浸式播放器必须展示封面、元信息并保持基础控制 | 播放项切换期间保持沉浸模式 | 11.3 | React/E2E | `pnpm verify:scenario -- IL-R03-S02` |
 | IL-R03-S03 | 沉浸式播放器必须展示封面、元信息并保持基础控制 | 窄屏沉浸模式 | 11.3 | React/E2E | `pnpm verify:scenario -- IL-R03-S03` |
+| IL-R03-S04 | 沉浸式播放器必须展示封面、元信息并保持基础控制 | 沉浸式播放器中的歌手与专辑链接 | issue-118 | React | `pnpm verify:scenario -- IL-R03-S04` |
 | IL-R04-S01 | 歌词来源优先级必须可见且一致 | 多个来源同时存在 | 4.5, 11.5 | Core/React | `pnpm verify:scenario -- IL-R04-S01` |
 | IL-R04-S02 | 歌词来源优先级必须可见且一致 | 仅有内嵌歌词 | 4.5, 11.5 | Core/React | `pnpm verify:scenario -- IL-R04-S02` |
 | IL-R04-S03 | 歌词来源优先级必须可见且一致 | 仅有同名 LRC | 4.5, 11.5 | Core/React | `pnpm verify:scenario -- IL-R04-S03` |
@@ -454,6 +460,12 @@
 | LE-R21-S06 | 收藏与批量操作以音乐库持久结果为反馈 | 收藏写入返回后界面已是新值 | issue-152 | React | `pnpm verify:scenario -- LE-R21-S06` |
 | LE-R22-S01 | 收藏计数不得因重复操作重复累加 | 同一首歌连续两次喜欢只计一次 | issue-152 | React | `pnpm verify:scenario -- LE-R22-S01` |
 | LE-R22-S02 | 收藏计数不得因重复操作重复累加 | 取消收藏回退一次增量 | issue-152 | React | `pnpm verify:scenario -- LE-R22-S02` |
+| LE-R23-S01 | 歌曲行与歌曲详情中的歌手/专辑链接 | 点击行内歌手链接 | issue-118 | React | `pnpm verify:scenario -- LE-R23-S01` |
+| LE-R23-S02 | 歌曲行与歌曲详情中的歌手/专辑链接 | 点击行内专辑链接 | issue-118 | React | `pnpm verify:scenario -- LE-R23-S02` |
+| LE-R23-S03 | 歌曲行与歌曲详情中的歌手/专辑链接 | 键盘激活行内链接 | issue-118 | React | `pnpm verify:scenario -- LE-R23-S03` |
+| LE-R23-S04 | 歌曲行与歌曲详情中的歌手/专辑链接 | 多选模式下链接仍可导航 | issue-118 | React | `pnpm verify:scenario -- LE-R23-S04` |
+| LE-R23-S05 | 歌曲行与歌曲详情中的歌手/专辑链接 | 未知元数据保持纯文本 | issue-118 | React | `pnpm verify:scenario -- LE-R23-S05` |
+| LE-R23-S06 | 歌曲行与歌曲详情中的歌手/专辑链接 | 歌曲详情对话框中的链接 | issue-118 | React | `pnpm verify:scenario -- LE-R23-S06` |
 
 ## local-library
 

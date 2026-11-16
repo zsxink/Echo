@@ -20,6 +20,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { playerStore, type UiPlayerSnapshot } from "../../player/playerStore";
 import { ImmersivePlayer } from "./ImmersivePlayer";
+import { CollectionNavigationProvider } from "../library";
 
 vi.mock("../../bridge", () => {
   const call = vi.fn();
@@ -579,5 +580,142 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
     // …and the floating action must not double as the block's reading toggle:
     // the block toggles on activation, so the click has to stop at the button.
     expect(document.body.classList.contains("lyrics-focus-open")).toBe(false);
+  });
+});
+
+/**
+ * Issue #118 — 歌手 / 专辑 in the immersive surface navigate like the list rows.
+ *
+ * The overlay covers the workspace, so a link has to leave the surface (and
+ * 歌词专注阅读, which is a state of it) before the shell switches views.
+ */
+describe("ImmersivePlayer artist/album links (issue #118)", () => {
+  function mockDetail(detail: Record<string, unknown>) {
+    call.mockReset();
+    call.mockImplementation((async (cmd: string) => {
+      if (cmd === "song_detail") return detail;
+      if (cmd === "get_lyrics") return { source: null, timed: false, lines: [], plainText: "" };
+      if (cmd === "song_cover_keys") return {};
+      return undefined;
+    }) as never);
+  }
+
+  function renderInProvider() {
+    const openArtist = vi.fn();
+    const openAlbum = vi.fn();
+    playerStore.setImmersiveOpen(true);
+    playerStore.publish(
+      makeSnapshot({ currentQueueEntryId: "e1", currentSongId: "s1", queueRevision: 0 }),
+    );
+    render(
+      <CollectionNavigationProvider openArtist={openArtist} openAlbum={openAlbum}>
+        <ImmersivePlayer />
+      </CollectionNavigationProvider>,
+    );
+    return { openArtist, openAlbum };
+  }
+
+  it("closes the immersive surface before navigating to the artist", async () => {
+    mockDetail({
+      songId: "s1",
+      title: "心房",
+      artist: "陈婧霏",
+      album: "猩红",
+      artistKey: "陈婧霏",
+      albumKey: "猩红",
+      durationS: 200,
+      hasCover: false,
+    });
+    const { openArtist, openAlbum } = renderInProvider();
+    playerStore.setFocusOpen(true);
+
+    fireEvent.click(await screen.findByRole("button", { name: "打开歌手 陈婧霏" }));
+
+    expect(openArtist).toHaveBeenCalledWith("陈婧霏");
+    expect(openAlbum).not.toHaveBeenCalled();
+    // The surface and its focus layout are gone before the new view appears.
+    expect(playerStore.getUi().immersiveOpen).toBe(false);
+    expect(playerStore.getUi().focusOpen).toBe(false);
+    expect(screen.queryByTestId("immersive")).not.toBeInTheDocument();
+  });
+
+  it("closes the immersive surface before navigating to the album", async () => {
+    mockDetail({
+      songId: "s1",
+      title: "心房",
+      artist: "陈婧霏",
+      album: "猩红",
+      artistKey: "陈婧霏",
+      albumKey: "猩红",
+      durationS: 200,
+      hasCover: false,
+    });
+    const { openAlbum } = renderInProvider();
+
+    fireEvent.click(await screen.findByRole("button", { name: "打开专辑 猩红" }));
+
+    expect(openAlbum).toHaveBeenCalledWith("猩红");
+    expect(playerStore.getUi().immersiveOpen).toBe(false);
+    expect(screen.queryByTestId("immersive")).not.toBeInTheDocument();
+  });
+
+  it("leaves playback and the queue untouched", async () => {
+    mockDetail({
+      songId: "s1",
+      title: "心房",
+      artist: "陈婧霏",
+      album: "猩红",
+      artistKey: "陈婧霏",
+      albumKey: "猩红",
+      durationS: 200,
+      hasCover: false,
+    });
+    const { openArtist } = renderInProvider();
+    await screen.findByRole("button", { name: "打开歌手 陈婧霏" });
+    const before = playerStore.getSnapshot();
+    call.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "打开歌手 陈婧霏" }));
+
+    expect(openArtist).toHaveBeenCalledTimes(1);
+    expect(playerStore.getSnapshot()).toEqual(before);
+    expect(call).not.toHaveBeenCalledWith("player_control", expect.anything());
+  });
+
+  it("keeps missing metadata as plain text", async () => {
+    mockDetail({ songId: "s1", title: "心房", artist: null, album: null, hasCover: false });
+    renderInProvider();
+
+    expect(await screen.findByText(/未知艺人/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /打开歌手/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /打开专辑/ })).toBeNull();
+  });
+
+  it("keeps a temporary item's metadata as plain text", async () => {
+    call.mockReset();
+    call.mockImplementation((async (cmd: string) => {
+      if (cmd === "get_lyrics") return { source: null, timed: false, lines: [], plainText: "" };
+      if (cmd === "song_cover_keys") return {};
+      return null;
+    }) as never);
+    playerStore.setImmersiveOpen(true);
+    playerStore.publish(
+      makeSnapshot({
+        currentQueueEntryId: "temp-1",
+        currentSongId: null,
+        currentTitle: "晴天.mp3",
+        currentArtist: "未知歌手",
+        currentAlbum: null,
+        currentCanImport: true,
+      }),
+    );
+    render(
+      <CollectionNavigationProvider openArtist={vi.fn()} openAlbum={vi.fn()}>
+        <ImmersivePlayer />
+      </CollectionNavigationProvider>,
+    );
+
+    expect(await screen.findByText(/未知歌手/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /打开歌手/ })).toBeNull();
   });
 });

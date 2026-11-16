@@ -242,6 +242,8 @@ export interface SongView {
   readonly title?: string;
   readonly artist?: string;
   readonly album?: string;
+  readonly artistKey?: string;
+  readonly albumKey?: string;
   readonly durationS?: number;
   readonly favorite: boolean;
   readonly playCount: number;
@@ -353,6 +355,8 @@ export interface SongDetailView {
   readonly title?: string;
   readonly artist?: string;
   readonly album?: string;
+  readonly artistKey?: string;
+  readonly albumKey?: string;
   readonly durationS?: number;
   readonly format?: string;
   readonly playCount: number;

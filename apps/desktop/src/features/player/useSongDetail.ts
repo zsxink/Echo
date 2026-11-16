@@ -25,6 +25,9 @@ export interface SongDetail {
   readonly title?: string | null;
   readonly artist?: string | null;
   readonly album?: string | null;
+  /** Stable grouping identities for navigation; absent for blank metadata. */
+  readonly artistKey?: string | null;
+  readonly albumKey?: string | null;
   readonly durationS?: number | null;
   readonly format?: string | null;
   readonly playCount: number;
