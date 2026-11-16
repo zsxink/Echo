@@ -174,13 +174,60 @@ impl SongSort {
     }
 }
 
+/// The artist name a song contributes to the artist directory.
+///
+/// Missing or blank metadata maps to the shared “未知艺人” placeholder, exactly
+/// like the directory aggregation. Callers that need a *navigable* identity
+/// must use [`collection_keys`] instead: the placeholder is not a real group.
+#[must_use]
+pub fn effective_artist(song: &Song) -> &str {
+    match song.artist().map(str::trim) {
+        Some(value) if !value.is_empty() => value,
+        _ => "未知艺人",
+    }
+}
+
+/// The album name a song contributes to the album directory.
+///
+/// Missing or blank metadata maps to the shared “未知专辑” placeholder; see
+/// [`effective_artist`] for why the placeholder is not a navigable identity.
+#[must_use]
+pub fn effective_album(song: &Song) -> &str {
+    match song.album().map(str::trim) {
+        Some(value) if !value.is_empty() => value,
+        _ => "未知专辑",
+    }
+}
+
+/// The stable grouping identities a song can navigate to.
+///
+/// Keys use the directory's own rule — the effective name (trimmed metadata,
+/// no placeholder) passed through [`normalized_key`] — so the UI never has to
+/// re-derive an identity from a display label. `None` means the metadata is
+/// missing or blank: the song still appears under the directory's “未知艺人” /
+/// “未知专辑” aggregate, but there is no real group to open.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CollectionKeys {
+    pub artist_key: Option<String>,
+    pub album_key: Option<String>,
+}
+
+/// Derive the navigable grouping keys of one song.
+#[must_use]
+pub fn collection_keys(song: &Song) -> CollectionKeys {
+    CollectionKeys {
+        artist_key: navigable_key(song.artist()),
+        album_key: navigable_key(song.album()),
+    }
+}
+
+fn navigable_key(value: Option<&str>) -> Option<String> {
+    let key = normalized_key(value.unwrap_or(""));
+    (!key.is_empty()).then_some(key)
+}
+
 fn album_key(song: &Song) -> String {
-    let album = song
-        .album()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("未知专辑");
-    normalized_key(album)
+    normalized_key(effective_album(song))
 }
 
 // ---------------------------------------------------------------------------
@@ -492,6 +539,66 @@ mod tests {
             song.record_play();
         }
         song
+    }
+
+    fn with_metadata(id: u64, artist: Option<&str>, album: Option<&str>) -> Song {
+        let mut song = Song::new(
+            SongId::from_uuid(uuid::Uuid::from_u128(id.into())),
+            LibraryRootId::new(),
+            RelativeMediaPath::new(&format!("song-{id}.mp3")).unwrap(),
+            Revision::from_u64(id),
+        );
+        song.apply_metadata(
+            Some("title".to_owned()),
+            artist.map(ToOwned::to_owned),
+            album.map(ToOwned::to_owned),
+            None,
+        );
+        song
+    }
+
+    #[test]
+    fn collection_keys_fold_display_variants_into_one_identity() {
+        let plain = with_metadata(1, Some("The Beatles"), Some("Abbey Road"));
+        let folded = with_metadata(2, Some("THE BEATLES"), Some("ＡＢＢＥＹ　ＲＯＡＤ"));
+        let plain_keys = collection_keys(&plain);
+        let folded_keys = collection_keys(&folded);
+        assert_eq!(plain_keys.artist_key, folded_keys.artist_key);
+        assert_eq!(plain_keys.album_key, folded_keys.album_key);
+        assert_eq!(plain_keys.artist_key.as_deref(), Some("the beatles"));
+        assert_eq!(plain_keys.album_key.as_deref(), Some("abbey road"));
+    }
+
+    #[test]
+    fn collection_keys_are_absent_for_missing_or_blank_metadata() {
+        let missing = with_metadata(1, None, None);
+        assert_eq!(collection_keys(&missing), CollectionKeys::default());
+        let blank = with_metadata(2, Some("   "), Some("\u{3000}"));
+        assert_eq!(collection_keys(&blank), CollectionKeys::default());
+    }
+
+    #[test]
+    fn collection_keys_keep_album_identity_across_artists() {
+        let first = with_metadata(1, Some("周杰伦"), Some("叶惠美"));
+        let second = with_metadata(2, Some("另一位歌手"), Some("叶惠美"));
+        assert_eq!(
+            collection_keys(&first).album_key,
+            collection_keys(&second).album_key
+        );
+        assert_ne!(
+            collection_keys(&first).artist_key,
+            collection_keys(&second).artist_key
+        );
+    }
+
+    #[test]
+    fn effective_names_share_the_directory_placeholders() {
+        let missing = with_metadata(1, None, None);
+        assert_eq!(effective_artist(&missing), "未知艺人");
+        assert_eq!(effective_album(&missing), "未知专辑");
+        let blank = with_metadata(2, Some("  "), Some("\u{3000}"));
+        assert_eq!(effective_artist(&blank), "未知艺人");
+        assert_eq!(effective_album(&blank), "未知专辑");
     }
 
     #[test]

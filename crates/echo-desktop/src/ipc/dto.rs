@@ -9,7 +9,9 @@
 use serde::{Deserialize, Serialize};
 
 use echo_core::application::scan::ScanSummary;
-use echo_core::domain::catalog::{CatalogCollection, CatalogCounts, OpaqueCursor, Paged};
+use echo_core::domain::catalog::{
+    collection_keys, CatalogCollection, CatalogCounts, OpaqueCursor, Paged,
+};
 use echo_core::domain::entities::{MediaDiagnostic, Song, SongAvailability};
 use echo_core::domain::ids::{LibraryRootId, PlaylistId, SongId};
 use echo_core::domain::media::{AudioFormat, AudioParameters};
@@ -37,6 +39,13 @@ pub struct SongView {
     pub title: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,
+    /// Stable grouping identity for “open this artist”; opaque to the `WebView`,
+    /// which carries it back verbatim. Absent when the metadata is blank.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artist_key: Option<String>,
+    /// Stable grouping identity for “open this album”; see `artist_key`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub album_key: Option<String>,
     pub duration_s: Option<u64>,
     pub favorite: bool,
     pub play_count: u64,
@@ -105,11 +114,14 @@ pub enum QualityTierDto {
 
 impl From<&Song> for SongView {
     fn from(song: &Song) -> Self {
+        let keys = collection_keys(song);
         Self {
             id: song.id().to_string(),
             title: song.title().map(ToOwned::to_owned),
             artist: song.artist().map(ToOwned::to_owned),
             album: song.album().map(ToOwned::to_owned),
+            artist_key: keys.artist_key,
+            album_key: keys.album_key,
             duration_s: song.duration().map(|d| d.as_secs()),
             favorite: song.favorite(),
             play_count: song.play_count().as_u64(),
@@ -345,6 +357,11 @@ pub struct SongDetailView {
     pub title: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,
+    /// Stable grouping identities for navigation; absent when blank.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artist_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub album_key: Option<String>,
     pub duration_s: Option<u64>,
     pub format: Option<String>,
     pub play_count: u64,
@@ -362,6 +379,8 @@ impl From<&echo_core::application::detail::SongDetail> for SongDetailView {
             title: detail.title.clone(),
             artist: detail.artist.clone(),
             album: detail.album.clone(),
+            artist_key: detail.artist_key.clone(),
+            album_key: detail.album_key.clone(),
             duration_s: detail.duration_s,
             format: detail.format.clone(),
             play_count: detail.play_count,
@@ -663,255 +682,5 @@ pub struct NotchPlayerStateDto {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::Duration;
-
-    use echo_core::domain::ids::{LibraryRootId, RelativeMediaPath, Revision};
-
-    fn song() -> Song {
-        let mut song = Song::new(
-            SongId::new(),
-            LibraryRootId::new(),
-            RelativeMediaPath::new("周杰伦/晴天.flac").expect("path"),
-            Revision::INITIAL,
-        );
-        song.set_favorite(true);
-        song.record_play();
-        song.apply_metadata(
-            Some("晴天".to_owned()),
-            Some("周杰伦".to_owned()),
-            Some("叶惠美".to_owned()),
-            Some(Duration::from_secs(239)),
-        );
-        song
-    }
-
-    fn with_scan_facts(song: &mut Song, format: AudioFormat, params: AudioParameters) {
-        song.apply_scan_facts_with_params("hash".to_owned(), 1_024, 0, format, params);
-    }
-
-    fn params(bitrate: Option<u64>, rate: Option<u32>, bits: Option<u16>) -> AudioParameters {
-        AudioParameters {
-            bitrate_bps: bitrate,
-            sample_rate_hz: rate,
-            channels: Some(2),
-            bits_per_sample: bits,
-        }
-    }
-
-    #[test]
-    fn song_view_is_camel_case_relative_path_only() {
-        let view = SongView::from(&song());
-        let json = serde_json::to_value(&view).expect("serialize");
-        assert_eq!(view.relative_path, "周杰伦/晴天.flac");
-        assert!(
-            !view.relative_path.starts_with('/'),
-            "no absolute path crosses the boundary"
-        );
-        // camelCase field names.
-        assert!(json.get("relativePath").is_some());
-        assert!(json.get("relative_path").is_none());
-        assert!(json.get("playCount").is_some());
-        assert_eq!(
-            json.get("availability").and_then(|v| v.as_str()),
-            Some("available")
-        );
-    }
-
-    #[test]
-    fn song_view_serializes_quality_as_camel_case_and_omits_none() {
-        let sq = SongView::from(&song());
-        let json = serde_json::to_value(&sq).expect("serialize");
-        // No scan facts yet → no quality at all, and the key is absent.
-        assert!(json.get("quality").is_none());
-
-        let mut damaged = song();
-        with_scan_facts(
-            &mut damaged,
-            AudioFormat::Mpeg,
-            params(Some(128_000), None, None),
-        );
-        let damaged_view = SongView::from(&damaged);
-        assert!(serde_json::to_value(&damaged_view)
-            .expect("serialize")
-            .get("quality")
-            .is_none());
-
-        let mut hq = song();
-        with_scan_facts(
-            &mut hq,
-            AudioFormat::Mpeg,
-            params(Some(320_000), None, None),
-        );
-        let hq_view = SongView::from(&hq);
-        let hq_json = serde_json::to_value(&hq_view).expect("serialize");
-        assert_eq!(
-            hq_json.get("quality").and_then(|v| v.as_str()),
-            Some("hq"),
-            "badge tier serializes as the lowercase camelCase field value"
-        );
-    }
-
-    #[test]
-    fn derive_quality_marks_lossless_formats_sq() {
-        for format in [AudioFormat::Flac, AudioFormat::Wav] {
-            // Even with no stream parameters at all, the container earns SQ.
-            assert_eq!(
-                derive_quality(Some(format), AudioParameters::default()),
-                Some(QualityTierDto::Sq),
-                "{format:?} should be SQ by format alone"
-            );
-        }
-    }
-
-    #[test]
-    fn derive_quality_honors_bit_depth_and_sample_rate_for_sq() {
-        // 24-bit at an otherwise "low" rate still lands in SQ.
-        assert_eq!(
-            derive_quality(
-                Some(AudioFormat::Mpeg),
-                params(Some(128_000), Some(44_100), Some(24)),
-            ),
-            Some(QualityTierDto::Sq)
-        );
-        // 96 kHz at 16-bit also earns SQ.
-        assert_eq!(
-            derive_quality(
-                Some(AudioFormat::Mp4),
-                params(Some(192_000), Some(96_000), Some(16)),
-            ),
-            Some(QualityTierDto::Sq)
-        );
-        // 23-bit is not SQ by depth, and 95_999 Hz is not SQ by rate.
-        assert_eq!(
-            derive_quality(
-                Some(AudioFormat::Mpeg),
-                params(Some(320_000), Some(44_100), Some(23)),
-            ),
-            Some(QualityTierDto::Hq),
-            "23-bit keeps the MP3 in HQ, not SQ"
-        );
-        assert_eq!(
-            derive_quality(
-                Some(AudioFormat::Mpeg),
-                params(Some(320_000), Some(95_999), Some(16)),
-            ),
-            Some(QualityTierDto::Hq),
-            "95_999 Hz keeps the MP3 in HQ, not SQ"
-        );
-    }
-
-    #[test]
-    fn derive_quality_hq_thresholds_per_format() {
-        // MP3: 319_999 bps is not HQ; 320_000 bps is.
-        assert_eq!(
-            derive_quality(Some(AudioFormat::Mpeg), params(Some(319_999), None, None)),
-            None
-        );
-        assert_eq!(
-            derive_quality(Some(AudioFormat::Mpeg), params(Some(320_000), None, None)),
-            Some(QualityTierDto::Hq)
-        );
-        // MP4: 255_999 is not HQ; 256_000 is.
-        assert_eq!(
-            derive_quality(Some(AudioFormat::Mp4), params(Some(255_999), None, None)),
-            None
-        );
-        assert_eq!(
-            derive_quality(Some(AudioFormat::Mp4), params(Some(256_000), None, None)),
-            Some(QualityTierDto::Hq)
-        );
-        // Opus/Ogg: 256_000 reaches HQ.
-        assert_eq!(
-            derive_quality(Some(AudioFormat::Opus), params(Some(256_000), None, None)),
-            Some(QualityTierDto::Hq)
-        );
-        assert_eq!(
-            derive_quality(Some(AudioFormat::Ogg), params(Some(320_000), None, None)),
-            Some(QualityTierDto::Hq)
-        );
-    }
-
-    #[test]
-    fn derive_quality_returns_none_for_low_rate_missing_params_and_damaged() {
-        // 128 kbps MP3 — the poster-child "no badge" row.
-        assert_eq!(
-            derive_quality(Some(AudioFormat::Mpeg), params(Some(128_000), None, None)),
-            None
-        );
-        // Parameters entirely missing.
-        assert_eq!(
-            derive_quality(Some(AudioFormat::Mpeg), AudioParameters::default()),
-            None
-        );
-        assert_eq!(derive_quality(None, AudioParameters::default()), None);
-        // Damaged files never get a badge, even with a high bitrate.
-        assert_eq!(
-            derive_quality(
-                Some(AudioFormat::UnknownDamaged),
-                params(Some(320_000), None, Some(24)),
-            ),
-            None
-        );
-        // APE never earns HQ on its own.
-        assert_eq!(
-            derive_quality(Some(AudioFormat::Ape), params(Some(320_000), None, None)),
-            None
-        );
-    }
-
-    #[test]
-    fn derive_quality_prefers_sq_over_hq_when_both_match() {
-        // A 24-bit / 44.1 kHz FLAC satisfies both buckets; SQ wins.
-        assert_eq!(
-            derive_quality(
-                Some(AudioFormat::Flac),
-                params(Some(320_000), Some(44_100), Some(24)),
-            ),
-            Some(QualityTierDto::Sq)
-        );
-        // A high-rate MP3 would also meet the SQ-by-rate rule.
-        assert_eq!(
-            derive_quality(
-                Some(AudioFormat::Mpeg),
-                params(Some(320_000), Some(96_000), None)
-            ),
-            Some(QualityTierDto::Sq),
-            "rate-based SQ beats the HQ code-rate check"
-        );
-    }
-
-    #[test]
-    fn paged_songs_map_item_views_and_cursor() {
-        let page = Paged::new(vec![song()], None, true);
-        let view: PagedSongs = page.into();
-        assert!(view.is_last);
-        assert_eq!(view.items.len(), 1);
-        assert_eq!(view.next_cursor, None);
-    }
-
-    #[test]
-    fn imported_result_keeps_lyrics_failure_in_camel_case_ipc_shape() {
-        use echo_core::application::import::{ImportOutcome, LyricsImportResult};
-        use echo_core::domain::ids::{OperationId, SongId};
-
-        let outcome = ImportOutcome::Imported {
-            operation: OperationId::new(),
-            song: SongId::new(),
-            target: RelativeMediaPath::new("周杰伦/晴天.flac").expect("audio path"),
-            renamed: false,
-            lyrics: Box::new(LyricsImportResult::Failed {
-                code: "lyrics_publish",
-                message: "歌词目录不可写".to_owned(),
-            }),
-        };
-
-        let json = serde_json::to_value(ImportResultDto::from(outcome)).expect("serialize DTO");
-        assert_eq!(json["kind"], "imported");
-        assert_eq!(json["relativePath"], "周杰伦/晴天.flac");
-        assert_eq!(json["lyrics"]["kind"], "failed");
-        assert_eq!(json["lyrics"]["code"], "lyrics_publish");
-        assert_eq!(json["lyrics"]["message"], "歌词目录不可写");
-    }
-}
+#[path = "dto_tests.rs"]
+mod tests;

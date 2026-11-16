@@ -21,6 +21,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SongView } from "../../ipc/ipc-types.generated";
 import { SongMenu } from "./SongMenu";
 import { useMenuTrigger } from "./menuTrigger";
+import { CollectionNavigationProvider } from "./collectionNavigation";
 import { ToastView } from "../../app/ToastView";
 
 function makeSong(overrides: Partial<SongView> = {}): SongView {
@@ -320,5 +321,102 @@ describe("SongMenu trigger control (fix-queue-trigger-toggle)", () => {
     // The confirm dialog is a higher layer this component owns; the press lands
     // on it rather than dismissing the menu underneath.
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Issue #118 — the 歌曲详情 dialog carries the same artist/album links as the
+ * list rows, but it sits above the menu in the overlay stack. A link has to
+ * close both layers before the shell switches views, otherwise the new view
+ * opens underneath two overlays.
+ */
+describe("SongMenu song-detail links (issue #118)", () => {
+  /** A host that really unmounts the menu on close, like every real view does. */
+  function MenuHost({
+    song,
+    openArtist,
+    openAlbum,
+    onClose,
+  }: {
+    song: SongView;
+    openArtist: (key: string) => void;
+    openAlbum: (key: string) => void;
+    onClose: () => void;
+  }) {
+    const [open, setOpen] = useState(true);
+    return (
+      <CollectionNavigationProvider openArtist={openArtist} openAlbum={openAlbum}>
+        {open ? (
+          <SongMenu
+            song={song}
+            root=""
+            readOnly={false}
+            onClose={() => {
+              setOpen(false);
+              onClose();
+            }}
+            onPlay={vi.fn()}
+            onFavorite={vi.fn()}
+            onRefresh={vi.fn()}
+          />
+        ) : null}
+      </CollectionNavigationProvider>
+    );
+  }
+
+  function renderDetail(
+    song: SongView,
+    onClose: () => void = vi.fn(),
+  ): { openArtist: ReturnType<typeof vi.fn>; openAlbum: ReturnType<typeof vi.fn> } {
+    const openArtist = vi.fn();
+    const openAlbum = vi.fn();
+    render(
+      <MenuHost song={song} openArtist={openArtist} openAlbum={openAlbum} onClose={onClose} />,
+    );
+    fireEvent.click(screen.getByText("显示歌曲详情"));
+    return { openArtist, openAlbum };
+  }
+
+  it("closes the detail and the menu before navigating from the artist link", () => {
+    const onClose = vi.fn();
+    const { openArtist } = renderDetail(
+      makeSong({ artistKey: "Echo Unit", albumKey: "Velvet" }),
+      onClose,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "打开歌手 Echo Unit" }));
+
+    expect(openArtist).toHaveBeenCalledWith("Echo Unit");
+    // Both layers are gone: the dialog and the menu it was opened from.
+    expect(screen.queryByRole("dialog", { name: "歌曲详情" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("song-menu")).not.toBeInTheDocument();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the detail and the menu before navigating from the album link", () => {
+    const onClose = vi.fn();
+    const { openAlbum } = renderDetail(
+      makeSong({ artistKey: "Echo Unit", albumKey: "Velvet" }),
+      onClose,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "打开专辑 Velvet" }));
+
+    expect(openAlbum).toHaveBeenCalledWith("Velvet");
+    expect(screen.queryByRole("dialog", { name: "歌曲详情" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("song-menu")).not.toBeInTheDocument();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the detail plain text when the read model has no keys", () => {
+    renderDetail(makeSong({ artist: undefined, album: undefined }));
+
+    expect(screen.queryByRole("button", { name: /打开歌手/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /打开专辑/ })).toBeNull();
+    // 未知艺人 / — are the detail's existing placeholders. Scope to the dialog:
+    // the menu behind it shows the same placeholder.
+    const dialog = screen.getByRole("dialog", { name: "歌曲详情" });
+    expect(dialog).toHaveTextContent("未知艺人");
+    expect(dialog).toHaveTextContent("—");
   });
 });

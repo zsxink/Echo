@@ -1,6 +1,6 @@
 // Scenario → executable-command + evidence map for the 0.1.0 gate (task 13.9).
 //
-// 600 scenarios (spec-derived id set). A scenario's command is aggregated by
+// 621 scenarios (spec-derived id set). A scenario's command is aggregated by
 // domain; `evidence` names the tests/files the scenario actually depends on,
 // and run-scenario.mjs asserts each target was observed in the command output.
 // `manifest.json.scenarios[]` is generated from this table
@@ -302,12 +302,14 @@ export const SCENARIOS = {
 "IL-R01-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },
 "IL-R01-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },
 "IL-R01-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },
+"IL-R01-S04": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx", "navigates to the artist without touching playback, the current song or the queue")], },
 "IL-R02-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },
 "IL-R02-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },
 "IL-R02-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
 "IL-R03-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
 "IL-R03-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
 "IL-R03-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R03-S04": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx", "closes the immersive surface before navigating to the artist"), vitest("src/features/player/ImmersivePlayer.test.tsx", "closes the immersive surface before navigating to the album")], },
 "IL-R04-S01": { command: CORE_ALL, evidence: [rust("lyrics")], },
 "IL-R04-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
 "IL-R04-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
@@ -445,6 +447,12 @@ export const SCENARIOS = {
 "LE-R21-S06": { command: VITEST_ALL, evidence: [vitest("src/features/library/libraryNavCounts.test.tsx", "keeps the heart, the favorites view and the count on one click")], },
 "LE-R22-S01": { command: VITEST_ALL, evidence: [vitest("src/features/library/favoriteMutation.test.ts", "counts a repeated like once even when the row is still the pre-write value")], },
 "LE-R22-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/favoriteMutation.test.ts", "counts a repeated unlike once even when the row is still the pre-write value")], },
+"LE-R23-S01": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongRow.test.tsx", "navigates to the artist without starting playback")], },
+"LE-R23-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongRow.test.tsx", "navigates to the album without starting playback")], },
+"LE-R23-S03": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongRow.test.tsx", "treats Enter/Space on a link the same as a click")], },
+"LE-R23-S04": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongRow.test.tsx", "keeps the selection set intact in multi-select mode")], },
+"LE-R23-S05": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongRow.test.tsx", "renders no link when the read model has no grouping key")], },
+"LE-R23-S06": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongMenu.test.tsx", "closes the detail and the menu before navigating from the artist link"), vitest("src/features/library/SongMenu.test.tsx", "closes the detail and the menu before navigating from the album link")], },
 
   // playlist-management
 "PM-R01-S01": { command: CORE_ALL, evidence: [rust("playlist")], },
@@ -698,6 +706,10 @@ export const SCENARIOS = {
 "DAS-R28-S01": { command: VITEST_ALL, evidence: [vitest("src/app/App.test.tsx", "never URL-decodes a payload that already contains a literal %20")], },
 "DAS-R28-S02": { command: APP_ALL, evidence: [rust("file_open_gate::tests::one_batch_queues_every_path_until_the_frontend_listener_is_ready")], },
 "DAS-R28-S03": { command: "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-app --all-features", evidence: [node("scripts/verify/checks/file-drop-config.mjs"), rust("file_drop::tests::hover_overlay_follows_drag_lifecycle")], },
+"DAS-R29-S01": { command: VITEST_ALL, evidence: [vitest("src/app/useAppShell.test.tsx", "selectView clears an unconsumed target and the source")], },
+"DAS-R29-S02": { command: VITEST_ALL, evidence: [vitest("src/app/useAppShell.test.tsx", "consumes only the target and keeps the source for the return")], },
+"DAS-R29-S03": { command: VITEST_ALL, evidence: [vitest("src/app/useAppShell.test.tsx", "entering a directory directly produces no source record")], },
+"DAS-R29-S04": { command: VITEST_ALL, evidence: [vitest("src/app/useAppShell.test.tsx", "returnToSource restores the recorded view and playlist")], },
 "DP-R07-S05": { command: DESK_ALL, evidence: [rust("player::coordinator::tests_opened_files::opened_batch_creates_one_entry_per_path_in_order")], },
 "DP-R07-S06": { command: DESK_ALL, evidence: [rust("player::coordinator::tests_opened_files::opened_batch_mixes_library_and_temporary_in_input_order")], },
 "DP-R07-S07": { command: DESK_ALL, evidence: [rust("player::coordinator::tests_opened_files::opened_batch_replaces_the_current_queue_and_priority_lane")], },

@@ -4,20 +4,20 @@
 
 | 编号 | 验收路径 | 证明场景数 | macOS 可运行命令 |
 |---|---|---|---|
-| **A1** | 空库首次启动 | 175 | `cargo test -p echo-desktop --lib runtime::startup_supervisor && cargo test -p echo-core --all-features root_switch::` |
+| **A1** | 空库首次启动 | 179 | `cargo test -p echo-desktop --lib runtime::startup_supervisor && cargo test -p echo-core --all-features root_switch::` |
 | **A2** | 10,000 首混合曲库扫描 | 44 | `node scripts/verify/checks/task-12.5.mjs && cargo test -p echo-core --all-features scan::` |
 | **A3** | 外部改名/移动 | 44 | `cargo test -p echo-core --all-features relink` |
 | **A4** | 多文件安全导入 | 44 | `cargo test -p echo-core --all-features recover::` |
 | **A5** | 资料库失联/恢复 | 44 | `node scripts/verify/checks/task-5.8.mjs 2>/dev/null \|\| cargo test -p echo-core --all-features trash::` |
-| **A6** | 搜索/排序/收藏 | 157 | `node scripts/verify/checks/task-10.5.mjs` |
+| **A6** | 搜索/排序/收藏 | 163 | `node scripts/verify/checks/task-10.5.mjs` |
 | **A7** | 歌单 CRUD | 54 | `node scripts/verify/checks/task-10.9.mjs` |
 | **A8** | 播放与队列 | 88 | `node scripts/verify/checks/task-11.2.mjs && cargo test -p echo-desktop --lib runtime::player && cargo test -p echo-desktop --lib player::actor::tests::subscribe_snapshots` |
-| **A9** | 歌词与沉浸模式 | 32 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
+| **A9** | 歌词与沉浸模式 | 34 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
 | **A10** | 系统双击文件 | 44 | `cargo test -p echo-core --all-features watch:: && node scripts/verify/checks/task-9.2.mjs` |
 | **A11** | 删除与撤销 | 44 | `cargo test -p echo-core --all-features recover::` |
-| **A12** | 关窗与托盘 | 131 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
-| **A13** | 无障碍与窄屏 | 276 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
-| **A14** | 范围保护 | 244 | `node scripts/verify/checks/task-13.8.mjs` |
+| **A12** | 关窗与托盘 | 135 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
+| **A13** | 无障碍与窄屏 | 288 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
+| **A14** | 范围保护 | 254 | `node scripts/verify/checks/task-13.8.mjs` |
 
 ## 逐场景归属
 
@@ -198,6 +198,10 @@
 | A1 | `DAS-R28-S01` | 投放路径与到达时机必须与文件打开通道一致 |
 | A1 | `DAS-R28-S02` | 投放路径与到达时机必须与文件打开通道一致 |
 | A1 | `DAS-R28-S03` | 投放路径与到达时机必须与文件打开通道一致 |
+| A1 | `DAS-R29-S01` | 一次性聚合导航目标与来源记录 |
+| A1 | `DAS-R29-S02` | 一次性聚合导航目标与来源记录 |
+| A1 | `DAS-R29-S03` | 一次性聚合导航目标与来源记录 |
+| A1 | `DAS-R29-S04` | 一次性聚合导航目标与来源记录 |
 | A10 | `SFI-R01-S01` | 多选导入与默认目标命名 |
 | A10 | `SFI-R01-S02` | 多选导入与默认目标命名 |
 | A10 | `SFI-R01-S03` | 多选导入与默认目标命名 |
@@ -417,6 +421,10 @@
 | A12 | `DAS-R28-S01` | 投放路径与到达时机必须与文件打开通道一致 |
 | A12 | `DAS-R28-S02` | 投放路径与到达时机必须与文件打开通道一致 |
 | A12 | `DAS-R28-S03` | 投放路径与到达时机必须与文件打开通道一致 |
+| A12 | `DAS-R29-S01` | 一次性聚合导航目标与来源记录 |
+| A12 | `DAS-R29-S02` | 一次性聚合导航目标与来源记录 |
+| A12 | `DAS-R29-S03` | 一次性聚合导航目标与来源记录 |
+| A12 | `DAS-R29-S04` | 一次性聚合导航目标与来源记录 |
 | A13 | `DAS-R01-S01` | 首次启动必须建立本机工作区 |
 | A13 | `DAS-R01-S02` | 首次启动必须建立本机工作区 |
 | A13 | `DAS-R01-S03` | 首次启动必须建立本机工作区 |
@@ -693,6 +701,18 @@
 | A13 | `DAS-R28-S01` | 投放路径与到达时机必须与文件打开通道一致 |
 | A13 | `DAS-R28-S02` | 投放路径与到达时机必须与文件打开通道一致 |
 | A13 | `DAS-R28-S03` | 投放路径与到达时机必须与文件打开通道一致 |
+| A13 | `DAS-R29-S01` | 一次性聚合导航目标与来源记录 |
+| A13 | `DAS-R29-S02` | 一次性聚合导航目标与来源记录 |
+| A13 | `DAS-R29-S03` | 一次性聚合导航目标与来源记录 |
+| A13 | `DAS-R29-S04` | 一次性聚合导航目标与来源记录 |
+| A13 | `IL-R01-S04` | 常驻播放栏必须始终提供当前播放与基础控制 |
+| A13 | `IL-R03-S04` | 沉浸式播放器必须展示封面、元信息并保持基础控制 |
+| A13 | `LE-R23-S01` | 歌曲行与歌曲详情中的歌手/专辑链接 |
+| A13 | `LE-R23-S02` | 歌曲行与歌曲详情中的歌手/专辑链接 |
+| A13 | `LE-R23-S03` | 歌曲行与歌曲详情中的歌手/专辑链接 |
+| A13 | `LE-R23-S04` | 歌曲行与歌曲详情中的歌手/专辑链接 |
+| A13 | `LE-R23-S05` | 歌曲行与歌曲详情中的歌手/专辑链接 |
+| A13 | `LE-R23-S06` | 歌曲行与歌曲详情中的歌手/专辑链接 |
 | A14 | `DAS-R01-S01` | 首次启动必须建立本机工作区 |
 | A14 | `DAS-R01-S02` | 首次启动必须建立本机工作区 |
 | A14 | `DAS-R01-S03` | 首次启动必须建立本机工作区 |
@@ -937,6 +957,16 @@
 | A14 | `DAS-R28-S01` | 投放路径与到达时机必须与文件打开通道一致 |
 | A14 | `DAS-R28-S02` | 投放路径与到达时机必须与文件打开通道一致 |
 | A14 | `DAS-R28-S03` | 投放路径与到达时机必须与文件打开通道一致 |
+| A14 | `DAS-R29-S01` | 一次性聚合导航目标与来源记录 |
+| A14 | `DAS-R29-S02` | 一次性聚合导航目标与来源记录 |
+| A14 | `DAS-R29-S03` | 一次性聚合导航目标与来源记录 |
+| A14 | `DAS-R29-S04` | 一次性聚合导航目标与来源记录 |
+| A14 | `LE-R23-S01` | 歌曲行与歌曲详情中的歌手/专辑链接 |
+| A14 | `LE-R23-S02` | 歌曲行与歌曲详情中的歌手/专辑链接 |
+| A14 | `LE-R23-S03` | 歌曲行与歌曲详情中的歌手/专辑链接 |
+| A14 | `LE-R23-S04` | 歌曲行与歌曲详情中的歌手/专辑链接 |
+| A14 | `LE-R23-S05` | 歌曲行与歌曲详情中的歌手/专辑链接 |
+| A14 | `LE-R23-S06` | 歌曲行与歌曲详情中的歌手/专辑链接 |
 | A2 | `LL-R01-S01` | 单一资料库根目录与本地持久化 |
 | A2 | `LL-R01-S02` | 单一资料库根目录与本地持久化 |
 | A2 | `LL-R01-S03` | 单一资料库根目录与本地持久化 |
@@ -1270,6 +1300,12 @@
 | A6 | `LL-R12-S01` | 内嵌封面 MIME 声明必须与解码能力一致 |
 | A6 | `LL-R12-S02` | 内嵌封面 MIME 声明必须与解码能力一致 |
 | A6 | `LL-R12-S03` | 内嵌封面 MIME 声明必须与解码能力一致 |
+| A6 | `LE-R23-S01` | 歌曲行与歌曲详情中的歌手/专辑链接 |
+| A6 | `LE-R23-S02` | 歌曲行与歌曲详情中的歌手/专辑链接 |
+| A6 | `LE-R23-S03` | 歌曲行与歌曲详情中的歌手/专辑链接 |
+| A6 | `LE-R23-S04` | 歌曲行与歌曲详情中的歌手/专辑链接 |
+| A6 | `LE-R23-S05` | 歌曲行与歌曲详情中的歌手/专辑链接 |
+| A6 | `LE-R23-S06` | 歌曲行与歌曲详情中的歌手/专辑链接 |
 | A7 | `PM-R01-S01` | 歌单 CRUD |
 | A7 | `PM-R01-S02` | 歌单 CRUD |
 | A7 | `PM-R01-S03` | 歌单 CRUD |
@@ -1444,3 +1480,5 @@
 | A9 | `IL-R10-S02` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
 | A9 | `IL-R10-S03` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
 | A9 | `IL-R10-S04` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
+| A9 | `IL-R01-S04` | 常驻播放栏必须始终提供当前播放与基础控制 |
+| A9 | `IL-R03-S04` | 沉浸式播放器必须展示封面、元信息并保持基础控制 |

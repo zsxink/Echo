@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 
 import { CollectionDirectory } from "./CollectionDirectory";
+import { invalidateLibrary } from "./libraryInvalidation";
 import { playerStore } from "../../player/playerStore";
 import { ToastView } from "../../app/ToastView";
 
@@ -444,5 +445,233 @@ describe("CollectionDirectory — 聚合详情定位 (DIR-LOC)", () => {
     });
     expect(await screen.findByTestId("toast")).toHaveTextContent("当前歌曲不在此列表中");
     expect(screen.getByTestId("song-list")).toHaveProperty("scrollTop", 0);
+  });
+});
+
+describe("CollectionDirectory — 歌曲链接跳转目标 (issue #118)", () => {
+  const ARTIST = {
+    kind: "artist" as const,
+    artistKey: "周杰伦",
+    artist: "周杰伦",
+    name: "周杰伦",
+    songCount: 2,
+    coverKey: null,
+    hasCustomCover: false,
+  };
+  const OTHER_ARTIST = {
+    kind: "artist" as const,
+    artistKey: "蔡依林",
+    artist: "蔡依林",
+    name: "蔡依林",
+    songCount: 1,
+    coverKey: null,
+    hasCustomCover: false,
+  };
+  const SONG = {
+    id: "song-1",
+    title: "晴天",
+    artist: "周杰伦",
+    album: "叶惠美",
+    durationS: 239,
+    favorite: false,
+    playCount: 0,
+    availability: "available" as const,
+    relativePath: "jay/qingtian.flac",
+  };
+
+  it("opens the matching group directly and consumes the target once", async () => {
+    mockCommand("catalog_collections", [OTHER_ARTIST, ARTIST]);
+    mockCommand("catalog_collection_songs", [SONG]);
+    const onTargetConsumed = vi.fn();
+    render(
+      <CollectionDirectory
+        kind="artist"
+        root="root-1"
+        target={{ kind: "artist", artistKey: "周杰伦" }}
+        onTargetConsumed={onTargetConsumed}
+      />,
+    );
+
+    await screen.findByText("晴天");
+    expect(onTargetConsumed).toHaveBeenCalledTimes(1);
+    // The directory grid never shows: the jump goes straight into the detail.
+    expect(screen.queryByRole("button", { name: /打开歌手/ })).not.toBeInTheDocument();
+  });
+
+  it("drops a leftover search term so it cannot filter the target group out", async () => {
+    mockCommand("catalog_collections", [OTHER_ARTIST, ARTIST]);
+    mockCommand("catalog_collection_songs", [SONG]);
+    const onTargetConsumed = vi.fn();
+    const { rerender } = render(<CollectionDirectory kind="artist" root="root-1" />);
+
+    // The user had typed a filter that excludes 周杰伦 before clicking a link.
+    const search = screen.getByRole("searchbox", { name: "搜索歌手" });
+    fireEvent.change(search, { target: { value: "蔡依林" } });
+    await screen.findByRole("button", { name: /打开歌手 蔡依林/ });
+    expect(lastCollectionQuery().search).toBe("蔡依林");
+
+    rerender(
+      <CollectionDirectory
+        kind="artist"
+        root="root-1"
+        target={{ kind: "artist", artistKey: "周杰伦" }}
+        onTargetConsumed={onTargetConsumed}
+      />,
+    );
+
+    await screen.findByText("晴天");
+    await waitFor(() => expect(lastCollectionQuery().search).toBe(""));
+    expect(onTargetConsumed).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the directory usable and says so when the target no longer exists", async () => {
+    mockCommand("catalog_collections", [OTHER_ARTIST]);
+    const onTargetConsumed = vi.fn();
+    render(
+      <>
+        <CollectionDirectory
+          kind="artist"
+          root="root-1"
+          target={{ kind: "artist", artistKey: "周杰伦" }}
+          onTargetConsumed={onTargetConsumed}
+        />
+        <ToastView />
+      </>,
+    );
+
+    expect(await screen.findByTestId("toast")).toHaveTextContent("未找到该歌手/专辑，可能已被移除");
+    expect(onTargetConsumed).toHaveBeenCalledTimes(1);
+    // The directory stays usable rather than showing an empty detail.
+    expect(await screen.findByRole("button", { name: /打开歌手 蔡依林/ })).toBeInTheDocument();
+  });
+
+  it("keeps the target pending when the directory request fails, then applies it on retry", async () => {
+    mockCommand("catalog_collections", new Error("boom"));
+    const onTargetConsumed = vi.fn();
+    render(
+      <CollectionDirectory
+        kind="artist"
+        root="root-1"
+        target={{ kind: "artist", artistKey: "周杰伦" }}
+        onTargetConsumed={onTargetConsumed}
+      />,
+    );
+
+    expect(await screen.findByText("加载目录失败，请重试")).toBeInTheDocument();
+    expect(onTargetConsumed).not.toHaveBeenCalled();
+
+    mockCommand("catalog_collections", [ARTIST]);
+    mockCommand("catalog_collection_songs", [SONG]);
+    act(() => invalidateLibrary());
+
+    await screen.findByText("晴天");
+    expect(onTargetConsumed).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a link-opened detail to the source view, and a card-opened detail to the directory", async () => {
+    mockCommand("catalog_collections", [ARTIST]);
+    mockCommand("catalog_collection_songs", [SONG]);
+    const onReturnToSource = vi.fn();
+    const { rerender } = render(
+      <CollectionDirectory
+        kind="artist"
+        root="root-1"
+        target={{ kind: "artist", artistKey: "周杰伦" }}
+        onTargetConsumed={() => {}}
+        onReturnToSource={onReturnToSource}
+        returnLabel="返回全部歌曲"
+      />,
+    );
+    await screen.findByText("晴天");
+
+    // Link-opened detail: the back entry names and restores the source view.
+    fireEvent.click(screen.getByRole("button", { name: "返回全部歌曲" }));
+    expect(onReturnToSource).toHaveBeenCalledTimes(1);
+
+    // Card-opened detail: the back entry returns to the aggregate directory.
+    rerender(
+      <CollectionDirectory
+        kind="artist"
+        root="root-1"
+        onReturnToSource={onReturnToSource}
+        returnLabel="返回全部歌曲"
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /打开歌手 周杰伦/ }));
+    await screen.findByText("晴天");
+    fireEvent.click(screen.getByRole("button", { name: "返回歌手" }));
+
+    expect(onReturnToSource).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("button", { name: /打开歌手 周杰伦/ })).toBeInTheDocument();
+  });
+
+  it("does not reopen the target after the detail returns to the directory", async () => {
+    mockCommand("catalog_collections", [ARTIST]);
+    mockCommand("catalog_collection_songs", [SONG]);
+    const onTargetConsumed = vi.fn();
+    const { rerender } = render(
+      <CollectionDirectory
+        kind="artist"
+        root="root-1"
+        target={{ kind: "artist", artistKey: "周杰伦" }}
+        onTargetConsumed={onTargetConsumed}
+      />,
+    );
+    await screen.findByText("晴天");
+    expect(onTargetConsumed).toHaveBeenCalledTimes(1);
+
+    // The shell clears the target once consumed; a later re-render must not
+    // reopen the group.
+    rerender(
+      <CollectionDirectory
+        kind="artist"
+        root="root-1"
+        target={null}
+        onTargetConsumed={onTargetConsumed}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "返回歌手" }));
+
+    expect(await screen.findByRole("button", { name: /打开歌手 周杰伦/ })).toBeInTheDocument();
+    expect(onTargetConsumed).toHaveBeenCalledTimes(1);
+  });
+
+  it("matches an album target by albumKey inside the album directory", async () => {
+    mockCommand("catalog_collections", [
+      {
+        kind: "album",
+        artistKey: "周杰伦",
+        albumKey: "叶惠美",
+        artist: "周杰伦",
+        name: "叶惠美",
+        songCount: 2,
+        coverKey: null,
+        hasCustomCover: false,
+      },
+      {
+        kind: "album",
+        artistKey: "蔡依林",
+        albumKey: "看我72变",
+        artist: "蔡依林",
+        name: "看我72变",
+        songCount: 1,
+        coverKey: null,
+        hasCustomCover: false,
+      },
+    ]);
+    mockCommand("catalog_collection_songs", [SONG]);
+    const onTargetConsumed = vi.fn();
+    render(
+      <CollectionDirectory
+        kind="album"
+        root="root-1"
+        target={{ kind: "album", albumKey: "叶惠美" }}
+        onTargetConsumed={onTargetConsumed}
+      />,
+    );
+
+    await screen.findByText("晴天");
+    expect(onTargetConsumed).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: /打开专辑/ })).not.toBeInTheDocument();
   });
 });

@@ -109,6 +109,22 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 .q-hq { color: color-mix(in oklab, var(--quality-hq), transparent 30%); }
 .track-artist, .track-album, .track-time { color: var(--muted); font-size: var(--text-xs); }
 .track-album { color: var(--fg-2); }
+/* Issue #118 — the artist/album names are navigation links inside the row.
+   They keep the cell's own type and colour (a link must not read as a second
+   button competing with the row's actions); only the affordance is added, and
+   a focus ring stays visible for the keyboard path. The inner text truncates
+   on its own so the row's ellipsis contract is unchanged. */
+.track-artist-link, .track-album-link, .detail-link {
+  padding: 0; border: 0; background: none; font: inherit; color: inherit;
+  text-align: left; cursor: pointer; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.track-artist-link:hover, .track-album-link:hover, .detail-link:hover {
+  color: var(--accent-strong); text-decoration: underline;
+}
+.track-artist-link:focus-visible, .track-album-link:focus-visible, .detail-link:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm);
+}
 .row-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
 .row-action { width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; position: relative; }
 .row-action::after { content: ""; position: absolute; inset: -8px -4px; }

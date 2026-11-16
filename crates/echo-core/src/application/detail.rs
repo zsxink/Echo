@@ -11,6 +11,7 @@
 //! their effective source, never file contents.
 
 use crate::application::ports::{CoverRepository, LyricsRepository, SongRepository};
+use crate::domain::catalog::collection_keys;
 use crate::domain::entities::{select_effective_lyrics, LyricsSource, Song};
 use crate::domain::ids::RelativeMediaPath;
 use crate::domain::media::AudioParameters;
@@ -91,6 +92,12 @@ pub struct SongDetail {
     pub title: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,
+    /// Stable grouping identity for “open this artist”, or `None` when the
+    /// artist metadata is missing or blank.
+    pub artist_key: Option<String>,
+    /// Stable grouping identity for “open this album”, or `None` when the
+    /// album metadata is missing or blank.
+    pub album_key: Option<String>,
     /// Duration in seconds.
     pub duration_s: Option<u64>,
     /// Format family from the probe, as its canonical extension.
@@ -149,12 +156,15 @@ impl<'a> GetSongDetail<'a> {
 
     fn build(&self, song: &Song, id: crate::domain::ids::SongId) -> Result<SongDetail, Error> {
         let relative = song.path();
+        let keys = collection_keys(song);
         Ok(SongDetail {
             song_id: id.to_string(),
             relative_path: relative.display().to_string(),
             title: song.title().map(ToOwned::to_owned),
             artist: song.artist().map(ToOwned::to_owned),
             album: song.album().map(ToOwned::to_owned),
+            artist_key: keys.artist_key,
+            album_key: keys.album_key,
             duration_s: song.duration().map(|d| d.as_secs()),
             format: song.format().map(|f| f.extension().to_owned()),
             audio: song.audio_parameters().into(),
@@ -370,6 +380,39 @@ mod tests {
     }
 
     #[test]
+    fn detail_exposes_navigable_grouping_keys_only_for_real_metadata() {
+        let db = MemoryDatabase::new();
+        let root = LibraryRootId::new();
+        LibraryRepository::upsert(&db, &LibraryRoot::new(root, ".".into(), true, true))
+            .expect("active root");
+        let song = seed(&db, root);
+        let detail = GetSongDetail::new(&db, &db, &db)
+            .execute(song.id())
+            .expect("detail");
+        assert_eq!(detail.artist_key.as_deref(), Some("周杰伦"));
+        assert_eq!(detail.album_key.as_deref(), Some("七里香"));
+
+        let mut untagged = Song::new(
+            SongId::new(),
+            root,
+            RelativeMediaPath::new("untagged.mp3").expect("path"),
+            Revision::INITIAL,
+        );
+        untagged.apply_metadata(
+            Some("未命名".to_owned()),
+            Some("   ".to_owned()),
+            None,
+            None,
+        );
+        SongRepository::upsert(&db, &untagged).expect("seed untagged");
+        let untagged_detail = GetSongDetail::new(&db, &db, &db)
+            .execute(untagged.id())
+            .expect("untagged detail");
+        assert_eq!(untagged_detail.artist_key, None);
+        assert_eq!(untagged_detail.album_key, None);
+    }
+
+    #[test]
     fn detail_exposes_loudness_tags_from_the_last_scan() {
         use crate::domain::media::{LoudnessSource, LoudnessTags};
 
@@ -455,6 +498,8 @@ mod tests {
             title: Some("七里香".to_owned()),
             artist: Some("周杰伦".to_owned()),
             album: Some("七里香".to_owned()),
+            artist_key: Some("周杰伦".to_owned()),
+            album_key: Some("七里香".to_owned()),
             duration_s: Some(254),
             format: Some("flac".to_owned()),
             audio: SongAudioParams {
@@ -490,6 +535,8 @@ mod tests {
   "title": "七里香",
   "artist": "周杰伦",
   "album": "七里香",
+  "artist_key": "周杰伦",
+  "album_key": "七里香",
   "duration_s": 254,
   "format": "flac",
   "audio": {

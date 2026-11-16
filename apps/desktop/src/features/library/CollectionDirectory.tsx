@@ -47,6 +47,7 @@ import { useStoredDirectorySort } from "./useStoredDirectorySort";
 import { useLocateSong } from "./useLocateSong";
 import { LocateButton } from "./LocateButton";
 import { subscribeSearchFocus } from "../../app/searchFocus";
+import type { CollectionTarget } from "../../app/useAppShell";
 
 export interface CollectionDirectoryProps {
   readonly kind: "artist" | "album";
@@ -55,6 +56,14 @@ export interface CollectionDirectoryProps {
   readonly readOnly?: boolean;
   /** A mutation the sidebar also reflects (playlist membership, deletions). */
   readonly onLibraryChanged?: () => void;
+  /** A one-shot jump requested by a song/detail/player link. */
+  readonly target?: CollectionTarget | null;
+  /** Called once the target was applied — opened, or reported as missing. */
+  readonly onTargetConsumed?: () => void;
+  /** Restores the view that initiated the link jump. */
+  readonly onReturnToSource?: () => void;
+  /** Accessible name for the back entry when returning to the source view. */
+  readonly returnLabel?: string;
 }
 
 export function CollectionDirectory({
@@ -62,6 +71,10 @@ export function CollectionDirectory({
   root,
   readOnly = false,
   onLibraryChanged,
+  target = null,
+  onTargetConsumed,
+  onReturnToSource,
+  returnLabel,
 }: CollectionDirectoryProps) {
   const [search, setSearch] = useState("");
   // 视图 → 搜索（Cmd+F，issue #73）聚焦当前目录视图自己的搜索框。
@@ -69,6 +82,9 @@ export function CollectionDirectory({
   useEffect(() => subscribeSearchFocus(() => searchInputRef.current?.focus()), []);
   const [entries, setEntries] = useState<readonly CatalogCollectionView[]>([]);
   const [selected, setSelected] = useState<CatalogCollectionView | null>(null);
+  // Whether the open detail came from a link jump (back returns to the source
+  // view) rather than from a directory card (back returns to the directory).
+  const [openedFromTarget, setOpenedFromTarget] = useState(false);
   const [songs, setSongs] = useState<readonly SongView[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +98,16 @@ export function CollectionDirectory({
   // stale and the grid stayed empty under the new chrome.
   const directoryRequest = useRef(0);
   const detailRequest = useRef(0);
+  // The directory response is the only authoritative entry set, so the target
+  // is matched inside its success callback. The ref keeps that callback from
+  // depending on the target object's identity.
+  const targetRef = useRef<CollectionTarget | null>(target);
+  targetRef.current = target;
+  // The consumer callback is invoked from the directory response, not during
+  // render; keeping it in a ref means an inline callback cannot re-trigger the
+  // directory request on every render.
+  const onTargetConsumedRef = useRef(onTargetConsumed);
+  onTargetConsumedRef.current = onTargetConsumed;
   const title = kind === "artist" ? "歌手" : "专辑";
   const [sort, setSort] = useStoredDirectorySort(kind);
   const sortOptions =
@@ -187,6 +213,7 @@ export function CollectionDirectory({
 
   useEffect(() => {
     setSelected(null);
+    setOpenedFromTarget(false);
     // The directory entries must go with them: this instance survives a
     // 歌手 ↔ 专辑 switch (same tree position in App), so leftover artist
     // cards would otherwise paint under album chrome until the refetch lands
@@ -198,6 +225,17 @@ export function CollectionDirectory({
     setSongs([]);
     setSelectionMode(false);
   }, [kind, root]);
+
+  useEffect(() => {
+    if (!target || target.kind !== kind) return;
+    // The target group must be looked up in an unfiltered, fresh directory:
+    // a leftover search term would filter the very entry we were asked to open,
+    // and a directory fetched before the jump may predate a rescan.
+    setSearch("");
+    setSelected(null);
+    setOpenedFromTarget(false);
+    setRefreshEpoch((epoch) => epoch + 1);
+  }, [target, kind]);
 
   useEffect(() => {
     // Opening another artist/album must not inherit the previous directory's
@@ -215,13 +253,32 @@ export function CollectionDirectory({
     void bridge
       .call("catalog_collections", { kind, search })
       .then((result) => {
-        if (directoryRequest.current === id) setEntries(result);
+        if (directoryRequest.current !== id) return;
+        setEntries(result);
+        const pending = targetRef.current;
+        if (!pending || pending.kind !== kind) return;
+        const entry = result.find((candidate) =>
+          pending.kind === "artist"
+            ? candidate.artistKey === pending.artistKey
+            : candidate.albumKey === pending.albumKey,
+        );
+        if (entry) {
+          setSelected(entry);
+          setOpenedFromTarget(true);
+        } else {
+          // The group disappeared (usually a rescan). Keep the directory
+          // usable and say so once; consuming the target stops later refreshes
+          // from repeating the notice.
+          notify("未找到该歌手/专辑，可能已被移除");
+        }
+        onTargetConsumedRef.current?.();
       })
       .catch(() => {
         // Task 10.7: a failed refetch keeps the content already on screen and
         // surfaces the error rather than wiping the view. The stale-view case
         // (this `entries` list belonging to a *different* kind/root) is already
-        // handled where the identity changes, not here.
+        // handled where the identity changes, not here. The jump target stays
+        // pending so a retry can still apply it.
         if (directoryRequest.current === id) setError("加载目录失败，请重试");
       })
       .finally(() => {
@@ -494,8 +551,12 @@ export function CollectionDirectory({
                 <button
                   className="collection-back is-visible"
                   type="button"
-                  aria-label={`返回${title}`}
-                  onClick={() => setSelected(null)}
+                  aria-label={openedFromTarget && returnLabel ? returnLabel : `返回${title}`}
+                  onClick={() => {
+                    setSelected(null);
+                    setOpenedFromTarget(false);
+                    if (openedFromTarget && onReturnToSource) onReturnToSource();
+                  }}
                 >
                   <Icon name="chevronLeft" />
                 </button>
@@ -568,7 +629,10 @@ export function CollectionDirectory({
                       type="button"
                       className="collection-open"
                       aria-label={`打开${title} ${entry.name}`}
-                      onClick={() => setSelected(entry)}
+                      onClick={() => {
+                        setOpenedFromTarget(false);
+                        setSelected(entry);
+                      }}
                     >
                       <span
                         className={`collection-art cover ${coverClass(entry.artistKey)}${entry.coverKey ? " has-image" : ""}`}

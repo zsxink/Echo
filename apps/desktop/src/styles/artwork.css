@@ -143,10 +143,11 @@ body.player-mode-open .playerbar .volume-button.is-muted:hover {
   color: var(--player-on);
 }
 body.player-mode-open .playerbar .player-track-card:hover,
-body.player-mode-open .playerbar .player-track-card[aria-expanded="true"]:hover {
+body.player-mode-open .playerbar .player-track-card[data-immersive-open="true"]:hover {
   background: color-mix(in oklab, var(--player-on), transparent 87%);
 }
 body.player-mode-open .playerbar .player-track-text span,
+body.player-mode-open .playerbar .player-track-link,
 body.player-mode-open .playerbar .progress-line,
 body.player-mode-open .playerbar .volume-button.is-muted,
 body.player-mode-open .playerbar .control,

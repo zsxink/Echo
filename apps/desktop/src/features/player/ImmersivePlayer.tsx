@@ -56,6 +56,7 @@ import {
 } from "../../player/playerStore";
 import { formatDuration } from "../library";
 import { useSongDetail } from "./useSongDetail";
+import { useOptionalCollectionNavigation } from "../library";
 import { clearArtworkTint, useArtworkTint } from "./useArtworkTint";
 import { useLyrics } from "./useLyrics";
 import { useLyricsFollow } from "./useLyricsFollow";
@@ -160,6 +161,9 @@ function ImmersiveBody(props: {
   // Metadata for the current library song. The `key` remounts this body with
   // the new currentSongId, so a track change always re-reads the detail.
   const detail = useSongDetail(snapshot.currentSongId);
+  // Issue #118: the overlay covers the workspace, so its links ask the shell
+  // through the same optional context the list rows use.
+  const navigation = useOptionalCollectionNavigation();
   const libraryLyrics = useLyrics(snapshot.currentSongId);
   const lyrics = snapshot.currentSongId ? libraryLyrics : (snapshot.currentLyrics ?? null);
 
@@ -291,8 +295,48 @@ function ImmersiveBody(props: {
             <p className="song-meta">
               {/* 原型用全角空格 U+3000 分隔「歌手 / 专辑 / 时长」，
                     这里写成转义，避免 no-irregular-whitespace，字符保持一致。 */}
-              {`歌手：${artist ?? "未知艺人"}`}
-              {album ? `\u3000专辑：${album}` : ""}
+              {`歌手：`}
+              {navigation && detail?.artistKey ? (
+                <button
+                  type="button"
+                  className="song-meta-link"
+                  aria-label={`打开歌手 ${artist ?? ""}`}
+                  onClick={() => {
+                    const key = detail.artistKey;
+                    if (!key) return;
+                    playerStore.setFocusOpen(false);
+                    playerStore.setImmersiveOpen(false);
+                    navigation.openArtist(key);
+                  }}
+                >
+                  {artist ?? "未知艺人"}
+                </button>
+              ) : (
+                (artist ?? "未知艺人")
+              )}
+              {album && detail?.albumKey && navigation ? (
+                <>
+                  {"\u3000专辑："}
+                  <button
+                    type="button"
+                    className="song-meta-link"
+                    aria-label={`打开专辑 ${album}`}
+                    onClick={() => {
+                      const key = detail.albumKey;
+                      if (!key) return;
+                      playerStore.setFocusOpen(false);
+                      playerStore.setImmersiveOpen(false);
+                      navigation.openAlbum(key);
+                    }}
+                  >
+                    {album}
+                  </button>
+                </>
+              ) : album ? (
+                `\u3000专辑：${album}`
+              ) : (
+                ""
+              )}
               {duration > 0 ? `\u3000${formatDuration(duration)}` : ""}
             </p>
           </div>

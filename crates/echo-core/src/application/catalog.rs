@@ -12,8 +12,8 @@
 
 use crate::application::ports::CatalogQueryRepository;
 use crate::domain::catalog::{
-    CatalogCollection, CatalogCollectionKind, CatalogCounts, OpaqueCursor, Paged, SongSort,
-    SongSortField, SortDirection,
+    effective_album, effective_artist, CatalogCollection, CatalogCollectionKind, CatalogCounts,
+    OpaqueCursor, Paged, SongSort, SongSortField, SortDirection,
 };
 use crate::domain::entities::Song;
 use crate::domain::ids::PlaylistId;
@@ -255,20 +255,6 @@ impl<'a> CatalogQuery<'a> {
             cursor = Some(next);
         }
         Ok(songs)
-    }
-}
-
-fn effective_artist(song: &Song) -> &str {
-    match song.artist().map(str::trim) {
-        Some(value) if !value.is_empty() => value,
-        _ => "未知艺人",
-    }
-}
-
-fn effective_album(song: &Song) -> &str {
-    match song.album().map(str::trim) {
-        Some(value) if !value.is_empty() => value,
-        _ => "未知专辑",
     }
 }
 
