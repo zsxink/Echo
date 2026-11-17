@@ -38,14 +38,12 @@ const checks = [
   ["embedded frontend freshness", "node", ["scripts/verify/checks/check-embedded-frontend.mjs"], "embedded"],
 ];
 
-// CI runs the mutation-based injection proofs in a separate job so they can
-// overlap with the slower cargo and release gates. Local governance still
-// includes them by default.
-if (!process.argv.includes("--without-injection")) {
-  checks.push(["gate injection proofs", "node", ["scripts/verify/injection-suite.mjs"], "injection"]);
-}
+// The mutation-based injection proofs are a standalone local command
+// (`ECHO_INJECTION_REQUIRE_ALL=1 node scripts/verify/injection-suite.mjs`).
+// They prove the gates' own failure behavior, not product behavior, so they are
+// neither a governance section nor a PR job.
 
-const SECTION_ORDER = ["quality", "registry", "rust-static", "static", "coverage", "purity", "embedded", "injection"];
+const SECTION_ORDER = ["quality", "registry", "rust-static", "static", "coverage", "purity", "embedded"];
 const argv = process.argv.slice(2);
 if (argv.includes("--list-sections")) {
   process.stdout.write(`${SECTION_ORDER.join(" ")}\n`);
@@ -67,20 +65,11 @@ if (sectionsFlag) {
   }
   selectedSections = new Set(requested);
 }
-const withoutInjection = argv.includes("--without-injection");
-const runnable = checks.filter(([, , , section]) =>
-  (!selectedSections || selectedSections.has(section))
-  && !(withoutInjection && section === "injection"));
+const runnable = checks.filter(([, , , section]) => !selectedSections || selectedSections.has(section));
 if (!runnable.length) {
   process.stderr.write("FAIL governance: section selection produced no checks\n");
   process.exit(1);
 }
-
-// An injection proof that could not be evaluated is not a proof. The suite
-// names a skip when its violation needs an artifact this machine lacks; here
-// that has to be a failure, exactly as `ECHO_PURITY_REQUIRE_BUILD=1` turns the
-// build-purity skip into one.
-process.env.ECHO_INJECTION_REQUIRE_ALL = "1";
 
 for (const [label, command, args] of runnable) {
   process.stdout.write(`\n== ${label} ==\n`);

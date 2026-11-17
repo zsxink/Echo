@@ -723,6 +723,21 @@ export const SCENARIOS = {
 
 import { allScenarioIds } from "./spec-scenarios.mjs";
 
+// CI delegation. The Linux `rust` job's `Test` step runs
+// `cargo test --workspace --all-targets --all-features`, which is exactly the
+// workspace form of the three per-package all-feature commands; the Frontend
+// job's `Test` step runs the full Vitest suite. Declaring the delegation here
+// (instead of inferring it from the command shape inside the runner) keeps the
+// coverage claim reviewable: `run-scenario.mjs` still skips only scenarios that
+// explicitly name the gate, and `check-scenario-evidence.mjs` verifies that the
+// named gate really runs in ci.yml.
+const WORKSPACE_TEST_COMMANDS = new Set([CORE_ALL, DESK_ALL, APP_ALL]);
+for (const entry of Object.values(SCENARIOS)) {
+  if (entry.delegatedTo) continue;
+  if (WORKSPACE_TEST_COMMANDS.has(entry.command)) entry.delegatedTo = "workspace-test";
+  else if (entry.command === VITEST_ALL) entry.delegatedTo = "frontend-test";
+}
+
 export function scenarioCommands() {
   return allScenarioIds().map(({ id, scenario, area }) => {
     const entry = SCENARIOS[id];

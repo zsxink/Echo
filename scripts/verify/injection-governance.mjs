@@ -24,53 +24,53 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "          - { platform: Linux,   os: ubuntu-latest,  shard: workspace, cache: linux-workspace,  packages: \"--workspace\",   clippy: true }\n",
-          "",
+          "          - { platform: Linux, os: ubuntu-latest, shard: workspace, cache: linux-workspace, packages: \"--workspace\" }\n",
+          "          - { platform: Darwin, os: ubuntu-latest, shard: workspace, cache: linux-workspace, packages: \"--workspace\" }\n",
         );
         return {};
       },
     },
     {
       id: "ci-structure/test-condition-windows",
-      guard: "the Rust Test step being gated to Windows instead of Linux on pull requests",
+      guard: "the Linux workspace Test step being gated to a platform-specific condition, so PRs stop running the full suite",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: rust Test if must be 'github\.event_name != 'pull_request' \|\| matrix\.shard == 'workspace'/,
+      expect: /FAIL 1\.5: rust Test must not be conditionally skipped/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "if: github.event_name != 'pull_request' || matrix.shard == 'workspace'",
-          "if: github.event_name != 'pull_request' || matrix.shard == 'core'",
+          "      - name: Test\n        run: cargo test ${{ matrix.packages }} --all-targets --all-features\n",
+          "      - name: Test\n        if: runner.os == 'Windows'\n        run: cargo test ${{ matrix.packages }} --all-targets --all-features\n",
         );
         return {};
       },
     },
     {
       id: "ci-structure/rust-static-step-missing",
-      guard: "the Rust Linux job losing its rust-static/purity governance step",
+      guard: "the Rust Linux job losing its rust-static governance step",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
       expect: /FAIL 1\.5: ci\.yml job 'rust' is missing step 'Rust static gates'/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "      - name: Rust static gates\n        if: matrix.shard == 'workspace'\n        run: pnpm verify:governance -- --sections=rust-static\n\n",
+          "      - name: Rust static gates\n        run: pnpm verify:governance -- --sections=rust-static\n\n",
           "",
         );
         return {};
       },
     },
     {
-      id: "ci-structure/test-condition-and-inverted",
-      guard: "the Rust Test tiering condition using && so PRs and main both lose the full workspace test",
+      id: "ci-structure/doc-skip-gate-input",
+      guard: "a gate input (README.md, read by tasks 17.1/18.1) being added to the doc-only paths-ignore whitelist, which would skip CI on a PR that changes a gated file",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: rust Test if must be 'github\.event_name != 'pull_request' \|\| matrix\.shard == 'workspace'/,
+      expect: /FAIL 1\.5: ci\.yml push\.paths-ignore must be exactly/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "if: github.event_name != 'pull_request' || matrix.shard == 'workspace'",
-          "if: github.event_name != 'pull_request' && matrix.shard == 'workspace'",
+          "      - docs/arch-standards-remaining.md\n",
+          "      - docs/arch-standards-remaining.md\n      - README.md\n",
         );
         return {};
       },
@@ -84,8 +84,8 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "      - name: Test\n        if: github.event_name != 'pull_request' || matrix.shard == 'workspace'\n",
-          "      - name: Test\n        if: github.event_name != 'pull_request' || matrix.shard == 'workspace'\n        continue-on-error: true\n",
+          "      - name: Test\n        run: cargo test ${{ matrix.packages }} --all-targets --all-features\n",
+          "      - name: Test\n        continue-on-error: true\n        run: cargo test ${{ matrix.packages }} --all-targets --all-features\n",
         );
         return {};
       },
@@ -94,13 +94,13 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       id: "ci-structure/governance-static-run-disabled",
       guard: "governance-static keeping the section flags but replacing the run with an echo",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: governance-static run must be 'pnpm verify:governance -- --sections=registry,static,coverage'/,
+      expect: /FAIL 1\.5: governance-static run must be 'pnpm verify:governance -- --sections=registry,static'/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "        run: pnpm verify:governance -- --sections=registry,static,coverage",
-          '        run: echo "--sections=registry,static,coverage"',
+          "        run: pnpm verify:governance -- --sections=registry,static",
+          '        run: echo "--sections=registry,static"',
         );
         return {};
       },
@@ -114,7 +114,7 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "      - name: Run performance scenarios\n        if: matrix.shard == 'core'\n        run: pnpm verify:perf\n",
+          "      - name: Run performance scenarios\n        run: pnpm verify:perf\n",
           "",
         );
         return {};
@@ -122,30 +122,45 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
     },
     {
       id: "ci-structure/perf-step-narrowed",
-      guard: "the performance-scenarios step being narrowed to the desktop shard, so the perf gate stops running",
+      guard: "the performance-scenarios step being gated off pull requests, so the PR tier loses the perf gate",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: task-gates performance step if must include 'matrix\.shard == 'core''/,
+      expect: /FAIL 1\.5: task-gates performance step must not be conditionally skipped/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "        if: matrix.shard == 'core'\n        run: pnpm verify:perf",
-          "        if: matrix.shard == 'desktop'\n        run: pnpm verify:perf",
+          "      - name: Run performance scenarios\n        run: pnpm verify:perf",
+          "      - name: Run performance scenarios\n        if: github.event_name != 'pull_request'\n        run: pnpm verify:perf",
         );
         return {};
       },
     },
     {
       id: "ci-structure/desktop-format-check-readded",
-      guard: "the rust-desktop job re-adding cargo fmt, which the rust job already runs on the same macOS/Windows checkout",
+      guard: "a third job re-adding cargo fmt, which rust (Linux) and the main-only rust-desktop (macOS/Windows) already cover",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: 'cargo fmt --all -- --check' must run in exactly \['rust'\] \(it covers all three platforms\), got \[rust, rust-desktop\]/,
+      expect: /FAIL 1\.5: 'cargo fmt --all -- --check' must run in exactly \['rust', 'rust-desktop'\] \(Linux \+ main-only macOS\/Windows\), got \[rust, rust-desktop, release-gate\]/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "      # No `cargo fmt` step here: the `rust` job's macOS / Windows `core`\n      # shards already run it on the same platform and the same checkout.\n",
-          "      - name: Format check\n        run: cargo fmt --all -- --check\n",
+          "      - name: Run release gate without external artifacts\n",
+          "      - name: Format check\n        run: cargo fmt --all -- --check\n\n      - name: Run release gate without external artifacts\n",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/desktop-clippy-missing",
+      guard: "the main-only macOS/Windows job losing Clippy, so no job runs workspace-form clippy on those platforms",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci\.yml job 'rust-desktop' is missing step 'Clippy'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "      - name: Clippy\n        run: cargo clippy --workspace --all-targets --all-features -- -D warnings\n\n      # This job only exists on main",
+          "      # This job only exists on main",
         );
         return {};
       },
@@ -166,16 +181,16 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       },
     },
     {
-      id: "ci-structure/injection-shard3-frontend-build",
-      guard: "the injection shard 3 losing its skip, so every shard builds a frontend bundle only shards 1 and 2 read",
+      id: "ci-structure/injection-job-readded",
+      guard: "the injection proof suite being re-added to a CI job, re-spending three runner instances per PR on gate self-tests",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: injection frontend build step if must include 'matrix\.shard != 3'/,
+      expect: /FAIL 1\.5: ci\.yml must not run the injection proof suite in a job \(local-only\), found \[release-gate:Prove governance gates\]/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "      - name: Build the frontend bundle the desktop shell embeds\n        if: matrix.shard != 3\n",
-          "      - name: Build the frontend bundle the desktop shell embeds\n",
+          "      - name: Run release gate without external artifacts\n",
+          "      - name: Prove governance gates\n        run: node scripts/verify/injection-suite.mjs\n\n      - name: Run release gate without external artifacts\n",
         );
         return {};
       },
@@ -197,15 +212,15 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
     },
     {
       id: "ci-structure/section-coverage-missing",
-      guard: "governance-static dropping the coverage section from its --sections selection",
+      guard: "the main-only coverage step keeping its name while running the static sections instead of coverage",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: governance-static run must be 'pnpm verify:governance -- --sections=registry,static,coverage'/,
+      expect: /FAIL 1\.5: governance-static coverage step run must be 'pnpm verify:governance -- --sections=coverage'/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "--sections=registry,static,coverage",
-          "--sections=registry,static",
+          "        run: pnpm verify:governance -- --sections=coverage",
+          "        run: pnpm verify:governance -- --sections=static",
         );
         return {};
       },
@@ -227,15 +242,15 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
     },
     {
       id: "ci-structure/shard-packages-drift",
-      guard: "a rust shard's package selection drifting so the two shards no longer cover the workspace",
+      guard: "the Linux workspace shard's package selection narrowing away from --workspace, so the suite stops covering the workspace",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: ci\.yml rust matrix entry 'macOS\/core' maps packages to '-p echo-desktop', expected '-p echo-core'/,
+      expect: /FAIL 1\.5: ci\.yml rust matrix entry 'Linux\/workspace' maps packages to '-p echo-core', expected '--workspace'/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "shard: core,      cache: macos-core,       packages: \"-p echo-core\"",
-          "shard: core,      cache: macos-core,       packages: \"-p echo-desktop\"",
+          "shard: workspace, cache: linux-workspace, packages: \"--workspace\"",
+          "shard: workspace, cache: linux-workspace, packages: \"-p echo-core\"",
         );
         return {};
       },
@@ -244,10 +259,10 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       id: "ci-structure/clippy-moved-after-test",
       guard: "Clippy running after Test, which would leave a check-shape build as the cached artifact",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: rust step order must be Format check < Task 16\.1 < Task 9\.7 9\.8 < Clippy < Test < Rust static gates/,
+      expect: /FAIL 1\.5: rust step order must be Format check < Clippy < Test < Rust static gates/,
       baseline: true,
       inject() {
-        const clippyBlock = "      - name: Clippy\n        if: matrix.clippy\n        run: cargo clippy --workspace --all-targets --all-features -- -D warnings\n\n";
+        const clippyBlock = "      - name: Clippy\n        run: cargo clippy --workspace --all-targets --all-features -- -D warnings\n\n";
         replaceIn(join(ROOT, ".github", "workflows", "ci.yml"), clippyBlock, "");
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
@@ -273,16 +288,16 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       },
     },
     {
-      id: "ci-structure/injection-shard-count-regressed",
-      guard: "the injection proof matrix shrinking back to two shards",
+      id: "ci-structure/coverage-gated-off-main",
+      guard: "the coverage step losing its main-only skip condition, so it would either run on PRs or be permanently skipped",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: injection-proofs matrix\.shard must be \[1, 2, 3\]/,
+      expect: /FAIL 1\.5: governance-static 'Run coverage gate' if must be 'github\.event_name != 'pull_request'/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "        shard: [1, 2, 3]",
-          "        shard: [1, 2]",
+          "      - name: Run coverage gate\n        if: github.event_name != 'pull_request'\n",
+          "      - name: Run coverage gate\n",
         );
         return {};
       },
@@ -376,8 +391,8 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "      - name: Rust static gates\n        if: matrix.shard == 'workspace'\n        run: pnpm verify:governance -- --sections=rust-static\n",
-          "      - name: Rust static gates\n        if: matrix.shard == 'workspace'\n        run: pnpm verify:governance -- --sections=rust-static\n\n      - name: Extra lib tests\n        run: cargo test --workspace --lib --all-features\n",
+          "      - name: Rust static gates\n        run: pnpm verify:governance -- --sections=rust-static\n",
+          "      - name: Rust static gates\n        run: pnpm verify:governance -- --sections=rust-static\n\n      - name: Extra lib tests\n        run: cargo test --workspace --lib --all-features\n",
         );
         return {};
       },
@@ -393,6 +408,36 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
           join(ROOT, ".github", "workflows", "ci.yml"),
           "      - name: Verify libmpv smoke and native e2e gates\n        run: pnpm verify:task -- 8.12 13.2\n",
           "      - name: Verify libmpv smoke and native e2e gates\n        run: echo skipped\n",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/embedded-step-missing",
+      guard: "the macOS platform Gate losing the embedded-frontend freshness check, leaving the `embedded` section with no execution location",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci\.yml job 'macos-platform-gate' is missing step 'Verify embedded frontend freshness'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "      - name: Verify embedded frontend freshness\n        run: node scripts/verify/checks/check-embedded-frontend.mjs --bin target/aarch64-apple-darwin/release/bundle/macos/Echo.app/Contents/MacOS/Echo\n\n",
+          "",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/task-161-step-missing",
+      guard: "governance-static losing the 16.1 static-contract step, whose only remaining carrier would be the workspace test's compile/behavior half",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci\.yml job 'governance-static' is missing step 'Task 16\.1 static contract'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "      - name: Task 16.1 static contract\n        run: pnpm verify:task -- 16.1\n\n",
+          "",
         );
         return {};
       },

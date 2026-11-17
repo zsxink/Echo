@@ -29,6 +29,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { scenarioCommands } from "./scenario-commands.mjs";
 import { workspaceTestLists } from "./cargo-test-lists.mjs";
+import { matrixEntries, parseWorkflow } from "./workflow-matrix.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
 // The registry is the source of truth; the generated manifest is drift-locked
@@ -39,18 +40,40 @@ const scenarios = scenarioCommands();
 /** Measured when the evidence registry replaced the churn ratchet. */
 const FLOORS = { scenarios: 523, evidence: 541 };
 const KINDS = new Set(["rust", "vitest", "node", "attestation"]);
-const DELEGATED_GATES = new Set(["governance", "perf"]);
+const DELEGATED_GATES = new Set(["governance", "perf", "workspace-test", "frontend-test"]);
 
 const errors = [];
 const fail = (m) => errors.push(m);
 
 // A delegation only means something if the named gate actually runs in CI.
 const ciWorkflow = readFileSync(resolve(ROOT, ".github", "workflows", "ci.yml"), "utf8");
-const CI_GATES = new Map(
-  [...DELEGATED_GATES].map((gate) => [gate, new RegExp(`\\bpnpm\\s+verify:${gate}\\b`).test(ciWorkflow)]),
-);
+// Each gate names the exact command ci.yml must execute. `workspace-test` and
+// `frontend-test` are the full suites the Linux `rust` / `frontend` jobs run;
+// the other two are governance commands. The workspace suite is written as
+// `cargo test ${{ matrix.packages }} ...` with `--workspace` in the matrix, so
+// it is verified structurally rather than by a literal-string regex; a comment
+// mentioning a command cannot satisfy either check.
+let CI_GATES = new Map();
+try {
+  const workflow = parseWorkflow(ciWorkflow, "ci.yml");
+  const linux = matrixEntries(workflow, "rust", "ci.yml").find((entry) => entry.platform === "Linux");
+  const rustTest = (workflow.jobs?.rust?.steps || []).find((s) => s.name === "Test");
+  const frontendTest = (workflow.jobs?.frontend?.steps || []).find((s) => s.name === "Test");
+  CI_GATES = new Map([
+    ["governance", /\bpnpm\s+verify:governance\b/.test(ciWorkflow)],
+    ["perf", /\bpnpm\s+verify:perf\b/.test(ciWorkflow)],
+    [
+      "workspace-test",
+      linux?.packages === "--workspace" &&
+        String(rustTest?.run || "").trim() === "cargo test ${{ matrix.packages }} --all-targets --all-features",
+    ],
+    ["frontend-test", String(frontendTest?.run || "").includes("pnpm --filter @echo/desktop test -- --run")],
+  ]);
+} catch (error) {
+  fail(`could not parse .github/workflows/ci.yml: ${error.message}`);
+}
 for (const [gate, present] of CI_GATES) {
-  if (!present) fail(`delegated gate '${gate}' has no job running 'pnpm verify:${gate}' in .github/workflows/ci.yml`);
+  if (!present) fail(`delegated gate '${gate}' has no matching command in .github/workflows/ci.yml`);
 }
 let delegatedCount = 0;
 

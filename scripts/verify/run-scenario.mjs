@@ -10,6 +10,9 @@
 //                                               skip scenarios whose registry
 //                                               entry explicitly declares
 //                                               `delegatedTo: "governance"`
+//                                               (the same applies to the
+//                                               `perf`, `workspace-test` and
+//                                               `frontend-test` gates)
 //   pnpm verify:scenario -- --list             print scenario ids from the manifest
 //
 // Scenarios are resolved/validated against scripts/verify/manifest.json's

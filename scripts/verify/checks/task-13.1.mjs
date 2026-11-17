@@ -12,9 +12,13 @@
 //  - exits nonzero on any acceptance failure, and also when a scenario could
 //    not run at all (a suite that asserts nothing must not report green).
 //
-// The bundle is rebuilt here, unconditionally. Driving a *stale* dist would
-// exercise code the working tree no longer has and still report success, which
-// is the same "ran nothing, passed everything" failure mode as a missing dist.
+// The bundle is rebuilt here by default. Driving a *stale* dist would exercise
+// code the working tree no longer has and still report success, which is the
+// same "ran nothing, passed everything" failure mode as a missing dist.
+// `--no-build` is for a caller that just ran the identical
+// `pnpm --filter @echo/desktop build` itself (the Frontend CI job does, in the
+// step immediately before this one), so the rebuild would be a byte-identical
+// duplicate. It is never used to accept an arbitrary on-disk dist.
 //
 // Requires a Chromium at CHROME_PATH (defaults to the macOS Google Chrome).
 // On non-macOS or when no Chrome is present the check fails loudly (browser
@@ -39,12 +43,14 @@ if (!existsSync(chrome)) {
 }
 
 // Rebuild the renderer first: the E2E must drive the current working tree.
-const build = spawnSync("pnpm", ["--filter", "@echo/desktop", "build"], {
-  cwd: APP,
-  encoding: "utf8",
-});
-if (build.status !== 0) {
-  fail(`pnpm build exited ${build.status}\n${build.stdout || ""}\n${build.stderr || ""}`);
+if (!process.argv.includes("--no-build")) {
+  const build = spawnSync("pnpm", ["--filter", "@echo/desktop", "build"], {
+    cwd: APP,
+    encoding: "utf8",
+  });
+  if (build.status !== 0) {
+    fail(`pnpm build exited ${build.status}\n${build.stdout || ""}\n${build.stderr || ""}`);
+  }
 }
 
 const r = spawnSync("pnpm", ["--filter", "@echo/desktop", "test:e2e"], {

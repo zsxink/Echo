@@ -1,13 +1,17 @@
 #!/usr/bin/env node
-// Task 1.5 check: the three-platform Rust CI matrix declares fmt/clippy/test and
-// the single-leg frontend matrix declares the format/lint/typecheck/test/build
+// Task 1.5 check: the Rust CI matrix declares the platform tiering and the
+// single-leg frontend matrix declares the format/lint/typecheck/test/build
 // quality commands.
 //
-// Fails (nonzero) unless `.github/workflows/ci.yml` structurally contains the
-// three Rust platform/runner pairs, the Linux frontend leg, platform-based
-// names, the `rust` job steps (fmt, clippy `-D warnings`, test) and the
-// `frontend` job steps (`pnpm install --frozen-lockfile`,
-// format/lint/typecheck/test/build).
+// Fails (nonzero) unless `.github/workflows/ci.yml` structurally contains:
+//   - the Linux `rust` leg and the main-only macOS/Windows `rust-desktop` legs,
+//     with the `rust` job steps (fmt, clippy `-D warnings`, test) and the
+//     `frontend` job steps (`pnpm install --frozen-lockfile`,
+//     format/lint/typecheck/test/build, plus the headless E2E);
+//   - the cache writer/reader split, the exact task-gate inventory, the
+//     governance-section execution locations, and the duplicate-execution
+//     reverse locks;
+//   - the audited doc-only `paths-ignore` whitelist.
 //
 // The commands themselves run in the Rust/frontend CI matrices and, locally, in
 // the governance gate's `quality-core` segment. This check deliberately does not
@@ -33,6 +37,9 @@ function step(workflow, jobId, name) {
   if (!found) fail(`ci.yml job '${jobId}' is missing step '${name}'`);
   return found;
 }
+function hasStep(workflow, jobId, name) {
+  return (workflow?.jobs?.[jobId]?.steps || []).some((s) => s.name === name);
+}
 function assertRunIncludes(s, needle, label) {
   if (!String(s.run || "").includes(needle)) fail(`${label} run must include '${needle}'`);
 }
@@ -53,15 +60,27 @@ function sectionsOf(run) {
   return match ? match[1].split(",") : [];
 }
 
-// The executable task inventory is partitioned across three shards; 16.1 runs
-// in the Rust Linux job because it needs the built Tauri shell. Keeping the
-// expected lists here (rather than deriving them from ci.yml) is what makes a
+// The executable task inventory: only gates with no equivalent in the workspace
+// or frontend suites stay here. Everything else is `archived: true` in the
+// manifest, with its carrying gate named in `archivedReason`. Keeping the
+// expected list here (rather than deriving it from ci.yml) is what makes a
 // deleted or duplicated task fail instead of silently shrinking coverage.
 const EXPECTED_SHARDS = {
-  core: "1.1 1.3 1.8 3.1 4.1 5.1 6.1 11.5 12.5 13.3".split(" "),
-  desktop: "7.1 8.1 8.2 8.3 8.4 8.5 8.6 8.7 8.8 8.9 8.10 8.11 10.6 11.1 11.2 11.4 16.2".split(" "),
-  frontend: "10.1 10.2 10.3 10.4 10.5 11.3 11.6 13.1 10.7 10.8 10.9 10.10 12.1 12.2 12.3".split(" "),
+  core: "1.1 1.3 12.5 13.3".split(" "),
 };
+
+// Audited doc-only whitelist. These files are referenced only in prose (no gate
+// reads them), so a change touching nothing else may skip CI. Deliberately
+// absent: README.md (tasks 17.1/18.1 read it), openspec/changes/archive/**
+// (audio-effects gates read archived evidence) and artifacts/**
+// (check-native-attestation reads its logs).
+const DOC_ONLY_PATHS = [
+  "docs/PRODUCT.md",
+  "docs/DESIGN.md",
+  "docs/ROADMAP.md",
+  "docs/interface-terminology.md",
+  "docs/arch-standards-remaining.md",
+];
 
 // ---------------------------------------------------------------------------
 // Structural check: parse the workflow and verify each platform-to-runner pair,
@@ -78,17 +97,18 @@ try {
 let workflow;
 try {
   workflow = parseWorkflow(ci, "ci.yml");
+  // Linux carries the full workspace suite on PR and main; macOS/Windows run
+  // theirs in the main-only `rust-desktop` job, whose platform Gates still
+  // compile and test platform code on every PR.
   const RUST_MATRIX = {
-    "Linux/workspace":   { os: "ubuntu-latest",  cache: "linux-workspace",  packages: "--workspace",    clippy: true },
-    "macOS/core":        { os: "xcode-27",       cache: "macos-core",       packages: "-p echo-core",   clippy: true },
-    "Windows/core":      { os: "windows-latest", cache: "windows-core",     packages: "-p echo-core",   clippy: true },
+    "Linux/workspace": { os: "ubuntu-latest", cache: "linux-workspace", packages: "--workspace" },
   };
   assertShardMatrix(matrixEntries(workflow, "rust", "ci.yml"), RUST_MATRIX, "ci.yml rust");
   assertPlatformName(workflow.jobs.rust.name, "Rust (${{ matrix.platform }} ${{ matrix.shard }})", "ci.yml rust name");
 
   const RUST_DESKTOP_MATRIX = {
-    "macOS/desktop":     { os: "xcode-27",       cache: "macos-desktop",    packages: "-p echo-sync -p echo-desktop -p echo-app", clippy: false },
-    "Windows/desktop":   { os: "windows-latest", cache: "windows-desktop",  packages: "-p echo-sync -p echo-desktop -p echo-app", clippy: false },
+    "macOS/desktop": { os: "xcode-27", cache: "macos-desktop", packages: "--workspace" },
+    "Windows/desktop": { os: "windows-latest", cache: "windows-desktop", packages: "--workspace" },
   };
   assertShardMatrix(matrixEntries(workflow, "rust-desktop", "ci.yml"), RUST_DESKTOP_MATRIX, "ci.yml rust-desktop");
   assertPlatformName(workflow.jobs["rust-desktop"].name, "Rust desktop (${{ matrix.platform }})", "ci.yml rust-desktop name");
@@ -116,7 +136,7 @@ try {
 {
   const CACHE_STEP = "Cache Rust build artifacts";
   const MAIN_ONLY = "${{ github.ref == 'refs/heads/main' }}";
-  const CACHE_WRITERS = ["governance-static", "linux-workspace", "macos-core", "macos-desktop", "windows-core", "windows-desktop"];
+  const CACHE_WRITERS = ["governance-static", "linux-workspace", "macos-desktop", "windows-desktop"];
   // rust/rust-desktop 的 shared-key 是模板表达式，必须各自展开成该 job 实际写入
   // 的 key，否则写者集合永远等于 ["${{ matrix.cache }}", "governance-static"]。
   // 按 job 展开而不是合并两个矩阵：两个 job 都写入时合并会对同一批 key 重复计数。
@@ -197,7 +217,7 @@ const REQUIRED = [
   "pnpm --filter @echo/desktop format:check",
   "pnpm --filter @echo/desktop lint",
   "pnpm --filter @echo/desktop typecheck",
-  "pnpm --filter @echo/desktop test -- --run",
+  "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
   "pnpm --filter @echo/desktop build",
 ];
 
@@ -217,30 +237,26 @@ if (format.run !== "cargo fmt --all -- --check") fail("rust Format check run mus
 const test = step(workflow, "rust", "Test");
 const clippy = step(workflow, "rust", "Clippy");
 const rustStatic = step(workflow, "rust", "Rust static gates");
-const TEST_IF = "github.event_name != 'pull_request' || matrix.shard == 'workspace'";
-if (String(test.if || "").trim() !== TEST_IF) fail(`rust Test if must be '${TEST_IF}'`);
+// `if: false` parses as the YAML boolean, which `|| ""` would fold into the
+// same empty string as "unset". Test for presence, not emptiness.
+if (test.if !== undefined) fail("rust Test must not be conditionally skipped");
 if (test["continue-on-error"] === true) fail("rust Test must not set continue-on-error");
 if (test.run !== "cargo test ${{ matrix.packages }} --all-targets --all-features") {
   fail("rust Test run must be 'cargo test ${{ matrix.packages }} --all-targets --all-features'");
 }
-if (String(clippy.if || "").trim() !== "matrix.clippy") fail("rust Clippy if must be 'matrix.clippy'");
+if (clippy.if !== undefined) fail("rust Clippy must not be conditionally skipped");
 if (clippy.run !== "cargo clippy --workspace --all-targets --all-features -- -D warnings") {
   fail("rust Clippy run must be 'cargo clippy --workspace --all-targets --all-features -- -D warnings'");
 }
-for (const stepName of ["Task 16.1", "Task 9.7 9.8", "Rust static gates"]) {
-  const s = step(workflow, "rust", stepName);
-  if (String(s.if || "").trim() !== "matrix.shard == 'workspace'") {
-    fail(`rust ${stepName} if must be "matrix.shard == 'workspace'"`);
+// 16.1's static half runs in governance-static (the workspace test covers its
+// compile and behavior halves); 9.7/9.8 are no-ops on Linux and run for real in
+// the platform Gates. Both steps must stay out of the Linux leg.
+for (const gone of ["Task 16.1", "Task 9.7 9.8"]) {
+  if (hasStep(workflow, "rust", gone)) {
+    fail(`rust must not carry step '${gone}' (it moved to governance-static or the platform Gates)`);
   }
 }
-// The step-level `if` above cannot tell which command runs. Pin both commands
-// so relocating a task gate cannot silently change what it executes.
-if (step(workflow, "rust", "Task 16.1").run !== "pnpm verify:task -- 16.1") {
-  fail("Task 16.1 run must be 'pnpm verify:task -- 16.1'");
-}
-if (step(workflow, "rust", "Task 9.7 9.8").run !== "pnpm verify:task -- 9.7 9.8") {
-  fail("Task 9.7 9.8 run must be 'pnpm verify:task -- 9.7 9.8'");
-}
+if (rustStatic.if !== undefined) fail("rust Rust static gates must not be conditionally skipped");
 if (rustStatic.run !== "pnpm verify:governance -- --sections=rust-static") {
   fail("Rust static gates run must be 'pnpm verify:governance -- --sections=rust-static'");
 }
@@ -248,38 +264,43 @@ if (rustStatic.env?.ECHO_PURITY_REQUIRE_BUILD !== undefined) {
   fail("Rust static gates must not set ECHO_PURITY_REQUIRE_BUILD (purity moved to governance-static)");
 }
 
-// rust-desktop: the shards that carry the rest of the workspace tests. They are
-// a separate job because a job-level `if` cannot see matrix.*, and this job must
-// be absent on pull requests while running in full on main.
+// rust-desktop: the main-only macOS/Windows legs. They carry the full workspace
+// suite plus fmt and clippy; a job-level `if` cannot see matrix.*, which is why
+// they are a separate job.
 const DESKTOP_JOB_IF = "github.event_name != 'pull_request'";
 if (String(workflow.jobs["rust-desktop"].if || "").trim() !== DESKTOP_JOB_IF) {
   fail(`rust-desktop job if must be '${DESKTOP_JOB_IF}'`);
 }
+const desktopFormat = step(workflow, "rust-desktop", "Format check");
+if (desktopFormat.run !== "cargo fmt --all -- --check") {
+  fail("rust-desktop Format check run must be 'cargo fmt --all -- --check'");
+}
+const desktopClippy = step(workflow, "rust-desktop", "Clippy");
+if (desktopClippy.run !== "cargo clippy --workspace --all-targets --all-features -- -D warnings") {
+  fail("rust-desktop Clippy run must be 'cargo clippy --workspace --all-targets --all-features -- -D warnings'");
+}
 const desktopTest = step(workflow, "rust-desktop", "Test");
-// `if: false` parses as the YAML boolean, which `|| ""` would fold into the
-// same empty string as "unset". Test for presence, not emptiness.
 if (desktopTest.if !== undefined) fail("rust-desktop Test must not be conditionally skipped");
 if (desktopTest["continue-on-error"] === true) fail("rust-desktop Test must not set continue-on-error");
 if (desktopTest.run !== "cargo test ${{ matrix.packages }} --all-targets --all-features") {
   fail("rust-desktop Test run must be 'cargo test ${{ matrix.packages }} --all-targets --all-features'");
 }
-// These gates only make sense on the Linux workspace shard. The step inventory
-// above is not pinned (harmless additions stay green), but these four must not
-// drift in: Clippy already runs workspace-wide in the core shards, and the
-// task/static gates would duplicate the workspace shard's work.
-for (const forbidden of ["Clippy", "Task 16.1", "Task 9.7 9.8", "Rust static gates"]) {
-  if (workflow.jobs["rust-desktop"].steps.some((s) => s.name === forbidden)) {
+// These gates only make sense on the Linux workspace shard. Clippy is allowed
+// here now (it is the only main carrier of macOS/Windows clippy); the task and
+// static gates would duplicate the workspace shard's work.
+for (const forbidden of ["Task 16.1", "Task 9.7 9.8", "Rust static gates"]) {
+  if (hasStep(workflow, "rust-desktop", forbidden)) {
     fail(`rust-desktop must not carry step '${forbidden}' (it only exists for the workspace shard)`);
   }
 }
 
-const RUST_ORDER = ["Format check", "Task 16.1", "Task 9.7 9.8", "Clippy", "Test", "Rust static gates"];
+const RUST_ORDER = ["Format check", "Clippy", "Test", "Rust static gates"];
 const rustSteps = workflow.jobs.rust.steps.map((s) => s.name).filter(Boolean);
 const positions = RUST_ORDER.map((name) => rustSteps.indexOf(name));
 if (!positions.every((v, i) => v >= 0 && (i === 0 || v > positions[i - 1]))) {
   fail(`rust step order must be ${RUST_ORDER.join(" < ")}`);
 }
-const DESKTOP_ORDER = ["Test"];
+const DESKTOP_ORDER = ["Format check", "Clippy", "Test"];
 const desktopSteps = workflow.jobs["rust-desktop"].steps.map((s) => s.name).filter(Boolean);
 const desktopPositions = DESKTOP_ORDER.map((name) => desktopSteps.indexOf(name));
 if (!desktopPositions.every((v, i) => v >= 0 && (i === 0 || v > desktopPositions[i - 1]))) {
@@ -318,12 +339,46 @@ function assertNoShapeDrift(jobId, testStepName, expectedRun) {
 assertNoShapeDrift("rust", "Test", "cargo test ${{ matrix.packages }} --all-targets --all-features");
 assertNoShapeDrift("rust-desktop", "Test", "cargo test ${{ matrix.packages }} --all-targets --all-features");
 
+// Frontend: the headless E2E runs after the Build step, because `--no-build`
+// relies on that build having just produced the dist it drives.
+const frontendSteps = workflow.jobs.frontend.steps.map((s) => s.name).filter(Boolean);
+const buildIndex = frontendSteps.indexOf("Build");
+const e2eIndex = frontendSteps.indexOf("Task 13.1 (headless E2E)");
+if (buildIndex < 0 || e2eIndex < 0 || e2eIndex < buildIndex) {
+  fail("frontend 'Build' must precede 'Task 13.1 (headless E2E)' (--no-build relies on it)");
+}
+const e2e = step(workflow, "frontend", "Task 13.1 (headless E2E)");
+if (e2e.run !== "node scripts/verify/checks/task-13.1.mjs --no-build") {
+  fail("Task 13.1 run must be 'node scripts/verify/checks/task-13.1.mjs --no-build'");
+}
+assertEnv(e2e, "CHROME_PATH", "/usr/bin/google-chrome", "frontend Task 13.1");
+assertEnv(e2e, "CHROME_NO_SANDBOX", "1", "frontend Task 13.1");
+assertRunIncludes(step(workflow, "frontend", "Test"), "pnpm --filter @echo/desktop test -- --run", "frontend Test");
+
 const governanceStatic = step(workflow, "governance-static", "Run governance static gates");
 // Exact equality: a run that merely *mentions* the flags (`echo "--sections=..."`)
 // would keep the section strings present while executing nothing.
-if (governanceStatic.run !== "pnpm verify:governance -- --sections=registry,static,coverage") {
-  fail("governance-static run must be 'pnpm verify:governance -- --sections=registry,static,coverage'");
+if (governanceStatic.run !== "pnpm verify:governance -- --sections=registry,static") {
+  fail("governance-static run must be 'pnpm verify:governance -- --sections=registry,static'");
 }
+// Coverage is main-only: PRs must not install cargo-llvm-cov, and main must
+// still run the gate. Both the install and the gate carry the same skip
+// condition, pinned exactly so a permanently-skipped step cannot hide.
+const COVERAGE_IF = "github.event_name != 'pull_request'";
+const coverageInstall = step(workflow, "governance-static", "Install coverage tooling");
+if (String(coverageInstall.if || "").trim() !== COVERAGE_IF) {
+  fail(`governance-static 'Install coverage tooling' if must be '${COVERAGE_IF}'`);
+}
+const coverageStep = step(workflow, "governance-static", "Run coverage gate");
+if (coverageStep.run !== "pnpm verify:governance -- --sections=coverage") {
+  fail("governance-static coverage step run must be 'pnpm verify:governance -- --sections=coverage'");
+}
+if (String(coverageStep.if || "").trim() !== COVERAGE_IF) {
+  fail(`governance-static 'Run coverage gate' if must be '${COVERAGE_IF}'`);
+}
+const t161 = step(workflow, "governance-static", "Task 16.1 static contract");
+if (t161.run !== "pnpm verify:task -- 16.1") fail("Task 16.1 run must be 'pnpm verify:task -- 16.1'");
+if (t161.if !== undefined) fail("governance-static Task 16.1 must not be conditionally skipped");
 const purityStep = step(workflow, "governance-static", "Run build purity gate");
 if (purityStep.run !== "pnpm verify:governance -- --sections=purity") {
   fail("governance-static purity step run must be 'pnpm verify:governance -- --sections=purity'");
@@ -360,8 +415,8 @@ if (JSON.stringify(auditTriggers) !== JSON.stringify(["schedule", "workflow_disp
 }
 
 const release = step(workflow, "release-gate", "Run release gate without external artifacts");
-if (release.run !== "node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf") {
-  fail("release-gate run must use --skip-static --delegated=governance,perf");
+if (release.run !== "node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf,workspace-test,frontend-test") {
+  fail("release-gate run must use --skip-static --delegated=governance,perf,workspace-test,frontend-test");
 }
 
 // macos-native-gate exists only to run these two task gates (8.12/13.2 need the
@@ -373,16 +428,42 @@ if (nativeGate.run !== "pnpm verify:task -- 8.12 13.2") {
 }
 if (String(nativeGate.if || "").trim() !== "") fail("macos-native-gate must not be conditionally skipped");
 
-// The three performance scenarios used to occupy their own job while sharing
-// this shard's toolchain and `linux-workspace` cache. They now run as a step in
-// task-gates' core shard. Both halves are pinned: the step must exist with the
-// exact run, and its `if` must keep it on every event (the core shard is in
-// every matrix expansion), so a PR cannot lose the perf gate. The shard's cache
+// The embedded-frontend check moved from the deleted injection-proofs job to the
+// macOS platform Gate, which already builds both the bundle and the dist it
+// embeds. Pin the exact command so a "convenient" default-binary invocation
+// cannot silently compare the wrong file.
+const embedded = step(workflow, "macos-platform-gate", "Verify embedded frontend freshness");
+if (
+  embedded.run !==
+  "node scripts/verify/checks/check-embedded-frontend.mjs --bin target/aarch64-apple-darwin/release/bundle/macos/Echo.app/Contents/MacOS/Echo"
+) {
+  fail("macOS embedded-frontend step must run check-embedded-frontend.mjs against the built Echo.app binary");
+}
+if (embedded.if !== undefined) fail("macOS embedded-frontend step must not be conditionally skipped");
+
+// The three performance scenarios share the task-gates core shard's toolchain
+// and `linux-workspace` cache. Both halves are pinned: the step must exist with
+// the exact run, and it must not be conditionally skipped (the single core shard
+// expands on every event), so a PR cannot lose the perf gate. The shard's cache
 // step must stay read-only so the `--release` artifacts are never saved into a
 // key the Rust shards restore.
+// The injection proof suite is local-only. It proves the gates' own failure
+// behavior, not product behavior; a job running it re-spends three runner
+// instances per PR. Pinning the absence here makes re-adding it a red gate.
+{
+  const injectionRuns = Object.entries(workflow.jobs).flatMap(([jobId, job]) =>
+    (job.steps || [])
+      .filter((s) => String(s.run || "").includes("injection-suite.mjs"))
+      .map((s) => `${jobId}:${s.name}`),
+  );
+  if (injectionRuns.length) {
+    fail(`ci.yml must not run the injection proof suite in a job (local-only), found [${injectionRuns.join(", ")}]`);
+  }
+}
+
 const perfStep = step(workflow, "task-gates", "Run performance scenarios");
 if (perfStep.run !== "pnpm verify:perf") fail("task-gates performance step run must be 'pnpm verify:perf'");
-assertIfIncludes(perfStep, "matrix.shard == 'core'", "task-gates performance step");
+if (perfStep.if !== undefined) fail("task-gates performance step must not be conditionally skipped");
 if (workflow.jobs.perf) fail("ci.yml job 'perf' must not exist (folded into task-gates core)");
 const taskGatesCache = step(workflow, "task-gates", "Cache Rust build artifacts");
 if (String(taskGatesCache.with?.["save-if"] ?? "") !== "false") {
@@ -403,13 +484,13 @@ function jobsRunning(command) {
     .map(([jobId]) => jobId);
 }
 
-// `cargo fmt --all -- --check` is platform-independent, and the rust job runs it
-// on Linux, macOS and Windows already. A copy in rust-desktop re-ran the same
-// bytes on the same two platforms (it carried one until this change).
+// `cargo fmt --all -- --check` is platform-independent. `rust` covers Linux on
+// every event; `rust-desktop` covers macOS/Windows on main. Re-adding it to any
+// third job (or to a PR-running macOS/Windows leg) must fail.
 {
   const jobs = jobsRunning("cargo fmt --all -- --check");
-  if (JSON.stringify(jobs) !== JSON.stringify(["rust"])) {
-    fail(`'cargo fmt --all -- --check' must run in exactly ['rust'] (it covers all three platforms), got [${jobs.join(", ")}]`);
+  if (JSON.stringify(jobs) !== JSON.stringify(["rust", "rust-desktop"])) {
+    fail(`'cargo fmt --all -- --check' must run in exactly ['rust', 'rust-desktop'] (Linux + main-only macOS/Windows), got [${jobs.join(", ")}]`);
   }
 }
 // The perf gate has exactly one execution location now.
@@ -433,40 +514,24 @@ function jobsRunning(command) {
   }
 }
 
-const injection = workflow.jobs["injection-proofs"];
-if (JSON.stringify(injection?.strategy?.matrix?.shard) !== JSON.stringify([1, 2, 3])) {
-  fail("injection-proofs matrix.shard must be [1, 2, 3]");
-}
-const shardStep = step(workflow, "injection-proofs", "Prove each governance gate");
-assertRunIncludes(shardStep, "--shard=${{ matrix.shard }}/3", "injection shard step");
-// Shard 1 needs dist for the embedded-frontend comparison; shard 2 needs it
-// because task-9.1's `cargo check -p echo-app` fails without it. Shard 3 builds
-// nothing that reads dist, so it must skip the build.
-const bundleStep = step(workflow, "injection-proofs", "Build the frontend bundle the desktop shell embeds");
-assertIfIncludes(bundleStep, "matrix.shard != 3", "injection frontend build step");
-const shellStep = step(workflow, "injection-proofs", "Build the shell binary checked by embedded-frontend proof");
-assertIfIncludes(shellStep, "matrix.shard == 1", "shell build step");
-const embeddedStep = step(workflow, "injection-proofs", "Verify embedded frontend freshness");
-assertIfIncludes(embeddedStep, "matrix.shard == 1", "embedded freshness step");
-if (embeddedStep.run !== "pnpm verify:frontend-fresh") fail("embedded freshness run must be 'pnpm verify:frontend-fresh'");
-
 // Every job that carries a required check must run on both PR and main. A
 // job-level `if` or `continue-on-error` would keep the strings above intact
 // while the job itself stops running or stops failing.
-for (const jobId of ["rust", "frontend", "governance-static", "injection-proofs", "release-gate", "task-gates", "macos-platform-gate", "macos-native-gate", "windows-platform-gate"]) {
+for (const jobId of ["rust", "frontend", "governance-static", "release-gate", "task-gates", "macos-platform-gate", "macos-native-gate", "windows-platform-gate"]) {
   assertAlwaysRuns(workflow, jobId);
 }
 
 // ---------------------------------------------------------------------------
-// Task shards: the union must cover all 42 non-Linux tasks exactly once, and
-// 16.1 must be in the Rust Linux job instead.
+// Task shards: the union must cover the four unique gates exactly once. 13.1
+// runs in the Frontend job and 16.1 in governance-static, so neither may appear
+// in a shard.
 // ---------------------------------------------------------------------------
 const matrix = workflow.jobs["task-gates"]?.strategy?.matrix;
 if (!matrix || Object.keys(matrix).some((key) => key !== "include")) {
   fail("task-gates must use an include-only matrix");
 }
 const shards = matrix.include || [];
-if (shards.length !== 3) fail(`task-gates must have 3 shards, got ${shards.length}`);
+if (shards.length !== 1) fail(`task-gates must have 1 shard, got ${shards.length}`);
 const byShard = new Map(shards.map((entry) => [entry.shard, String(entry.tasks || "").split(/\s+/).filter(Boolean)]));
 for (const [name, expected] of Object.entries(EXPECTED_SHARDS)) {
   const actual = byShard.get(name);
@@ -476,9 +541,50 @@ for (const [name, expected] of Object.entries(EXPECTED_SHARDS)) {
   }
 }
 const union = [...byShard.values()].flat();
-if (union.length !== 42) fail(`task-gates shard union must be 42 tasks, got ${union.length}`);
+if (union.length !== 4) fail(`task-gates shard union must be 4 tasks, got ${union.length}`);
 if (new Set(union).size !== union.length) fail("task-gates shard union contains duplicates");
-if (union.includes("16.1")) fail("16.1 must run in Rust Linux, not task-gates");
+if (union.includes("16.1")) fail("16.1 must run in governance-static, not task-gates");
+if (union.includes("13.1")) fail("13.1 must run in the Frontend job, not task-gates");
+
+// Archived tasks: the manifest must say which real gate carries their assertion.
+// A reason that names no carrier, or names one that ci.yml no longer executes,
+// is how an archived assertion silently stops running.
+{
+  const manifest = JSON.parse(readFileSync(resolve(ROOT, "scripts", "verify", "manifest.json"), "utf8"));
+  const rustTest = step(workflow, "rust", "Test");
+  const linuxCarriesWorkspace = () => {
+    const entries = matrixEntries(workflow, "rust", "ci.yml");
+    return (
+      entries.length === 1 &&
+      entries[0].packages === "--workspace" &&
+      rustTest.run === "cargo test ${{ matrix.packages }} --all-targets --all-features"
+    );
+  };
+  const frontendCarriesSuite = () =>
+    String(step(workflow, "frontend", "Test").run || "").includes("pnpm --filter @echo/desktop test -- --run");
+  const platformGatesCarry = () =>
+    ["macos-platform-gate", "windows-platform-gate"].every(
+      (id) => workflow.jobs[id] && workflow.jobs[id].if === undefined,
+    );
+  const CARRIERS = [
+    { phrase: "cargo test --workspace --all-targets --all-features", check: linuxCarriesWorkspace },
+    { phrase: "workspace test", check: linuxCarriesWorkspace },
+    { phrase: "Frontend job", check: frontendCarriesSuite },
+    { phrase: "platform Gate", check: platformGatesCarry },
+  ];
+  for (const task of manifest.tasks.filter((t) => t.archived)) {
+    const reason = String(task.archivedReason || "");
+    const named = CARRIERS.filter((carrier) => reason.includes(carrier.phrase));
+    if (!named.length) {
+      fail(`archived task '${task.id}' must name its carrying gate (workspace test / Frontend job / platform Gate)`);
+    }
+    for (const carrier of named) {
+      if (!carrier.check()) {
+        fail(`archived task '${task.id}' names '${carrier.phrase}' but ci.yml does not execute that carrier`);
+      }
+    }
+  }
+}
 
 // Sections carried by a `--sections=` selection are checked for *inclusion* in
 // that step's selection; the remaining sections are carried by a dedicated
@@ -486,14 +592,13 @@ if (union.includes("16.1")) fail("16.1 must run in Rust Linux, not task-gates");
 const SECTION_SELECTOR_STEP = {
   registry: ["governance-static", "Run governance static gates"],
   static: ["governance-static", "Run governance static gates"],
-  coverage: ["governance-static", "Run governance static gates"],
+  coverage: ["governance-static", "Run coverage gate"],
   "rust-static": ["rust", "Rust static gates"],
   purity: ["governance-static", "Run build purity gate"],
 };
 const SECTION_DEDICATED_STEP = {
   quality: ["rust", "Test"],
-  embedded: ["injection-proofs", "Verify embedded frontend freshness"],
-  injection: ["injection-proofs", "Prove each governance gate"],
+  embedded: ["macos-platform-gate", "Verify embedded frontend freshness"],
 };
 
 // The section list is fixed here as well as cross-checked against
@@ -507,7 +612,6 @@ const EXPECTED_SECTIONS = [
   "coverage",
   "purity",
   "embedded",
-  "injection",
 ];
 
 const listed = spawnSync(process.execPath, [resolve(ROOT, "scripts", "verify", "ci-governance.mjs"), "--list-sections"], {
@@ -536,6 +640,20 @@ for (const section of sections) {
   step(workflow, dedicated[0], dedicated[1]);
 }
 
+// ---------------------------------------------------------------------------
+// Doc-only skip whitelist. The list may only shrink or grow through an explicit
+// edit here, which is the reviewable proof that a new entry is not a gate input.
+// ---------------------------------------------------------------------------
+for (const event of ["push", "pull_request"]) {
+  const actual = workflow.on?.[event]?.["paths-ignore"];
+  if (JSON.stringify(actual) !== JSON.stringify(DOC_ONLY_PATHS)) {
+    fail(
+      `ci.yml ${event}.paths-ignore must be exactly [${DOC_ONLY_PATHS.join(", ")}], ` +
+        `got [${Array.isArray(actual) ? actual.join(", ") : actual}]`,
+    );
+  }
+}
+
 process.stdout.write(
-  "ok 1.5: three-platform Rust matrix and single-leg frontend matrix declare the quality commands (executed by the CI matrices and quality-core); CI structure (tiering, task shards, sections, duplicate-execution locks) verified\n",
+  "ok 1.5: Linux workspace + main-only macOS/Windows workspace matrix and single-leg frontend matrix declare the quality commands; CI structure (tiering, task inventory, sections, duplicate-execution locks, doc-only whitelist) verified\n",
 );
