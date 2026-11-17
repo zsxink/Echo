@@ -151,8 +151,8 @@ jobs:
           shared-key: ${{ matrix.cache }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Format check
-        run: cargo fmt --all -- --check
+      # No `cargo fmt` step here: the `rust` job's macOS / Windows `core`
+      # shards already run it on the same platform and the same checkout.
 
       # `cargo test` compiles the echo-app Tauri shell, whose
       # `generate_context!` macro requires the built frontend at
@@ -183,13 +183,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # One leg on purpose. The five checks below are jsdom + Node toolchain
+        # work; none of the 57 frontend test files reads process.platform, so a
+        # macOS or Windows leg re-ran identical work. Frontend *build* coverage
+        # on those platforms stays with the Tauri-context builds in `rust` and
+        # `rust-desktop`. The matrix and the platform-suffixed name are kept so
+        # the check name still carries its platform (`Frontend (Linux)`).
         include:
           - platform: Linux
             os: ubuntu-latest
-          - platform: macOS
-            os: xcode-27
-          - platform: Windows
-            os: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -292,6 +294,16 @@ jobs:
           name: benchmark-50k
           path: apps/desktop/benchmark-50k.json
           if-no-files-found: error
+
+      # The three performance scenarios used to occupy their own job while
+      # sharing this shard's toolchain and `linux-workspace` cache. They run
+      # here instead: this job is a cache reader (`save-if: false`), so the
+      # `--release` artifacts the scenarios compile never land in a key the
+      # Rust shards restore. Placed after the benchmark upload so a perf
+      # failure cannot cost task-12.5 its required artifact.
+      - name: Run performance scenarios
+        if: matrix.shard == 'core'
+        run: pnpm verify:perf
 
   macos-platform-gate:
     name: macOS platform Gate
@@ -549,11 +561,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Shard 1 needs `dist` for the embedded-frontend comparison; shard 2 needs
+      # it because task-9.1's `cargo check -p echo-app` fails without it
+      # (generate_context! reads frontendDist). Shard 3 needs neither and was
+      # measured passing in 19.1s without a build.
       - name: Build the frontend bundle the desktop shell embeds
+        if: matrix.shard != 3
         run: pnpm --dir apps/desktop build
 
       # The embedded-frontend proof (pinned to shard 1) compares against the
-      # shell binary and the freshly built dist; no other shard needs either.
+      # shell binary and the freshly built dist; no other shard needs the shell.
       - name: Build the shell binary checked by embedded-frontend proof
         if: matrix.shard == 1
         run: cargo build -p echo-app --all-features
@@ -607,34 +624,3 @@ jobs:
 
       - name: Run release gate without external artifacts
         run: node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf
-
-  perf:
-    name: Performance scenarios
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain (pinned)
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.98.1
-
-      - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: linux-workspace
-          save-if: false
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.18.0
-
-      # The three performance scenarios share one aggregated echo-core
-      # invocation; no pnpm install, webkit or frontend build is needed.
-      - name: Run performance scenarios
-        run: pnpm verify:perf

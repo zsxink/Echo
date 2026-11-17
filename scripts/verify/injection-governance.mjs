@@ -106,16 +106,91 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       },
     },
     {
-      id: "ci-structure/perf-job-gated-off-pr",
-      guard: "the perf job gaining a job-level if so performance scenarios stop running on pull requests",
+      id: "ci-structure/perf-step-dropped",
+      guard: "the performance-scenarios step disappearing from task-gates core, leaving three delegated scenarios with no execution location",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: ci\.yml job 'perf' must not be conditionally skipped/,
+      expect: /FAIL 1\.5: ci\.yml job 'task-gates' is missing step 'Run performance scenarios'/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "  perf:\n    name: Performance scenarios\n",
-          "  perf:\n    name: Performance scenarios\n    if: github.event_name != 'pull_request'\n",
+          "      - name: Run performance scenarios\n        if: matrix.shard == 'core'\n        run: pnpm verify:perf\n",
+          "",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/perf-step-narrowed",
+      guard: "the performance-scenarios step being narrowed to the desktop shard, so the perf gate stops running",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: task-gates performance step if must include 'matrix\.shard == 'core''/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "        if: matrix.shard == 'core'\n        run: pnpm verify:perf",
+          "        if: matrix.shard == 'desktop'\n        run: pnpm verify:perf",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/desktop-format-check-readded",
+      guard: "the rust-desktop job re-adding cargo fmt, which the rust job already runs on the same macOS/Windows checkout",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: 'cargo fmt --all -- --check' must run in exactly \['rust'\] \(it covers all three platforms\), got \[rust, rust-desktop\]/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "      # No `cargo fmt` step here: the `rust` job's macOS / Windows `core`\n      # shards already run it on the same platform and the same checkout.\n",
+          "      - name: Format check\n        run: cargo fmt --all -- --check\n",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/frontend-matrix-widened",
+      guard: "a macOS or Windows frontend leg being added back, re-running jsdom checks that never read process.platform",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci\.yml frontend matrix contains unexpected platform entries/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "        include:\n          - platform: Linux\n            os: ubuntu-latest",
+          "        include:\n          - platform: Linux\n            os: ubuntu-latest\n          - platform: macOS\n            os: xcode-27",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/injection-shard3-frontend-build",
+      guard: "the injection shard 3 losing its skip, so every shard builds a frontend bundle only shards 1 and 2 read",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: injection frontend build step if must include 'matrix\.shard != 3'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "      - name: Build the frontend bundle the desktop shell embeds\n        if: matrix.shard != 3\n",
+          "      - name: Build the frontend bundle the desktop shell embeds\n",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/duplicate-player-smoke",
+      guard: "task-13.2 re-adding the bare player_smoke run that silently skips without the staged dylibs",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: task-13\.2 must not run player_smoke bare \(task-8\.12 is the authoritative real-libmpv run\)/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, "scripts", "verify", "checks", "task-13.2.mjs"),
+          'run("cargo", ["test", "-p", "echo-desktop", "--all-features", "player::coordinator::tests::"]);\n',
+          'run("cargo", ["test", "-p", "echo-desktop", "--all-features", "player::coordinator::tests::"]);\nrun("cargo", ["test", "-p", "echo-desktop", "--all-features", "--test", "player_smoke"]);\n',
         );
         return {};
       },

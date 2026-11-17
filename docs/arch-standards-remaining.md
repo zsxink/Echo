@@ -443,15 +443,23 @@ shard 1，因为它需要壳二进制与 dist。每次调用都校验并集等�
 - `--skip-static` 只跳过 reconcile / validate-scenario-commands / gen-scenario-manifests 的静态预检
   （已在 `governance-static` 执行）；自动化场景与 PRD A1–A14 矩阵照跑。不要把它当成「跳过场景」。
 
-## 11. CI 拓扑（2026-11-17，issue #156）
+## 11. CI 拓扑（2026-11-17，issue #156；删除重复执行见 issue #158）
 
 | job（实例数） | 职责 | 关键点 |
 |---|---|---|
-| `Rust (<platform> <shard>)`（5） | fmt / clippy / 分片测试 | Linux `workspace`；macOS/Windows 各 `core` + `desktop`；PR 只跳过两个 `desktop` 分片 |
-| `macOS native Gate`（1） | 8.12 / 13.2 | 自行 stage `target/Frameworks` 的 vendored dylib |
-| `Task gates (core/desktop/frontend)`（3） | 42 个 task gate 分片 | 16.1 在 Rust Linux；1.7 在 governance-static |
+| `Rust (<platform> <shard>)`（5） | fmt / clippy / 分片测试 | Linux `workspace`；macOS/Windows 各 `core` + `desktop`；PR 只跳过两个 `desktop` 分片。三平台 fmt 只在这里跑一次 |
+| `Frontend (Linux)`（1） | format / lint / typecheck / test / build | 单腿：五项检查都是 jsdom + Node 工具链，57 个测试文件无一读取 `process.platform`；macOS/Windows 的前端**构建**覆盖由 Rust 分片的 Tauri 上下文构建保留 |
+| `macOS native Gate`（1） | 8.12 / 13.2 | 自行 stage `target/Frameworks` 的 vendored dylib；13.2 不再裸跑 `player_smoke`（8.12 是唯一权威的真实 libmpv 运行） |
+| `Task gates (core/desktop/frontend)`（3） | 42 个 task gate 分片 + `pnpm verify:perf` | 16.1 在 Rust Linux；1.7 在 governance-static；三条性能场景并入 `core` 分片（该 job `save-if: false`，`--release` 产物不落缓存） |
 | `Governance static gates`（1） | purity / registry / static / coverage / 依赖审计 | 依赖审计在线半仅在 main 与定时任务执行 |
 | `Dependency audit`（独立 workflow，定时） | 1.7 在线半 | 每日 03:00 UTC + 手动触发 |
-| `Injection proof 1/3`–`3/3`（3） | 注入证明分片 | 显式分片计划；shard 1 额外构建壳 |
+| `Injection proof 1/3`–`3/3`（3） | 注入证明分片 | 显式分片计划；shard 1 额外构建壳；前端构建只在 shard 1、2 执行（shard 3 无读者） |
+| `Release gate`（1） | 13.9 自动化场景 + PRD 矩阵 | `--skip-static --delegated=governance,perf` |
 
 缓存只有 6 个写者 key，且只在 main 写入；其余 job 只恢复不写入。
+
+`task-1.5` 反向锁定本节的结构：把 `cargo fmt` 加回 `rust-desktop`、给前端矩阵补回 macOS/Windows 腿、
+让注入 shard 3 构建前端、把 `pnpm verify:perf` 挪出 `task-gates`、或把裸跑 `player_smoke` 加回
+`task-13.2`，都必须让结构门禁失败。这五项删除降低配额占用与失败面，但**不在关键路径上**：
+热态关键路径仍是 Release gate（约 11m24s），下一个约 180s 的杠杆是 `task-9.1` 与 `task-13.8`
+在 release gate 内做的按包 cargo 调用。

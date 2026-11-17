@@ -1,11 +1,13 @@
 #!/usr/bin/env node
-// Task 1.5 check: three-platform CI matrix declares the Rust fmt/clippy/test and
-// the frontend format/lint/typecheck/test/build quality commands.
+// Task 1.5 check: the three-platform Rust CI matrix declares fmt/clippy/test and
+// the single-leg frontend matrix declares the format/lint/typecheck/test/build
+// quality commands.
 //
 // Fails (nonzero) unless `.github/workflows/ci.yml` structurally contains the
-// three platform/runner pairs, platform-based names, the `rust` job steps (fmt,
-// clippy `-D warnings`, test) and the `frontend` job steps (`pnpm install
-// --frozen-lockfile`, format/lint/typecheck/test/build).
+// three Rust platform/runner pairs, the Linux frontend leg, platform-based
+// names, the `rust` job steps (fmt, clippy `-D warnings`, test) and the
+// `frontend` job steps (`pnpm install --frozen-lockfile`,
+// format/lint/typecheck/test/build).
 //
 // The commands themselves run in the Rust/frontend CI matrices and, locally, in
 // the governance gate's `quality-core` segment. This check deliberately does not
@@ -90,9 +92,14 @@ try {
   };
   assertShardMatrix(matrixEntries(workflow, "rust-desktop", "ci.yml"), RUST_DESKTOP_MATRIX, "ci.yml rust-desktop");
   assertPlatformName(workflow.jobs["rust-desktop"].name, "Rust desktop (${{ matrix.platform }})", "ci.yml rust-desktop name");
+  // The frontend checks are jsdom + Node toolchain work and no test file reads
+  // process.platform, so a single Linux leg covers them; macOS/Windows frontend
+  // *build* coverage stays with the Tauri-context builds in rust/rust-desktop.
+  // The platform map is pinned one-entry-exactly: re-adding a macOS or Windows
+  // leg must fail here rather than silently re-spend the quota.
   assertPlatformMatrix(
     matrixEntries(workflow, "frontend", "ci.yml"),
-    { Linux: { os: "ubuntu-latest" }, macOS: { os: "xcode-27" }, Windows: { os: "windows-latest" } },
+    { Linux: { os: "ubuntu-latest" } },
     "ci.yml frontend",
   );
   assertPlatformName(workflow.jobs.frontend.name, "Frontend (${{ matrix.platform }})", "ci.yml frontend name");
@@ -272,7 +279,7 @@ const positions = RUST_ORDER.map((name) => rustSteps.indexOf(name));
 if (!positions.every((v, i) => v >= 0 && (i === 0 || v > positions[i - 1]))) {
   fail(`rust step order must be ${RUST_ORDER.join(" < ")}`);
 }
-const DESKTOP_ORDER = ["Format check", "Test"];
+const DESKTOP_ORDER = ["Test"];
 const desktopSteps = workflow.jobs["rust-desktop"].steps.map((s) => s.name).filter(Boolean);
 const desktopPositions = DESKTOP_ORDER.map((name) => desktopSteps.indexOf(name));
 if (!desktopPositions.every((v, i) => v >= 0 && (i === 0 || v > desktopPositions[i - 1]))) {
@@ -366,8 +373,65 @@ if (nativeGate.run !== "pnpm verify:task -- 8.12 13.2") {
 }
 if (String(nativeGate.if || "").trim() !== "") fail("macos-native-gate must not be conditionally skipped");
 
-const perf = step(workflow, "perf", "Run performance scenarios");
-if (perf.run !== "pnpm verify:perf") fail("perf run must be 'pnpm verify:perf'");
+// The three performance scenarios used to occupy their own job while sharing
+// this shard's toolchain and `linux-workspace` cache. They now run as a step in
+// task-gates' core shard. Both halves are pinned: the step must exist with the
+// exact run, and its `if` must keep it on every event (the core shard is in
+// every matrix expansion), so a PR cannot lose the perf gate. The shard's cache
+// step must stay read-only so the `--release` artifacts are never saved into a
+// key the Rust shards restore.
+const perfStep = step(workflow, "task-gates", "Run performance scenarios");
+if (perfStep.run !== "pnpm verify:perf") fail("task-gates performance step run must be 'pnpm verify:perf'");
+assertIfIncludes(perfStep, "matrix.shard == 'core'", "task-gates performance step");
+if (workflow.jobs.perf) fail("ci.yml job 'perf' must not exist (folded into task-gates core)");
+const taskGatesCache = step(workflow, "task-gates", "Cache Rust build artifacts");
+if (String(taskGatesCache.with?.["save-if"] ?? "") !== "false") {
+  fail("task-gates cache step must keep save-if: false so --release perf artifacts are never saved");
+}
+
+// ---------------------------------------------------------------------------
+// Duplicate-execution reverse locks. Every deletion in this change is pinned
+// here, so re-adding the duplicate fails instead of quietly re-spending quota.
+// Only platform-independent commands are pinned this way: a command that
+// genuinely differs per platform (or per job's downstream steps) is not a
+// duplicate, and a blanket scan would flag the frontend builds that each job
+// needs for its own Tauri context.
+// ---------------------------------------------------------------------------
+function jobsRunning(command) {
+  return Object.entries(workflow.jobs)
+    .filter(([, job]) => (job.steps || []).some((s) => String(s.run || "").trim() === command))
+    .map(([jobId]) => jobId);
+}
+
+// `cargo fmt --all -- --check` is platform-independent, and the rust job runs it
+// on Linux, macOS and Windows already. A copy in rust-desktop re-ran the same
+// bytes on the same two platforms (it carried one until this change).
+{
+  const jobs = jobsRunning("cargo fmt --all -- --check");
+  if (JSON.stringify(jobs) !== JSON.stringify(["rust"])) {
+    fail(`'cargo fmt --all -- --check' must run in exactly ['rust'] (it covers all three platforms), got [${jobs.join(", ")}]`);
+  }
+}
+// The perf gate has exactly one execution location now.
+{
+  const jobs = jobsRunning("pnpm verify:perf");
+  if (JSON.stringify(jobs) !== JSON.stringify(["task-gates"])) {
+    fail(`'pnpm verify:perf' must run in exactly ['task-gates'], got [${jobs.join(", ")}]`);
+  }
+}
+// task-8.12 is the authoritative real-libmpv run: it stages the dylibs and fails
+// on the skip branch. A bare player_smoke run elsewhere cannot find the rpath
+// deps, silently skips, and yet reads as coverage (task-13.2 did exactly that).
+{
+  const t132 = readFileSync(resolve(ROOT, "scripts", "verify", "checks", "task-13.2.mjs"), "utf8");
+  if (/"--test",\s*"player_smoke"/.test(t132)) {
+    fail("task-13.2 must not run player_smoke bare (task-8.12 is the authoritative real-libmpv run)");
+  }
+  const t812 = readFileSync(resolve(ROOT, "scripts", "verify", "checks", "task-8.12.mjs"), "utf8");
+  for (const needle of ["DYLD_LIBRARY_PATH", "skipping real playback smoke"]) {
+    if (!t812.includes(needle)) fail(`task-8.12 must keep '${needle}' (it is the only real-libmpv guard)`);
+  }
+}
 
 const injection = workflow.jobs["injection-proofs"];
 if (JSON.stringify(injection?.strategy?.matrix?.shard) !== JSON.stringify([1, 2, 3])) {
@@ -375,6 +439,11 @@ if (JSON.stringify(injection?.strategy?.matrix?.shard) !== JSON.stringify([1, 2,
 }
 const shardStep = step(workflow, "injection-proofs", "Prove each governance gate");
 assertRunIncludes(shardStep, "--shard=${{ matrix.shard }}/3", "injection shard step");
+// Shard 1 needs dist for the embedded-frontend comparison; shard 2 needs it
+// because task-9.1's `cargo check -p echo-app` fails without it. Shard 3 builds
+// nothing that reads dist, so it must skip the build.
+const bundleStep = step(workflow, "injection-proofs", "Build the frontend bundle the desktop shell embeds");
+assertIfIncludes(bundleStep, "matrix.shard != 3", "injection frontend build step");
 const shellStep = step(workflow, "injection-proofs", "Build the shell binary checked by embedded-frontend proof");
 assertIfIncludes(shellStep, "matrix.shard == 1", "shell build step");
 const embeddedStep = step(workflow, "injection-proofs", "Verify embedded frontend freshness");
@@ -384,7 +453,7 @@ if (embeddedStep.run !== "pnpm verify:frontend-fresh") fail("embedded freshness 
 // Every job that carries a required check must run on both PR and main. A
 // job-level `if` or `continue-on-error` would keep the strings above intact
 // while the job itself stops running or stops failing.
-for (const jobId of ["rust", "frontend", "governance-static", "injection-proofs", "release-gate", "perf", "task-gates", "macos-platform-gate", "macos-native-gate", "windows-platform-gate"]) {
+for (const jobId of ["rust", "frontend", "governance-static", "injection-proofs", "release-gate", "task-gates", "macos-platform-gate", "macos-native-gate", "windows-platform-gate"]) {
   assertAlwaysRuns(workflow, jobId);
 }
 
@@ -468,5 +537,5 @@ for (const section of sections) {
 }
 
 process.stdout.write(
-  "ok 1.5: three-platform CI matrix declares the Rust + frontend quality commands (executed by the CI matrices and quality-core); CI structure (tiering, task shards, sections) verified\n",
+  "ok 1.5: three-platform Rust matrix and single-leg frontend matrix declare the quality commands (executed by the CI matrices and quality-core); CI structure (tiering, task shards, sections, duplicate-execution locks) verified\n",
 );

@@ -12,8 +12,9 @@
 //   - a second `AppServices` re-assembly (the "restart") asserting the active
 //     root identity, favorites, playlist, imported-song availability and
 //     no-duplicate-UUID are unchanged.
-// This check runs that suite plus the real-libmpv smoke and the coordinator
-// queue-restore tests, and records versions into an evidence file.
+// This check runs that suite plus the coordinator queue-restore tests, and
+// records versions into an evidence file. The real-libmpv smoke lives in
+// task-8.12, which stages the dylibs and fails on the skip branch.
 //
 // On a non-macOS host the check still runs (the driver is host-agnostic); the
 // three-OS smoke actuals are the 13.5 manual matrix. Here we prove the seam.
@@ -42,10 +43,13 @@ function run(command, args, cwd = ROOT) {
 // 1. The native temp-library flow + restart consistency.
 run("cargo", ["test", "-p", "echo-desktop", "--test", "native_e2e", "--all-features"]);
 
-// 2. Play session restore (won't auto-play) + real libmpv smoke: the same
-//    primitives the flow's play step relies on.
+// 2. Play session restore (won't auto-play). The real-libmpv smoke is NOT run
+//    here: a bare `cargo test --test player_smoke` cannot find the vendored
+//    dylibs, silently takes the skip branch, and would let this report claim
+//    "real libmpv" without exercising it. task-8.12 runs the same suite with
+//    DYLD_LIBRARY_PATH set and fails on the skip branch, so it is the one
+//    authoritative copy.
 run("cargo", ["test", "-p", "echo-desktop", "--all-features", "player::coordinator::tests::"]);
-run("cargo", ["test", "-p", "echo-desktop", "--all-features", "--test", "player_smoke"]);
 
 // 3. Evidence: versions + what ran.
 mkdirSync(ARTIFACTS, { recursive: true });
@@ -71,7 +75,8 @@ const lines = [
   "  - active root identity is stable across the restart",
   "  - no duplicate UUID after restart",
   "",
-  "Suites run: echo-desktop native_e2e (1) · coordinator (player queue/session) · player_smoke (real libmpv)",
+  "Suites run: echo-desktop native_e2e (1) · coordinator (player queue/session)",
+  "  (real-libmpv player_smoke is proven by task-8.12, which sets DYLD_LIBRARY_PATH and fails on its skip branch)",
   "",
   "Note: three-platform data/UUID/queue/preference consistency actuals are the",
   "13.5 manual matrix; this host (macOS) runs the seam automatically.",

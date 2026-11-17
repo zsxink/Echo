@@ -478,9 +478,9 @@ cargo test -p echo-core    --all-features -- --list > /tmp/core.txt
   release gate 以 `--delegated=governance,perf` 运行时，这两条标记为「由 governance 覆盖」；
   `ci.yml` 中治理的 8 个 section 分在 `governance-static` 与 Rust(Linux) 的 `Rust static gates`。
   `check-scenario-evidence.mjs` 要求 `ci.yml` 确有 `pnpm verify:governance`。
-- 三条性能场景 `SFI-R05-S03`、`LE-R21-S02`、`PM-R13-S05` 声明 `delegatedTo: "perf"`，由独立 `perf`
-  job 的 `pnpm verify:perf` 一次聚合执行（同一个 echo-core 命令）；`check-scenario-evidence.mjs`
-  要求 `ci.yml` 确有 `pnpm verify:perf`。
+- 三条性能场景 `SFI-R05-S03`、`LE-R21-S02`、`PM-R13-S05` 声明 `delegatedTo: "perf"`，由 `task-gates`
+  `core` 分片里的 `pnpm verify:perf` 一次聚合执行（同一个 echo-core 命令；该 job `save-if: false`，
+  `--release` 产物不落缓存）；`check-scenario-evidence.mjs` 要求 `ci.yml` 确有 `pnpm verify:perf`。
 - release gate 入口是
   `node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf`。
   `--skip-static` **只**跳过 reconcile / validate-scenario-commands / gen-scenario-manifests 三步静态预检
