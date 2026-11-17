@@ -11,6 +11,10 @@
 //      shell↔runtime contract is carried by the path type, so handing a URL
 //      string downstream cannot compile.
 //
+// `--static-only` skips (1) and (2): CI runs this check in `governance-static`,
+// where the workspace test already compiles `echo-app` and runs the
+// `open_targets` tests. The static contract in (3) has no other carrier.
+//
 // Note: `task-9.1.mjs` separately guards the FIFO wiring that shares this
 // boundary; this check owns the normalization contract itself. Since #117 both
 // OS open entries deliver one batch, the owner is `deliver_file_opens`.
@@ -35,21 +39,24 @@ function run(cmd, args, what) {
   return result.stdout;
 }
 
-// 1. The shell must compile and stay clippy-clean.
-run("cargo", ["check", "-p", "echo-app", "--locked"], "echo-app compiles");
-// 2. Behavior: the conversion semantics of the single owner.
-const testOut = run(
-  "cargo",
-  ["test", "-p", "echo-app", "--locked", "open_targets"],
-  "echo-app open_targets tests",
-);
-for (const name of [
-  "decodes_percent_encoding_and_keeps_order",
-  "drops_non_file_schemes",
-  "mixed_input_keeps_only_file_targets_in_order",
-]) {
-  if (!testOut.includes(`test open_targets::tests::${name} ... ok`)) {
-    fail(`open_targets test not green: ${name}`);
+const staticOnly = process.argv.includes("--static-only");
+if (!staticOnly) {
+  // 1. The shell must compile and stay clippy-clean.
+  run("cargo", ["check", "-p", "echo-app", "--locked", "--all-features"], "echo-app compiles");
+  // 2. Behavior: the conversion semantics of the single owner.
+  const testOut = run(
+    "cargo",
+    ["test", "-p", "echo-app", "--locked", "--all-features", "open_targets"],
+    "echo-app open_targets tests",
+  );
+  for (const name of [
+    "decodes_percent_encoding_and_keeps_order",
+    "drops_non_file_schemes",
+    "mixed_input_keeps_only_file_targets_in_order",
+  ]) {
+    if (!testOut.includes(`test open_targets::tests::${name} ... ok`)) {
+      fail(`open_targets test not green: ${name}`);
+    }
   }
 }
 

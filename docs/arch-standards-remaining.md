@@ -20,12 +20,12 @@
 | 前端 lint | **0 error / 0 warning** | `pnpm --dir apps/desktop lint` |
 | 前端 format / typecheck | 全过 | `pnpm --dir apps/desktop format:check` / `typecheck` |
 | 规模豁免 | **7 文件 / 4 trait**（棘轮，只能减） | `node scripts/verify/check-scale.mjs` |
-| 场景对账 | **spec 523 = trace 523 = manifest 523** | `node scripts/verify/reconcile-scenarios.mjs` |
-| 场景证据覆盖 | **523 场景 / 541 证据条**（下限只增） | `node scripts/verify/check-scenario-evidence.mjs` |
-| 已登记检查数 | **97** | `node scripts/verify/check-verification-validity.mjs` |
-| 注入证明 | **44/44 通过，工作树逐字节还原** | `ECHO_INJECTION_REQUIRE_ALL=1 node scripts/verify/injection-suite.mjs` |
+| 场景对账 | **spec 621 = trace 621 = manifest 621** | `node scripts/verify/reconcile-scenarios.mjs` |
+| 场景证据覆盖 | **621 场景 / 662 证据条**（下限 523/541，只增） | `node scripts/verify/check-scenario-evidence.mjs` |
+| 已登记检查数 | **96** | `node scripts/verify/check-verification-validity.mjs` |
+| 注入证明 | **64/64 通过，工作树逐字节还原**（本地命令，不在 PR 上跑） | `ECHO_INJECTION_REQUIRE_ALL=1 node scripts/verify/injection-suite.mjs` |
 | 验证器自检 | **10 条断言全过** | `pnpm verify:self-test` |
-| manifest 任务数 | **141**（任务）/ 523（场景） | `node -e '…manifest.json…'` |
+| manifest 任务数 | **140**（其中 46 条 `archived`）/ 621（场景） | `node -e '…manifest.json…'` |
 
 ---
 
@@ -42,13 +42,14 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # 治理门禁（聚合入口；CI 按 section 拆到 governance-static 与 Rust(Linux)）
 pnpm verify:governance
-pnpm verify:governance -- --list-sections                     # 8 个 section 的权威列表
-pnpm verify:governance -- --sections=registry,static,coverage # CI: governance-static
-pnpm verify:governance -- --sections=rust-static,purity       # CI: Rust(Linux) 的 Rust static gates
+pnpm verify:governance -- --list-sections                     # 7 个 section 的权威列表
+pnpm verify:governance -- --sections=registry,static          # CI: governance-static（PR + main）
+pnpm verify:governance -- --sections=coverage                 # CI: governance-static 的 main-only 步骤
+pnpm verify:governance -- --sections=rust-static              # CI: Rust(Linux) 的 Rust static gates
 
-# 注入证明（44 条；CI 分 2 片，本地可整跑或按片跑）
+# 注入证明（64 条；本地命令，CI 不再为它开 job）
 ECHO_INJECTION_REQUIRE_ALL=1 node scripts/verify/injection-suite.mjs
-node scripts/verify/injection-suite.mjs --shard=1/2
+node scripts/verify/injection-suite.mjs --shard=1/3
 
 # 构建纯净性（含产物级证明，会真跑一次 cargo check）
 ECHO_PURITY_REQUIRE_BUILD=1 node scripts/verify/check-build-purity.mjs
@@ -174,12 +175,13 @@ node scripts/verify/checks/task-5.mjs 5.2 \
 - **mutate**：改一个仓库文件，跑完还原。每个目标先做内存快照 + 磁盘备份，`finally` 还原，**按哈希校验**，
   并额外逐路径比对前后 git 状态。
 
-**44 条证明全绿**（21 条在本文件内，20 条在 `injection-governance.mjs`，3 条在 `injection-object-kinds.mjs`）；
+**64 条证明全绿**（21 条在 `injection-suite.mjs` 内，40 条在 `injection-governance.mjs`，3 条在
+`injection-object-kinds.mjs`）；
 每条还断言门禁在**未污染的工作树上是通过的**（正向对照），所以"恒红"的门禁混不进来。
 少数无法在任意机器上为绿的门禁（dev 构建的二进制、本就"尚无举证"的真机行）显式标注 `baseline: false`
 并附一个明确的通过用例。
 
-**完整性是机械的，不是文档承诺**：套件自己读 manifest，把 **97** 个已登记检查分两类——
+**完整性是机械的，不是文档承诺**：套件自己读 manifest，把 **96** 个已登记检查分两类——
 **自包含类**（断言在检查内部）：**全部有注入证明**（21 个已登记路径命中 `ENTRIES`），
 新增一个没有证明的会让套件退出 1；
 **委托类**（断言在它调用的子命令里）**76 个**，由结构规则覆盖：`check-verification-validity.mjs` 要求
@@ -211,14 +213,19 @@ node scripts/verify/checks/task-5.mjs 5.2 \
 默认模式即此漂移门）。**改任何场景命令或证据之前先改 registry 再 `--write`。**
 
 **release-gate 的 delegation**：`ci.yml` 的 `release-gate` 以
-`node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf` 运行；`task-13.9.mjs`
-把 `--delegated` 透传给 `run-scenario.mjs`，后者只跳过注册表里**显式声明**了对应 gate 的场景：
-`delegatedTo: "governance"`（`LD-R10-S01`、`PHA-R01-S02`，由 governance 的 section 执行）与
-`delegatedTo: "perf"`（`SFI-R05-S03`、`LE-R21-S02`、`PM-R13-S05`，由 `pnpm verify:perf` 执行）。
+`node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf,workspace-test,frontend-test`
+运行；`task-13.9.mjs` 把 `--delegated` 透传给 `run-scenario.mjs`，后者只跳过注册表里**显式声明**了对应
+gate 的场景：`delegatedTo: "governance"`（`LD-R10-S01`、`PHA-R01-S02`，由 governance 的 section 执行）、
+`delegatedTo: "perf"`（`SFI-R05-S03`、`LE-R21-S02`、`PM-R13-S05`，由 `pnpm verify:perf` 执行），以及
+`delegatedTo: "workspace-test"` / `"frontend-test"`（由 `scenario-commands.mjs` 给 `CORE_ALL` /
+`DESK_ALL` / `APP_ALL` / `VITEST_ALL` 命令批量声明，分别由 Linux `rust` 的 workspace 测试与
+`frontend` 的完整 Vitest 套件执行）。
 没有该声明的一律照常执行；本地不带参数时整门照跑，严格度不变。`--skip-static` 只跳过
 reconcile / validate-scenario-commands / gen-scenario-manifests 三步静态预检（已在 `governance-static`
 执行），自动化场景与 PRD 矩阵照跑。`check-scenario-evidence.mjs` 校验每个被委托的 gate 在 `ci.yml`
-中确有 `pnpm verify:<gate>` 的执行位置。
+中确有对应执行命令：`governance` / `perf` 匹配 `pnpm verify:<gate>`，`workspace-test` 与
+`frontend-test` 则结构解析 `ci.yml`（workspace 命令写作 `cargo test ${{ matrix.packages }} …`，
+`--workspace` 在矩阵里，字面量正则会恒假）。
 
 ---
 
@@ -226,7 +233,7 @@ reconcile / validate-scenario-commands / gen-scenario-manifests 三步静态预�
 
 **8.3 已完成的部分**（阶段 1 分支上实测）：
 - `pnpm verify:self-test` → 10 条断言全过，退出码 0；
-- 三方对账 `spec 523 = trace 523 = manifest 523`，退出码 0；
+- 三方对账 `spec 621 = trace 621 = manifest 621`，退出码 0；
 - `cargo test -p echo-desktop --test player_smoke` 4 条真实 libmpv 冒烟全过（单条复跑亦为绿）。
 
 **8.3 未完成的部分**：`node scripts/verify/run-scenario.mjs --all` 仍非全绿，红的两类性质完全不同：
@@ -298,7 +305,7 @@ attestation 场景里（如 `DP-R02-S05` 连续下一首播放、`DP-R04-S04` �
 ## 7. 门禁全集（14.1–14.9，都已接电）
 
 登记在 `scripts/verify/manifest.json`，接入 `pnpm verify:governance`（`scripts/verify/ci-governance.mjs`）；
-CI 中按 8 个 section 分散到 `governance-static` 与 Rust(Linux) 的 `Rust static gates`（见 §10.1）：
+CI 中按 7 个 section 分散到 `governance-static`、Rust(Linux) 与 macOS platform Gate（见 §10.1）：
 
 | 任务 | 脚本 | 它证明什么 |
 |---|---|---|
@@ -309,17 +316,17 @@ CI 中按 8 个 section 分散到 `governance-static` 与 Rust(Linux) 的 `Rust 
 | 14.5 | `check-verification-validity.mjs` | 失败路径 + 观测点；**调用子进程必须比较退出码** |
 | 14.6 | `check-build-purity.mjs` | 测试专用模块 cfg 门控 + 默认构建的 `.d` 里不出现 |
 | 14.7 | `check-scenario-evidence.mjs` | 场景证据非空且目标可解析；「523 场景 / 541 证据条」下限只增不减 |
-| 14.8 | `injection-suite.mjs` | **44** 条"注入违规即失败"证明 + 自包含检查必须带证明 |
+| 14.8 | `injection-suite.mjs` | **64** 条"注入违规即失败"证明 + 自包含检查必须带证明；**本地命令**，不再占用 PR job |
 | 14.9 | `checks/check-embedded-frontend.mjs` | 二进制里嵌的是当前 `dist`（此前只有手工入口） |
 
 另有 `task-1.6`（fixture 确定性 + 许可清单）在 issue #110 阶段 0 后接入 governance 门禁
 （它此前登记在 manifest 却**没接任何 CI job、也没接任何场景**，可以连续红几个月没人知道）。
 
-嵌入前端证明（14.9）的注入证明在 `injection-proofs` 的 shard 1：该 job 先 `pnpm --dir apps/desktop build`
-与 `cargo build -p echo-app`，再跑 `pnpm verify:frontend-fresh`，最后跑
-`injection-suite.mjs --shard=1/2`。`ci-governance.mjs` 与 `injection-suite.mjs` 在 CI 中都设
-`ECHO_INJECTION_REQUIRE_ALL=1`，把「环境不满足」的 skip 变成失败（与 `check-build-purity.mjs`
-的 `ECHO_PURITY_REQUIRE_BUILD=1` 同一契约）。
+嵌入前端证明（14.9）的正向检查在 `macOS platform Gate`：该 job 的 `tauri build` 已产出 bundle 与
+`apps/desktop/dist`，随后运行 `check-embedded-frontend.mjs --bin …/Echo.app/Contents/MacOS/Echo`。
+它的注入证明（`embedded-frontend/stale-binary`）随整个 proof 套件留在本地命令里；
+`injection-suite.mjs` 在本地以 `ECHO_INJECTION_REQUIRE_ALL=1` 运行时把「环境不满足」的 skip 变成失败
+（与 `check-build-purity.mjs` 的 `ECHO_PURITY_REQUIRE_BUILD=1` 同一契约）。
 
 **教训值得重复一遍**：14.1–14.5 这些检查在本段之前**已经存在，但不在 `manifest.json` 里**，
 所以从来没人执行过；本轮又发现两个同类——`pnpm --dir apps/desktop format:check` 早已红灯
@@ -378,65 +385,146 @@ CI 中按 8 个 section 分散到 `governance-static` 与 Rust(Linux) 的 `Rust 
 
 ---
 
-## 10. CI 拓扑、分片与委托（2026-11-02，issue #124）
+## 10. CI 拓扑与分片（历史 2026-11-02 → 现行见 §10.1–§10.4 与 §11）
 
-PR CI 从约 21 分钟压到 10 分钟以内的改造后，`ci.yml` 共有 **18 个 job 实例**：
+> 下表是 2026-11-02（issue #124）的拓扑，仅作历史记录，**不要照着它数实例**。
+> 现行拓扑见 §11；现行的 section / task / 注入分片规则见 §10.1–§10.4。
 
-| job（实例数） | 职责 | 关键点 |
-|---|---|---|
-| `Rust (Linux/macOS/Windows)`（3） | fmt / clippy / 全 workspace 测试 | PR 只有 Linux 跑完整 `Test`；Windows/macOS 的完整测试在 main 上跑 |
-| `Rust (Linux)` 追加步骤 | `Rust static gates`、`Task 16.1`、`Task 9.7 9.8` | 复用同一份构建；原 `linux-platform-gate` 已删除 |
-| `Frontend (Linux/macOS/Windows)`（3） | format / lint / typecheck / test / build | PR 仍三平台 |
-| `Task gates (core/desktop/frontend-a/frontend-b)`（4） | 42 个 task gate 分片 | 16.1 在 Rust Linux，8.12/13.2 在 Rust macOS，1.7 在 dependency-audit |
-| `Dependency audit`（1） | task 1.7 | cargo-deny / cargo-audit |
-| `macOS platform Gate`（1） | 1.9 / 1.10 / 9.7 | 真实打包与签名校验 |
-| `Windows platform Gate`（1） | 9.7 / 9.8 / 17.1 / 18.1 | LFS checkout |
-| `Governance static gates`（1） | registry / static / coverage 三个 section | 不装 webkit、不构建前端 |
-| `Injection proof 1/2`、`2/2`（2） | 44 条注入证明分片 | shard 1 额外构建壳并跑嵌入前端新鲜度 |
-| `Release gate`（1） | 13.9 自动化场景 + PRD 矩阵 | `--skip-static --delegated=governance,perf` |
-| `Perf`（1） | `pnpm verify:perf` 三条性能场景 | 独立 job，与 release gate 并行 |
+PR CI 从约 21 分钟压到 10 分钟以内的改造后，`ci.yml` 曾有 **18 个 job 实例**（Rust 三平台、
+Frontend 三平台、4 个 task 分片、2 个注入分片、独立 Perf 等）。那一版的分层规则是
+`Test` 的 `if` 为 `github.event_name != 'pull_request' || matrix.platform == 'Linux'`，
+关键路径是 `Release gate`（实测 888s）与 `Rust (Linux)`（685s），实测数据见
+`docs/ci-pipeline-review-2026-10-28.md` 的「PR CI 实测（2026-11-02，run 41393026889）」。
+后续两轮压缩（issue #156/#158，以及 #159 的减半）已把该拓扑替换为 §11 的形态。
 
-**PR/main 覆盖分层**：`Test` 的 `if` 是
-`github.event_name != 'pull_request' || matrix.platform == 'Linux'`——PR 只在 Linux 跑完整 workspace
-测试，Windows/macOS 仍跑 fmt、clippy 与各自的平台 Gate，完整测试在 main 上跑。前端矩阵在 PR 上保持三平台。
-
-**关键路径**是 `Release gate`（实测 888s，其中 `task-13.9` 单步 753s）与 `Rust (Linux)`（685s）。
-实测 job 级墙钟见 `docs/ci-pipeline-review-2026-10-28.md` 的「PR CI 实测（2026-11-02，run 41393026889）」。
-
-### 10.1 governance 的 8 个 section 与执行位置
+### 10.1 governance 的 7 个 section 与执行位置
 
 `ci-governance.mjs --list-sections` 是权威列表；`task-1.5` 逐个断言每个 section 在 `ci.yml` 中有执行位置。
 
 | section | 执行位置 |
 |---|---|
-| quality | Rust 三平台的 Format / Clippy / Test |
-| registry | `governance-static`：`--sections=registry,static,coverage` |
+| quality | Rust(Linux) 的 Format / Clippy / Test（macOS/Windows 在 main 的 `rust-desktop`） |
+| registry | `governance-static`：`--sections=registry,static` |
 | static | 同上 |
-| coverage | 同上 |
-| rust-static | Rust(Linux) 的 `Rust static gates`：`--sections=rust-static,purity` |
-| purity | 同上（`ECHO_PURITY_REQUIRE_BUILD=1`） |
-| embedded | `Injection proof 1/2`：`pnpm verify:frontend-fresh`（需先构建 dist 与 `echo-app`） |
-| injection | `Injection proof 1/2`、`2/2`：`injection-suite.mjs --shard=<i>/2` |
+| coverage | `governance-static` 的 main-only 步骤：`--sections=coverage` |
+| rust-static | Rust(Linux) 的 `Rust static gates`：`--sections=rust-static` |
+| purity | `governance-static` 的 `Run build purity gate`（`ECHO_PURITY_REQUIRE_BUILD=1`） |
+| embedded | `macOS platform Gate`：`check-embedded-frontend.mjs --bin …/Echo.app/Contents/MacOS/Echo` |
 
-### 10.2 task gate 分片
+注入证明不再是一个 section：它只作为本地命令维护，`task-1.5` 断言 `ci.yml` 中没有任何 job 执行它。
 
-42 个 task gate 按依赖与运行时拆成 4 片：core 10、desktop 17、frontend-a 8、frontend-b 7。
-16.1（需要 Tauri 壳）放在 Rust Linux，与四片合计 **42+1**。`task-1.5` 断言四片并集恰为 42、
-无重复、且不含 16.1。
+### 10.2 task gate 清单
+
+`task-gates` 只剩一个 `core` 分片，运行 4 条没有等价覆盖的 gate：`1.1`、`1.3`、`12.5`、`13.3`。
+`13.1` 在 Frontend job（构建产物 + Chrome），`16.1` 以 `--static-only` 在 governance-static，
+`8.12`/`13.2` 在 macOS native Gate，`1.7` 在 governance-static。其余 37 条旧 gate 在
+`manifest.json` 中标记 `archived: true`，`archivedReason` 写明承载 gate（workspace test / Frontend
+job / platform Gate）；`run-task --all` 跳过它们，单独点名仍可运行。`task-1.5` 断言分片恰为这 4 条，
+并校验每条归档理由指向的承载 gate 在 `ci.yml` 中真实存在。
 
 ### 10.3 注入证明分片
 
-`injection-suite.mjs --shard=<i>/n` 由 `injection-shard.mjs` 的 `selectEntries` 计算：条目按位置轮转
-（`position % n + 1`），条目也可用显式 `shard: <k>` 钉住——`embedded-frontend/stale-binary` 钉在
-shard 1，因为它需要壳二进制与 dist。每次调用都校验并集等于全集、各片互斥且非空、索引在范围内；
-`--only` 与 `--shard` 可组合，分片作用在过滤后的子集上。CI 固定 `n=2`。
+`injection-suite.mjs --shard=<i>/n` 由 `injection-shard-plan.mjs` 的 `ENTRY_SHARDS` 显式分配：条目
+按测得成本分片，`embedded-frontend/stale-binary` 钉在 shard 1，因为它需要壳二进制与 dist。每次调用
+都校验并集等于全集、各片互斥且非空、索引在范围内；`--only` 与 `--shard` 可组合，分片作用在过滤后
+的子集上。CI 不再调用它（`n=3` 仅用于本地并行）。
 
 ### 10.4 release gate 的三个契约
 
 - `pnpm verify:perf` 聚合执行 `SFI-R05-S03`、`LE-R21-S02`、`PM-R13-S05` 三条性能场景
   （注册表 `delegatedTo: "perf"`）。
-- `task-13.9.mjs --delegated=governance,perf`：把注册表中显式声明给这两个 gate 的场景标为
-  「由对应 job 覆盖」，而不是静默跳过；`check-scenario-evidence.mjs` 要求 `ci.yml` 里确有
-  `pnpm verify:governance` 与 `pnpm verify:perf`。
+- `task-13.9.mjs --delegated=governance,perf,workspace-test,frontend-test`：把注册表中显式声明给这四个
+  gate 的场景标为「由对应 job 覆盖」，而不是静默跳过；`check-scenario-evidence.mjs` 要求 `ci.yml` 里
+  确有 `pnpm verify:governance`、`pnpm verify:perf`、Linux `rust` 的 workspace 测试与 `frontend` 的
+  完整 Vitest 套件。
 - `--skip-static` 只跳过 reconcile / validate-scenario-commands / gen-scenario-manifests 的静态预检
   （已在 `governance-static` 执行）；自动化场景与 PRD A1–A14 矩阵照跑。不要把它当成「跳过场景」。
+
+## 11. CI 拓扑（2026-11-17，issue #156 / #158 / #159）
+
+| job（实例数） | 职责 | 关键点 |
+|---|---|---|
+| `Rust (Linux workspace)`（1） | fmt / clippy / 全量 workspace 测试 / rust-static | 唯一的 PR Rust 实例；`cargo test --workspace` 是该 job 最后一次构建型 cargo 调用（缓存形态） |
+| `Rust desktop (macOS/Windows)`（2，仅 main） | fmt / clippy / 全量 workspace 测试 | main-only；`--workspace` 包集，是 macOS/Windows fmt/clippy 的唯一承载者 |
+| `Frontend (Linux)`（1） | format / lint / typecheck / 全量 Vitest / build / 13.1 headless E2E | 单腿；13.1 用 `--no-build`，复用前一步 `Build` 的 dist |
+| `macOS native Gate`（1） | 8.12 / 13.2 | 自行 stage `target/Frameworks` 的 vendored dylib；13.2 不再裸跑 `player_smoke` |
+| `macOS platform Gate`（1） | 1.9 / 1.10 / 9.7 + embedded-frontend 新鲜度 | 用 `tauri build` 产出的 bundle 二进制做嵌入检查，不额外编译 |
+| `Windows platform Gate`（1） | 9.7 / 9.8 / 17.1 / 18.1 | vendored libmpv 由 LFS 提供 |
+| `Task gates (core)`（1） | 4 个独有 gate + `pnpm verify:perf` | `save-if: false`，`--release` 产物不落缓存 |
+| `Governance static gates`（1） | purity / registry / static / 16.1 静态契约 / 依赖审计；main 上另跑 coverage | coverage 与其工具安装在 PR 上跳过 |
+| `Dependency audit`（独立 workflow，定时） | 1.7 在线半 | 每日 03:00 UTC + 手动触发 |
+| `Release gate`（1） | 13.9 自动化场景 + PRD 矩阵 | `--skip-static --delegated=governance,perf,workspace-test,frontend-test` |
+
+缓存只有 4 个写者 key（`linux-workspace`、`macos-desktop`、`windows-desktop`、`governance-static`），
+且只在 main 写入；其余 job 只恢复不写入。
+
+注入证明套件不再是 CI job：`node scripts/verify/injection-suite.mjs` 作为本地命令保留，
+`task-1.5` 断言 `ci.yml` 中没有任何 job 执行它。
+
+`task-1.5` 反向锁定本节的结构：给 Rust 矩阵加回 macOS/Windows 分片、把 coverage 改成无条件执行、
+让 `rust-desktop` 丢掉 fmt/clippy、把 `pnpm verify:perf` 挪出 `task-gates`、给 `paths-ignore`
+加一个门禁输入、或把注入套件加回某个 job，都必须让结构门禁失败。
+
+**`paths-ignore` 的真实边界**（2026-11-17 实测）：`paths-ignore` 只在**新建 PR** 时决定是否触发；
+PR 一旦存在，后续每次 push 都按整个 PR 的 diff 重新判定，所以往已开 PR 上推纯文档提交**仍会跑全量**
+（commit `9d597894` 只改 `docs/arch-standards-remaining.md`，照样起了 8 个实例）。它省的是「只改文档的独立
+PR」，不是「PR 里的文档提交」；后者只能靠合并前压提交来省。归档的 37 条 task 也不再需要
+逐条执行，`task-1.5` 会校验每条归档理由指向的承载 gate 真实存在。
+
+`macOS native Gate` **由红转绿**（删除 13.2 裸跑 `player_smoke`）。注意它的**墙钟没有可测量的收益**：
+五次 run 分别为 334s / 264s（旧）、196s / 326s / 257s（新），196s 是方差低点。删除的收益是去掉一条既有红，
+不是省时间。**同理，本页任何单次 run 的秒数都不能当作「省了多少」的证据** —— 同一份代码三次冷 run
+的墙钟极差 402s（38%），总 runner-秒极差 1226s（17%）。
+
+### 11.1 新拓扑的第一次实测（2026-11-17，run `44056150689`）
+
+8 个实例全部 success，**3440 runner-秒 / 15m58s 墙钟**，缓存库为空（`active_caches_count: 0`，
+8 个 job 全部 `No cache found`），与旧 run 同条件。
+
+| job | 旧 `44041257877` | 新 `44056150689` | Δ |
+|---|---|---|---|
+| `Rust (Linux workspace)` | 533s | 670s | +137s |
+| `Frontend (Linux)` | 57s | 96s | +39s（+`13.1` 27s） |
+| `Task gates (core)` | 683s | 466s | −217s |
+| `macOS platform Gate` | 463s | 511s | +48s |
+| `macOS native Gate` | 257s | 285s | +28s |
+| `Windows platform Gate` | 381s | 305s | −76s |
+| `Governance static gates` | 463s | 170s | −293s（coverage 移出） |
+| `Release gate` | 1033s | **937s** | −96s |
+| 三个 injection 分片 | 1338s | — | −1338s |
+| `Task gates (desktop)` + `(frontend)` | 790s | — | −790s |
+| `Rust (macOS core)` + `(Windows core)` | 466s | — | −466s |
+| **合计** | **6464s / 15 实例** | **3440s / 8 实例** | **−3024s（−46.8%）** |
+
+相对本 change 引用的 7233s 基线是 −52.4%；相对最低的冷 run 6464s 是 −46.8%。两次旧 run 相差 769s，
+「精确 50%」不可证，能确定的是实例数 15→8 与上表逐 job 实测。
+
+**删掉的墙钟不等于省下的墙钟：被删的编译型步骤本身也在预热 `target/`。**
+
+| 删除项 | 名义墙钟 | 实际净省 | 机制 |
+|---|---|---|---|
+| `Task 16.1`（Rust Linux） | 203s | **77s** | 它是该 job 第一个 `cargo check`；删后 Clippy+Test 从 265s 涨到 594s（+126s） |
+| workspace test + 完整 Vitest（Release gate） | 432s | **137s** | 同样暖机；保留的按包 cargo 从约 500s 涨到约 795s（+295s） |
+| Injection proofs ×3 | 1338s | 1338s | 元测试，无下游编译依赖 |
+| Task gates desktop + frontend 分片 | 790s | 790s | 纯重复执行，整实例移除 |
+| Rust macOS/Windows core 分片 | 466s | 466s | PR 不再启动这两个实例 |
+| coverage（governance） | 290s | 290s | 移到 main-only |
+
+所以「删重复执行 / 删元测试」是一比一收益；「删编译步骤」只有整实例移除时才算全额，留在同一 job 内
+只是把编译搬到了后面第一个真正编译的命令里。**改 CI 前先判断要删的步骤是不是该 job 的第一个编译动作。**
+
+**关键路径 937s（`Release gate`），未达 design.md 的 ≤600s 目标。** 第二轮改造（design.md 迁移步骤 4
+已预先授权，不改 spec）在本分支实施：`task-9.1` / `11.7` / `11.8` / `12.4` / `12.7` / `13.8` 增加
+`--static-only`，release gate 只跑各自的静态契约（结构守卫、WCAG 对比度与 reduced-motion、迁移与命令面、
+快捷键映射、导入 wiring），cargo/typecheck/Vitest 半由 `workspace-test` / `frontend-test` 承载；
+`DP-R07-S02` / `DP-R01-S01` / `SFI-R12-S01` 显式 `delegatedTo: workspace-test`（player_smoke 四例与
+import 契约均由 workspace suite 承载）；文件投放组合的整包 `cargo test` 收窄到各自的测试名过滤。
+本地暖缓存下 release gate 场景执行 8s（24 批 / 561 场景 / 497 委托）；CI 冷缓存仍要付一次
+`echo-core` / `echo-desktop` 测试编译（由第一个 cargo 命令吸收），预计 `Release gate` 降到约 450–550s。
+届时关键路径变成 `Rust (Linux workspace)`（670s，其中 `Test` 469s），10 分钟墙钟目标仍达不到。
+
+**合并后需复核的悬项**：旧拓扑的热态数据里 core 会逼近 Release gate（`42847291259` 667s vs 684s；
+`42779096853` 681s vs 785s），但旧拓扑的 release-gate 有专属缓存键，本分支改为共享 `linux-workspace`，
+新拓扑的热态数字尚不存在。合并后若观测到 `Task gates (core)` ≥ `Release gate`，应把 perf 拆回独立 job
+（其余四项保留），并另开 perf 段缓存的 issue。
+

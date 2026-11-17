@@ -12,7 +12,6 @@
 const CORE_ALL = "cargo test -p echo-core --all-features";
 const DESK_ALL = "cargo test -p echo-desktop --all-features";
 const APP_ALL = "cargo test -p echo-app --all-features";
-const PLAYER_ALL = "cargo test -p echo-desktop --all-features --test player_smoke";
 const PERF_ALL =
   "cargo test -p echo-desktop --all-features --release --test local_edit_performance -- --ignored --nocapture";
 const VITEST_ALL = "pnpm --filter @echo/desktop test -- --run --reporter=verbose";
@@ -93,8 +92,8 @@ export const SCENARIOS = {
 "LL-R07-S02": { command: CORE_ALL, evidence: [rust("trash::tests::external_staging_cleanup_becomes_unknown_and_preserves_relationships")], },
 "LL-R07-S03": { command: CORE_ALL, evidence: [rust("application::scan::tests::pipeline::external_deletion_is_missing_not_pending_delete_and_keeps_relationships")], },
 "LL-R07-S04": { command: CORE_ALL, evidence: [rust("application::scan::tests::pipeline::external_missing_recovers_on_original_path_restoring_everything")], },
-"LL-R08-S01": { command: "node scripts/verify/checks/task-12.7.mjs", evidence: [node("scripts/verify/checks/task-12.7.mjs")], },
-"LL-R08-S02": { command: "node scripts/verify/checks/task-12.6.mjs", evidence: [node("scripts/verify/checks/task-12.6.mjs")], },
+"LL-R08-S01": { command: "node scripts/verify/checks/task-12.7.mjs --static-only", evidence: [node("scripts/verify/checks/task-12.7.mjs")], },
+"LL-R08-S02": { command: "node scripts/verify/checks/task-12.6.mjs --static-only", evidence: [node("scripts/verify/checks/task-12.6.mjs")], },
 "LL-R08-S03": { command: CORE_ALL, evidence: [rust("permission")], },
 "LL-R09-S01": { command: CORE_ALL, evidence: [rust("revision_and_added_at_survive_rescans")], },
 "LL-R09-S02": { command: CORE_ALL, evidence: [rust("revision_and_added_at_survive_rescans")], },
@@ -167,18 +166,18 @@ export const SCENARIOS = {
 "SFI-R05-S08": { command: CORE_ALL, evidence: [rust("library_durability_memory_failed_projection_reserves_the_saved_sequence")], },
 "SFI-R06-S01": { command: CORE_ALL, evidence: [rust("import")], },
 "SFI-R06-S02": { command: CORE_ALL, evidence: [rust("import")], },
-"SFI-R07-S01": { command: "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path", evidence: [node("scripts/verify/checks/task-9.1.mjs"), rust("runtime::services::tests::open_path")], },
-"SFI-R07-S02": { command: "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path", evidence: [node("scripts/verify/checks/task-9.1.mjs"), rust("runtime::services::tests::open_path")], },
-"SFI-R07-S03": { command: "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path", evidence: [node("scripts/verify/checks/task-9.1.mjs"), rust("runtime::services::tests::open_path")], },
+"SFI-R07-S01": { command: "node scripts/verify/checks/task-9.1.mjs --static-only && cargo test -p echo-desktop --all-features runtime::services::tests::open_path", evidence: [node("scripts/verify/checks/task-9.1.mjs"), rust("runtime::services::tests::open_path")], delegatedTo: "workspace-test" },
+"SFI-R07-S02": { command: "node scripts/verify/checks/task-9.1.mjs --static-only && cargo test -p echo-desktop --all-features runtime::services::tests::open_path", evidence: [node("scripts/verify/checks/task-9.1.mjs"), rust("runtime::services::tests::open_path")], delegatedTo: "workspace-test" },
+"SFI-R07-S03": { command: "node scripts/verify/checks/task-9.1.mjs --static-only && cargo test -p echo-desktop --all-features runtime::services::tests::open_path", evidence: [node("scripts/verify/checks/task-9.1.mjs"), rust("runtime::services::tests::open_path")], delegatedTo: "workspace-test" },
 "SFI-R07-S04": { command: CORE_ALL, evidence: [rust("import")], },
 "SFI-R07-S05": { command: CORE_ALL, evidence: [rust("staging")], },
-"SFI-R08-S01": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
-"SFI-R08-S02": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
-"SFI-R09-S01": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
-"SFI-R09-S02": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
-"SFI-R09-S03": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
-"SFI-R09-S04": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
-"SFI-R09-S05": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"SFI-R08-S01": { command: "node scripts/verify/checks/task-9.1.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"SFI-R08-S02": { command: "node scripts/verify/checks/task-9.1.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"SFI-R09-S01": { command: "node scripts/verify/checks/task-9.1.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"SFI-R09-S02": { command: "node scripts/verify/checks/task-9.1.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"SFI-R09-S03": { command: "node scripts/verify/checks/task-9.1.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"SFI-R09-S04": { command: "node scripts/verify/checks/task-9.1.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"SFI-R09-S05": { command: "node scripts/verify/checks/task-9.1.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
 "SFI-R10-S01": { command: CORE_ALL, evidence: [rust("import")], },
 "SFI-R10-S02": { command: CORE_ALL, evidence: [rust("import")], },
 "SFI-R11-S01": { command: CORE_ALL, evidence: [rust("batch_import_lands_under_media_and_keeps_dedup_and_numbering")], },
@@ -186,19 +185,20 @@ export const SCENARIOS = {
 "SFI-R11-S03": { command: VITEST_ALL, evidence: [vitest("src/features/import/importFeedback.test.ts", "reports only real failures in the failure list")], },
 "SFI-R11-S04": { command: VITEST_ALL, evidence: [vitest("src/features/import/ImportBatchDialog.test.tsx")], },
   "SFI-R11-S05": { command: ATTEST("SFI-R11-S05"), evidence: [attest("SFI-R11-S05")] },
-"SFI-R12-S01": { command: "cargo test -p echo-core --all-features import && cargo test -p echo-core --all-features a_wiped_database_is_rebuilt_from_the_records_at_real_scale && cargo test -p echo-desktop --all-features import", evidence: [rust("application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"), rust("application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts"), rust("application::recover::tests::imports::nothing_recoverable_rolls_back_and_releases_cleanly"), rust("batch_import_lands_under_media_and_keeps_dedup_and_numbering"), rust("sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent"), rust("publish_never_overwrites_a_target_created_after_planning"), rust("application::continuation::tests::a_wiped_database_is_rebuilt_from_the_records_at_real_scale"), rust("cancelled_import_dialog_is_a_noop_never_a_success"), rust("import_dialog_is_refused_before_the_write_gate_resolves")], },
+// `import` filters + the real-scale rebuild are all in the workspace suite.
+"SFI-R12-S01": { command: "cargo test -p echo-core --all-features import && cargo test -p echo-core --all-features a_wiped_database_is_rebuilt_from_the_records_at_real_scale && cargo test -p echo-desktop --all-features import", delegatedTo: "workspace-test", evidence: [rust("application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"), rust("application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts"), rust("application::recover::tests::imports::nothing_recoverable_rolls_back_and_releases_cleanly"), rust("batch_import_lands_under_media_and_keeps_dedup_and_numbering"), rust("sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent"), rust("publish_never_overwrites_a_target_created_after_planning"), rust("application::continuation::tests::a_wiped_database_is_rebuilt_from_the_records_at_real_scale"), rust("cancelled_import_dialog_is_a_noop_never_a_success"), rust("import_dialog_is_refused_before_the_write_gate_resolves")], },
 
   // sync-foundation
-"SYN-R01-S01": { command: "node scripts/verify/checks/task-3.10.mjs", evidence: [node("scripts/verify/checks/task-3.10.mjs")], },
+"SYN-R01-S01": { command: "node scripts/verify/checks/task-3.10.mjs --static-only", evidence: [node("scripts/verify/checks/task-3.10.mjs")], },
 "SYN-R01-S02": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::sync_foundation")], },
 "SYN-R02-S01": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::sync_foundation")], },
-"SYN-R02-S02": { command: "node scripts/verify/checks/task-3.14.mjs", evidence: [node("scripts/verify/checks/task-3.14.mjs")], },
+"SYN-R02-S02": { command: "node scripts/verify/checks/task-3.14.mjs --static-only", evidence: [node("scripts/verify/checks/task-3.14.mjs")], },
 "SYN-R02-S03": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::sync_foundation")], },
 "SYN-R03-S01": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::sync_foundation")], },
 "SYN-R04-S01": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::sync_payloads_carry_no_absolute_paths")], },
 "SYN-R05-S01": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::sync_foundation")], },
 "SYN-R05-S02": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::sync_foundation")], },
-"SYN-R05-S03": { command: "node scripts/verify/checks/task-3.10.mjs", evidence: [node("scripts/verify/checks/task-3.10.mjs")], },
+"SYN-R05-S03": { command: "node scripts/verify/checks/task-3.10.mjs --static-only", evidence: [node("scripts/verify/checks/task-3.10.mjs")], },
 "SYN-R06-S01": { command: CORE_ALL, evidence: [rust("crash_during_record_materialization_converges_to_one_record_and_outbox")], },
 "SYN-R06-S02": { command: CORE_ALL, evidence: [rust("library_durability_trusted_sync_retry_restores_exact_baseline_and_pending_without_echo")], },
 "SYN-R06-S03": { command: CORE_ALL, evidence: [rust("library_durability_legacy_write_cannot_transfer_confirmation_to_new_value")], },
@@ -208,7 +208,9 @@ export const SCENARIOS = {
 "SYN-R07-S03": { command: CORE_ALL, evidence: [rust("confirmed_play_stats_buckets_authorize_exactly_their_recorded_counts")], },
 "SYN-R08-S01": { command: CORE_ALL, evidence: [rust("library_durability_playback_later_session_catches_up_and_rebuild_has_no_echo")], },
   // desktop-playback
-"DP-R01-S01": { command: PLAYER_ALL, evidence: [rust("guaranteed_formats_each_load_via_real_libmpv"), rust("a_play_load_after_a_primed_paused_load_really_starts_the_clock"), rust("consecutive_loads_then_clean_exit"), rust("cold_restored_playback_advances_after_natural_eof_with_real_libmpv")], },
+// player_smoke's four tests are part of `--workspace --all-targets`; the same
+// Rust job runs them, so the release gate no longer launches a second mpv.
+"DP-R01-S01": { command: DESK_ALL, delegatedTo: "workspace-test", evidence: [rust("guaranteed_formats_each_load_via_real_libmpv"), rust("a_play_load_after_a_primed_paused_load_really_starts_the_clock"), rust("consecutive_loads_then_clean_exit"), rust("cold_restored_playback_advances_after_natural_eof_with_real_libmpv")], },
 "DP-R01-S02": { command: DESK_ALL, evidence: [rust("a_library_song_resolve_failure_clears_stale_progress_facts"), rust("a_rejected_non_local_load_clears_stale_progress_facts"), rust("player::coordinator::tests::error_skips_bad_entry_and_plays_next_sequential")], },
 "DP-R01-S03": { command: "node scripts/verify/checks/task-9.7.mjs", evidence: [node("scripts/verify/checks/task-9.7.mjs")], },
 "DP-R02-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/QueuePanel.test.tsx")], },
@@ -237,24 +239,28 @@ export const SCENARIOS = {
 "DP-R04-S04": { command: DESK_ALL, evidence: [rust("repeat_one")], },
 "DP-R04-S05": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::mode_switch_keeps_current_item")], },
 "DP-R04-S06": { command: DESK_ALL, evidence: [rust("_through_coordinator")], },
-"DP-R05-S01": { command: "node scripts/verify/checks/task-9.2.mjs", evidence: [node("scripts/verify/checks/task-9.2.mjs")], },
-"DP-R05-S02": { command: "node scripts/verify/checks/task-11.7.mjs", evidence: [node("scripts/verify/checks/task-11.7.mjs")], },
+"DP-R05-S01": { command: "node scripts/verify/checks/task-9.2.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.2.mjs")], },
+"DP-R05-S02": { command: "node scripts/verify/checks/task-11.7.mjs --static-only", evidence: [node("scripts/verify/checks/task-11.7.mjs")], },
 "DP-R05-S03": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::recovered_blocked_entry_becomes_eligible_after_retry")], },
 "DP-R06-S01": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::playback_sessions_are_idempotent")], },
 "DP-R06-S02": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::playback_sessions_are_idempotent")], },
 "DP-R06-S03": { command: DESK_ALL, evidence: [rust("entering_loading_starts_without_stale_progress_facts")], },
 "DP-R06-S04": { command: DESK_ALL, evidence: [rust("file_loaded_still_drives_progress_from_mpv_reports")], },
 "DP-R07-S01": { command: DESK_ALL, evidence: [rust("platform::local_state")], },
-"DP-R07-S02": { command: "cargo test -p echo-desktop --all-features && pnpm --filter @echo/desktop test -- --run --reporter=verbose", evidence: [rust("player::coordinator::tests::play_temporary_is_session_only"), rust("stats_recorder_never_records_temporary_items"), vitest("src/features/player/PlayerBar.test.tsx")], },
+// Rust half runs in the workspace test; the PlayerBar half in the Frontend job.
+// Running both again inside the release gate duplicated ~42s of warm-cache work.
+// The strict local default (no --delegated) still executes the full command, so
+// the vitest evidence stays observable when the scenario is actually run.
+"DP-R07-S02": { command: "cargo test -p echo-desktop --all-features && pnpm --filter @echo/desktop test -- --run --reporter=verbose", evidence: [rust("player::coordinator::tests::play_temporary_is_session_only"), rust("stats_recorder_never_records_temporary_items"), vitest("src/features/player/PlayerBar.test.tsx")], delegatedTo: "workspace-test" },
 "DP-R07-S03": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::importing_current_temporary_entry_replaces_it_in_place_and_resumes_playing")], },
 "DP-R07-S04": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::importing_current_temporary_entry_preserves_pause_and_rejects_stale_completion")], },
-"DP-R08-S01": { command: "node scripts/verify/checks/task-9.4.mjs", evidence: [node("scripts/verify/checks/task-9.4.mjs")], },
+"DP-R08-S01": { command: "node scripts/verify/checks/task-9.4.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.4.mjs")], },
 "DP-R08-S02": { command: VITEST_ALL, evidence: [vitest("src/player/useGlobalPlayerHotkeys.test.tsx")], },
-"DP-R09-S01": { command: "node scripts/verify/checks/task-9.3.mjs", evidence: [node("scripts/verify/checks/task-9.3.mjs")], },
-"DP-R09-S02": { command: "node scripts/verify/checks/task-9.3.mjs", evidence: [node("scripts/verify/checks/task-9.3.mjs")], },
-"DP-R09-S03": { command: "node scripts/verify/checks/task-9.6.mjs", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },
-"DP-R10-S01": { command: "node scripts/verify/checks/task-9.4.mjs", evidence: [node("scripts/verify/checks/task-9.4.mjs")], },
-"DP-R10-S02": { command: "node scripts/verify/checks/task-11.8.mjs", evidence: [node("scripts/verify/checks/task-11.8.mjs")], },
+"DP-R09-S01": { command: "node scripts/verify/checks/task-9.3.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.3.mjs")], },
+"DP-R09-S02": { command: "node scripts/verify/checks/task-9.3.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.3.mjs")], },
+"DP-R09-S03": { command: "node scripts/verify/checks/task-9.6.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },
+"DP-R10-S01": { command: "node scripts/verify/checks/task-9.4.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.4.mjs")], },
+"DP-R10-S02": { command: "node scripts/verify/checks/task-11.8.mjs --static-only", evidence: [node("scripts/verify/checks/task-11.8.mjs")], },
 "DP-R11-S01": { command: DESK_ALL, evidence: [rust("player::queue::tests::previous_in_loop_walks_the_context_backwards_and_wraps_to_the_tail")], },
 "DP-R11-S02": { command: DESK_ALL, evidence: [rust("player::queue::tests::previous_returns_history_entry")], },
 "DP-R11-S03": { command: DESK_ALL, evidence: [rust("player::session::tests::state_store_save_load_round_trip_is_atomic_and_clears")], },
@@ -326,9 +332,9 @@ export const SCENARIOS = {
 "IL-R08-S01": { command: VITEST_ALL, evidence: [vitest("src/app/overlays.test.tsx")], },
 "IL-R08-S02": { command: VITEST_ALL, evidence: [vitest("src/app/overlays.test.tsx")], },
 "IL-R08-S03": { command: VITEST_ALL, evidence: [vitest("src/app/overlays.test.tsx")], },
-"IL-R09-S01": { command: "node scripts/verify/checks/task-12.4.mjs", evidence: [node("scripts/verify/checks/task-12.4.mjs")], },
-"IL-R09-S02": { command: "node scripts/verify/checks/task-12.4.mjs", evidence: [node("scripts/verify/checks/task-12.4.mjs")], },
-"IL-R09-S03": { command: "node scripts/verify/checks/task-12.4.mjs", evidence: [node("scripts/verify/checks/task-12.4.mjs")], },
+"IL-R09-S01": { command: "node scripts/verify/checks/task-12.4.mjs --static-only", evidence: [node("scripts/verify/checks/task-12.4.mjs")], },
+"IL-R09-S02": { command: "node scripts/verify/checks/task-12.4.mjs --static-only", evidence: [node("scripts/verify/checks/task-12.4.mjs")], },
+"IL-R09-S03": { command: "node scripts/verify/checks/task-12.4.mjs --static-only", evidence: [node("scripts/verify/checks/task-12.4.mjs")], },
 "IL-R10-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/useLyricsStartOffset.test.tsx", "re-observes when the signature changes")], },
 "IL-R10-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/useLyricsStartOffset.test.tsx", "re-measures when the info block resizes (ResizeObserver)")], },
 "IL-R10-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/useLyricsStartOffset.test.tsx", "re-measures on window resize")], },
@@ -360,16 +366,19 @@ export const SCENARIOS = {
 "LE-R06-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx")], },
 "LE-R06-S03": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx")], },
 "LE-R06-S04": { command: CORE_ALL, evidence: [rust("application::scan::tests::relink::enumerate_failure_marks_run_failed_without_missing")], },
-"LE-R06-S05": { command: "node scripts/verify/checks/task-9.5.mjs", evidence: [node("scripts/verify/checks/task-9.5.mjs")], },
+"LE-R06-S05": { command: "node scripts/verify/checks/task-9.5.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.5.mjs")], },
 "LE-R06-S06": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongMenu.test.tsx", "dispatches delete and shows the 10-second undo affordance on success")], },
 "LE-R06-S07": { command: CORE_ALL, evidence: [rust("trash::tests::explicit_system_trash_success_persists_applied_then_finalizes")], },
 "LE-R06-S08": { command: CORE_ALL, evidence: [rust("trash::tests::system_trash_failure_keeps_the_verified_staging_for_retry")], },
 "LE-R06-S09": { command: CORE_ALL, evidence: [rust("trash::tests::post_call_trash_error_rechecks_missing_staging_and_stops_other_operations")], },
-"LE-R06-S10": { command: "node scripts/verify/checks/task-12.7.mjs", evidence: [node("scripts/verify/checks/task-12.7.mjs")], },
+"LE-R06-S10": { command: "node scripts/verify/checks/task-12.7.mjs --static-only", evidence: [node("scripts/verify/checks/task-12.7.mjs")], },
 "LE-R06-S11": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongMenu.test.tsx")], },
 "LE-R06-S12": { command: VITEST_ALL, evidence: [vitest("src/features/library/batchLibraryOperations.test.tsx")], },
 "LE-R06-S13": { command: VITEST_ALL, evidence: [vitest("src/features/library/LibraryWorkspace.test.tsx", "右键打开的菜单仍由面板外按压和 Escape 收起")], },
-"LE-R07-S01": { command: "cargo test -p echo-core --all-features bench_50k_search_and_first_screen_p95_meet_prd_budgets -- --ignored", evidence: [rust("bench_50k_search_and_first_screen_p95_meet_prd_budgets")], },
+// The 50k bench is measured once per PR: `task-12.5` in `task-gates` runs this
+// exact command, asserts the PRD latency budgets, and uploads the artifact.
+// Re-measuring it in the release gate spent 194s on a duplicate run.
+"LE-R07-S01": { command: "cargo test -p echo-core --all-features bench_50k_search_and_first_screen_p95_meet_prd_budgets -- --ignored", evidence: [rust("bench_50k_search_and_first_screen_p95_meet_prd_budgets")], delegatedTo: "benchmark" },
 "LE-R07-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx")], },
 "LE-R07-S03": { command: VITEST_ALL, evidence: [vitest("src/features/library/CollectionDirectory.test.tsx", "shows artist cards and reuses the library song table with selection in the detail")], },
   "LE-R07-S04": { command: ATTEST("LE-R07-S04"), evidence: [attest("LE-R07-S04")] },
@@ -534,9 +543,9 @@ export const SCENARIOS = {
 "DAS-R01-S04": { command: CORE_ALL, evidence: [rust("boot::tests::clean_active_root_recovers_idle_and_releases_the_scan_exclusion")], },
 "DAS-R02-S01": { command: VITEST_ALL, evidence: [vitest("src/app/narrow.test.tsx")], },
 "DAS-R02-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx")], },
-"DAS-R02-S03": { command: "node scripts/verify/checks/task-13.8.mjs", evidence: [node("scripts/verify/checks/task-13.8.mjs")], },
+"DAS-R02-S03": { command: "node scripts/verify/checks/task-13.8.mjs --static-only", evidence: [node("scripts/verify/checks/task-13.8.mjs")], },
 "DAS-R02-S04": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongRow.test.tsx")], },
-"DAS-R02-S05": { command: "node scripts/verify/checks/task-13.8.mjs", evidence: [node("scripts/verify/checks/task-13.8.mjs")], },
+"DAS-R02-S05": { command: "node scripts/verify/checks/task-13.8.mjs --static-only", evidence: [node("scripts/verify/checks/task-13.8.mjs")], },
   "DAS-R02-S06": { command: ATTEST("DAS-R02-S06"), evidence: [attest("DAS-R02-S06")] },
   "DAS-R02-S07": { command: ATTEST("DAS-R02-S07"), evidence: [attest("DAS-R02-S07")] },
 "DAS-R02-S08": { command: VITEST_ALL, evidence: [vitest("src/app/accessibility.test.tsx")], },
@@ -564,15 +573,15 @@ export const SCENARIOS = {
   command: VITEST_ALL,
   evidence: [vitest("src/features/settings/SettingsView.test.tsx")],
 },
-"DAS-R05-S01": { command: "node scripts/verify/checks/task-9.6.mjs", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },
-"DAS-R05-S02": { command: "node scripts/verify/checks/task-9.6.mjs", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },
-"DAS-R05-S03": { command: "node scripts/verify/checks/task-9.6.mjs", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },
-"DAS-R06-S01": { command: "node scripts/verify/checks/task-9.3.mjs", evidence: [node("scripts/verify/checks/task-9.3.mjs")], },
-"DAS-R06-S02": { command: "node scripts/verify/checks/task-9.3.mjs", evidence: [node("scripts/verify/checks/task-9.3.mjs")], },
-"DAS-R06-S03": { command: "node scripts/verify/checks/task-9.3.mjs", evidence: [node("scripts/verify/checks/task-9.3.mjs")], },
-"DAS-R07-S01": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
-"DAS-R07-S02": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
-"DAS-R07-S03": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"DAS-R05-S01": { command: "node scripts/verify/checks/task-9.6.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },
+"DAS-R05-S02": { command: "node scripts/verify/checks/task-9.6.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },
+"DAS-R05-S03": { command: "node scripts/verify/checks/task-9.6.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },
+"DAS-R06-S01": { command: "node scripts/verify/checks/task-9.3.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.3.mjs")], },
+"DAS-R06-S02": { command: "node scripts/verify/checks/task-9.3.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.3.mjs")], },
+"DAS-R06-S03": { command: "node scripts/verify/checks/task-9.3.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.3.mjs")], },
+"DAS-R07-S01": { command: "node scripts/verify/checks/task-9.1.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"DAS-R07-S02": { command: "node scripts/verify/checks/task-9.1.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"DAS-R07-S03": { command: "node scripts/verify/checks/task-9.1.mjs --static-only", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
   "DAS-R07-S04": { command: ATTEST("DAS-R07-S04"), evidence: [attest("DAS-R07-S04")] },
   "DAS-R07-S05": { command: ATTEST("DAS-R07-S05"), evidence: [attest("DAS-R07-S05")] },
   // A companion window in the same process: the architecture guard proves the
@@ -598,8 +607,8 @@ export const SCENARIOS = {
 "DAS-R09-S05": { command: VITEST_ALL, evidence: [vitest("src/features/player/EffectsPanel.test.tsx")], },
 "DAS-R09-S06": { command: VITEST_ALL, evidence: [vitest("src/features/player/EffectsPanel.test.tsx")], },
 "DAS-R09-S07": { command: VITEST_ALL, evidence: [vitest("src/features/player/EffectsPanel.test.tsx")], },
-"DAS-R10-S01": { command: "node scripts/verify/checks/task-13.8.mjs", evidence: [node("scripts/verify/checks/task-13.8.mjs")], },
-"DAS-R10-S02": { command: "node scripts/verify/checks/task-13.8.mjs", evidence: [node("scripts/verify/checks/task-13.8.mjs")], },
+"DAS-R10-S01": { command: "node scripts/verify/checks/task-13.8.mjs --static-only", evidence: [node("scripts/verify/checks/task-13.8.mjs")], },
+"DAS-R10-S02": { command: "node scripts/verify/checks/task-13.8.mjs --static-only", evidence: [node("scripts/verify/checks/task-13.8.mjs")], },
 "DAS-R11-S01": { command: "node scripts/verify/checks/task-wire-dialogs.mjs", evidence: [node("scripts/verify/checks/task-wire-dialogs.mjs")], },
 "DAS-R11-S02": { command: "node scripts/verify/checks/task-wire-dialogs.mjs", evidence: [node("scripts/verify/checks/task-wire-dialogs.mjs")], },
 "DAS-R11-S03": { command: "node scripts/verify/checks/task-wire-dialogs.mjs", evidence: [node("scripts/verify/checks/task-wire-dialogs.mjs")], },
@@ -701,11 +710,11 @@ export const SCENARIOS = {
 "DAS-R27-S03": { command: APP_ALL, evidence: [rust("file_drop::tests::supported_extensions_match_core_and_are_case_insensitive")], },
 "DAS-R27-S04": { command: APP_ALL, evidence: [rust("file_drop::tests::directories_are_rejected_without_scanning_them")], },
 "DAS-R27-S05": { command: APP_ALL, evidence: [rust("file_drop::tests::mixed_drop_keeps_accepted_order_and_reports_each_rejection")], },
-"DAS-R27-S06": { command: "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-app --all-features", evidence: [node("scripts/verify/checks/file-drop-config.mjs")], },
-"DAS-R27-S07": { command: "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features", evidence: [node("scripts/verify/checks/file-drop-config.mjs"), rust("runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid")], },
+"DAS-R27-S06": { command: "node scripts/verify/checks/file-drop-config.mjs", evidence: [node("scripts/verify/checks/file-drop-config.mjs")], },
+"DAS-R27-S07": { command: "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid", evidence: [node("scripts/verify/checks/file-drop-config.mjs"), rust("runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid")], delegatedTo: "workspace-test" },
 "DAS-R28-S01": { command: VITEST_ALL, evidence: [vitest("src/app/App.test.tsx", "never URL-decodes a payload that already contains a literal %20")], },
 "DAS-R28-S02": { command: APP_ALL, evidence: [rust("file_open_gate::tests::one_batch_queues_every_path_until_the_frontend_listener_is_ready")], },
-"DAS-R28-S03": { command: "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-app --all-features", evidence: [node("scripts/verify/checks/file-drop-config.mjs"), rust("file_drop::tests::hover_overlay_follows_drag_lifecycle")], },
+"DAS-R28-S03": { command: "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-app --all-features file_drop::tests::hover_overlay_follows_drag_lifecycle", evidence: [node("scripts/verify/checks/file-drop-config.mjs"), rust("file_drop::tests::hover_overlay_follows_drag_lifecycle")], delegatedTo: "workspace-test" },
 "DAS-R29-S01": { command: VITEST_ALL, evidence: [vitest("src/app/useAppShell.test.tsx", "selectView clears an unconsumed target and the source")], },
 "DAS-R29-S02": { command: VITEST_ALL, evidence: [vitest("src/app/useAppShell.test.tsx", "consumes only the target and keeps the source for the return")], },
 "DAS-R29-S03": { command: VITEST_ALL, evidence: [vitest("src/app/useAppShell.test.tsx", "entering a directory directly produces no source record")], },
@@ -713,8 +722,8 @@ export const SCENARIOS = {
 "DP-R07-S05": { command: DESK_ALL, evidence: [rust("player::coordinator::tests_opened_files::opened_batch_creates_one_entry_per_path_in_order")], },
 "DP-R07-S06": { command: DESK_ALL, evidence: [rust("player::coordinator::tests_opened_files::opened_batch_mixes_library_and_temporary_in_input_order")], },
 "DP-R07-S07": { command: DESK_ALL, evidence: [rust("player::coordinator::tests_opened_files::opened_batch_replaces_the_current_queue_and_priority_lane")], },
-"DP-R07-S08": { command: "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features", evidence: [node("scripts/verify/checks/file-drop-config.mjs"), rust("player::coordinator::tests_opened_files::opened_batch_creates_one_entry_per_path_in_order"), rust("player::coordinator::tests_opened_files::single_temporary_open_is_still_a_one_item_batch")], },
-"SFI-R07-S06": { command: "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features", evidence: [node("scripts/verify/checks/file-drop-config.mjs"), rust("runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid")], },
+"DP-R07-S08": { command: "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features player::coordinator::tests_opened_files", evidence: [node("scripts/verify/checks/file-drop-config.mjs"), rust("player::coordinator::tests_opened_files::opened_batch_creates_one_entry_per_path_in_order"), rust("player::coordinator::tests_opened_files::single_temporary_open_is_still_a_one_item_batch")], delegatedTo: "workspace-test" },
+"SFI-R07-S06": { command: "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid", evidence: [node("scripts/verify/checks/file-drop-config.mjs"), rust("runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid")], delegatedTo: "workspace-test" },
 "SFI-R07-S07": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::importing_current_temporary_entry_replaces_it_in_place_and_resumes_playing")], },
 "SFI-R07-S08": { command: VITEST_ALL, evidence: [vitest("src/app/App.test.tsx", "never URL-decodes a payload that already contains a literal %20")], },
 "SFI-R07-S09": { command: APP_ALL, evidence: [rust("file_drop::tests::directories_are_rejected_without_scanning_them")], },
@@ -722,6 +731,21 @@ export const SCENARIOS = {
 };
 
 import { allScenarioIds } from "./spec-scenarios.mjs";
+
+// CI delegation. The Linux `rust` job's `Test` step runs
+// `cargo test --workspace --all-targets --all-features`, which is exactly the
+// workspace form of the three per-package all-feature commands; the Frontend
+// job's `Test` step runs the full Vitest suite. Declaring the delegation here
+// (instead of inferring it from the command shape inside the runner) keeps the
+// coverage claim reviewable: `run-scenario.mjs` still skips only scenarios that
+// explicitly name the gate, and `check-scenario-evidence.mjs` verifies that the
+// named gate really runs in ci.yml.
+const WORKSPACE_TEST_COMMANDS = new Set([CORE_ALL, DESK_ALL, APP_ALL]);
+for (const entry of Object.values(SCENARIOS)) {
+  if (entry.delegatedTo) continue;
+  if (WORKSPACE_TEST_COMMANDS.has(entry.command)) entry.delegatedTo = "workspace-test";
+  else if (entry.command === VITEST_ALL) entry.delegatedTo = "frontend-test";
+}
 
 export function scenarioCommands() {
   return allScenarioIds().map(({ id, scenario, area }) => {

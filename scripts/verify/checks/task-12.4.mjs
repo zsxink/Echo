@@ -32,6 +32,9 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 const APP = resolve(ROOT, "apps", "desktop");
 const TOKENS = resolve(APP, "src", "styles", "tokens.css");
+// `--static-only` keeps the WCAG contrast math and the reduced-motion cascade
+// checks; the typecheck + Vitest half runs in the `Frontend (Linux)` job.
+const staticOnly = process.argv.includes("--static-only");
 
 function fail(msg) {
   process.stderr.write(`FAIL 12.4: ${msg}\n`);
@@ -250,10 +253,17 @@ function run(command, args, cwd) {
 // The axe keyboard/SR scan is the screen-reader/a11y regression gate; the
 // immersive test asserts current-line + playing-state markers survive; the
 // player bar test asserts the playing indicator stays visible.
-run("pnpm", ["--filter", "@echo/desktop", "typecheck"], APP);
-run("pnpm", ["--filter", "@echo/desktop", "test", "--", "--run", "src/app/accessibility.test.tsx"], APP);
-run("pnpm", ["--filter", "@echo/desktop", "test", "--", "--run", "src/features/player/ImmersivePlayer.test.tsx"], APP);
-run("pnpm", ["--filter", "@echo/desktop", "test", "--", "--run", "src/features/player/PlayerBar.test.tsx"], APP);
+if (!staticOnly) {
+  run("pnpm", ["--filter", "@echo/desktop", "typecheck"], APP);
+  run("pnpm", [
+    "--filter", "@echo/desktop", "test", "--", "--run",
+    "src/app/accessibility.test.tsx",
+    "src/features/player/ImmersivePlayer.test.tsx",
+    "src/features/player/PlayerBar.test.tsx",
+  ], APP);
+} else {
+  process.stdout.write("  skip: typecheck + a11y suites (covered by the Frontend job)\n");
+}
 process.stdout.write(
-  "ok 12.4: three-theme WCAG 2.2 AA contrast verified; reduced-motion and playing-vinyl exception verified\n",
+  `ok 12.4: three-theme WCAG 2.2 AA contrast verified; reduced-motion and playing-vinyl exception verified${staticOnly ? " (static-only)" : ""}\n`,
 );

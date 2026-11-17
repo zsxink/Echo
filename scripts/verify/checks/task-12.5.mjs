@@ -5,7 +5,9 @@
 //  - A 50,000-song synthetic library: search p95 ≤ 200 ms and view
 //    first-screen p95 ≤ 500 ms through the real SQLite query path.
 //  - The UI never materializes all rows: the windowed song list renders only a
-//    viewport slice (existing SongList test asserts < 100 DOM rows for 50,000).
+//    viewport slice. That assertion (`SongList.test.tsx`, < 100 DOM rows for
+//    50,000) is carried by the Frontend job's full Vitest run, not repeated
+//    here.
 //  - The benchmark results are saved as a CI artifact (written to a stable
 //    .benchmark.json under apps/desktop, uploaded by the workflow).
 //
@@ -58,11 +60,7 @@ const viewP95Ms = Number(benchMatch[2]);
 if (searchP95Ms > 200) fail(`search p95 ${searchP95Ms} ms > 200 ms budget`);
 if (viewP95Ms > 500) fail(`view first-screen p95 ${viewP95Ms} ms > 500 ms budget`);
 
-// --- 2. Virtual-DOM bound (viewport slice only for 50k) ---
-run("pnpm", ["--filter", "@echo/desktop", "typecheck"], APP);
-run("pnpm", ["--filter", "@echo/desktop", "test", "--", "--run", "src/features/library/SongList.test.tsx"], APP);
-
-// --- 3. CI artifact: benchmark results ---
+// --- 2. CI artifact: benchmark results ---
 const artifact = resolve(APP, "benchmark-50k.json");
 writeFileSync(
   artifact,

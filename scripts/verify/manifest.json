@@ -81,7 +81,9 @@
           "desc": "LOGGING.md policy, Rust + frontend privacy tests, clippy + fmt",
           "cmd": "node scripts/verify/checks/task-1.8.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 workspace test 或 Frontend job 重复：命令中的 cargo test 是工作区测试的包子集，Vitest/typecheck 是 Frontend job 的子集，二者均已逐条覆盖。"
     },
     {
       "id": "1.9",
@@ -209,7 +211,9 @@
           "desc": "all 2 declared test(s), grouped by module",
           "cmd": "node scripts/verify/checks/task-3.mjs 3.1 initial_migration_has_required_tables_indexes_and_no_account_or_telemetry lan_ledger::operations::song_lyrics_keep_multiple_candidates_for_fallback"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "3.2",
@@ -296,8 +300,8 @@
       "title": "Sync-foundation data shape (3.10–3.13): 0005 migration (tombstones/sync_state/sync_outbox + revision columns), outbox prewrite on the five local logic-change classes, Echo-delete tombstone, and the sync-foundation spec shape (no absolute path in outbox payloads, schema_base present)",
       "commands": [
         {
-          "desc": "0005 shape + registration + core shape tests; song/playlist/override prewrite with monotone revision in one tx; durable tombstone on finalize (external missing does not); shape probing for outbox payload privacy and schema_base",
-          "cmd": "node scripts/verify/checks/task-3.10.mjs"
+          "desc": "0005 shape + registration 静态断言；sync-foundation shape 测试由 workspace-test 承载",
+          "cmd": "node scripts/verify/checks/task-3.10.mjs --static-only"
         }
       ]
     },
@@ -306,8 +310,8 @@
       "title": "Sync-foundation adds no operable sync (offline boundary intact)",
       "commands": [
         {
-          "desc": "no sync command/entry/network despite schema tables",
-          "cmd": "node scripts/verify/checks/task-3.14.mjs"
+          "desc": "sync IPC 契约静态断言（bridge 用生成类型、生成文件含四条命令）；sync runtime/privacy 测试由 workspace-test 承载",
+          "cmd": "node scripts/verify/checks/task-3.14.mjs --static-only"
         }
       ]
     },
@@ -319,7 +323,9 @@
           "desc": "all 5 declared test(s), grouped by module",
           "cmd": "node scripts/verify/checks/task-4.mjs 4.1 application::root_switch::tests::empty_directory_activates_and_reuses_root_id application::root_switch::tests::root_level_error_keeps_old_active_root application::root_switch::tests::read_only_root_activates_readonly_and_disables_writes application::root_switch::tests::switch_refused_while_import_blockers_active application::root_switch::tests::switch_cancels_active_scan_and_advances_epoch"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "4.2",
@@ -419,7 +425,9 @@
           "desc": "all 6 declared test(s), grouped by module",
           "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::logic::tests::mixed_batch_reports_each_input_independently application::import::logic::tests::import_reserves_operation_and_song_ids_before_side_effects application::import::logic::tests::single_input_failure_does_not_rollback_committed_inputs application::import::logic::tests::duplicate_content_within_a_batch_creates_one_record application::import::logic::tests::unavailable_root_rejects_the_whole_batch_before_copying application::import::logic::tests::same_name_different_content_gets_minimal_conflict_number"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "5.2",
@@ -519,7 +527,9 @@
           "desc": "all 6 declared test(s), grouped by module",
           "cmd": "node scripts/verify/checks/task-6.mjs 6.1 infrastructure::sqlite::tests::catalog_all_songs_view_covers_active_root_available_songs_only infrastructure::sqlite::tests::catalog_favorites_view_is_favorited_available_active_root_songs_only infrastructure::sqlite::tests::catalog_recent_100_is_newest_available_with_stable_tie_break infrastructure::sqlite::tests::catalog_playlist_view_shows_available_and_missing_hides_pending_delete infrastructure::sqlite::tests::catalog_all_songs_keyset_pages_stably_and_rejects_stale_cursor application::catalog::tests::catalog_views_over_memory_repo_agree_with_the_port_contract"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "6.2",
@@ -607,7 +617,9 @@
           "desc": "all 3 declared test(s), grouped by module",
           "cmd": "node scripts/verify/checks/task-7.mjs 7.1 runtime::tests::supervisor_sequence_resolves_gate_and_drains_pending_opens runtime::tests::pending_open_fifo_is_bounded_and_keeps_newest runtime::tests::gate_kind_maps_recovery_states"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "7.2",
@@ -691,7 +703,9 @@
           "desc": "PlayerPort 契约测试在无 libmpv 下通过（player::fake 覆盖命令/快照），fmt/clippy 干净",
           "cmd": "node scripts/verify/checks/task-8.1.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.2",
@@ -701,7 +715,9 @@
           "desc": "actor/ffi 测试（唯一句柄、有界 channel、有序销毁、generation）在无 libmpv 下通过；unsafe 隔离到 player 子树；fmt/clippy 干净",
           "cmd": "node scripts/verify/checks/task-8.2.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.3",
@@ -711,7 +727,9 @@
           "desc": "加固选项集（config/load-scripts/ytdl/video/vo/audio-display/osc/protocol-whitelist=file）与仅本地路径可加载测试通过",
           "cmd": "node scripts/verify/checks/task-8.3.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.4",
@@ -721,7 +739,9 @@
           "desc": "节流区间测试（100ms fg / 1000ms bg）、立即 discrete 事件、归一化 BackendEvent 词汇；fmt/clippy 干净",
           "cmd": "node scripts/verify/checks/task-8.4.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.5",
@@ -731,7 +751,9 @@
           "desc": "coordinator 6 测试 + queue 9 测试：重复 SongId 独立 queueEntryId、next/clear/error skip；fmt/clippy 干净",
           "cmd": "node scripts/verify/checks/task-8.5.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.6",
@@ -741,7 +763,9 @@
           "desc": "coordinator 模式/shuffle/previous 测试 + queue bag/advance 测试：不折叠、一轮不重复、切模式不丢当前项；fmt/clippy 干净",
           "cmd": "node scripts/verify/checks/task-8.6.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.7",
@@ -751,7 +775,9 @@
           "desc": "coordinator error-skip 测试：绕过 repeat-one、每项至多一次、全部损坏停止；fmt/clippy 干净",
           "cmd": "node scripts/verify/checks/task-8.7.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.8",
@@ -761,7 +787,9 @@
           "desc": "coordinator seek/set_volume/toggle_mute 表面、actor 回滚与最近非零值、FakePlayer 镜像；fmt/clippy 干净",
           "cmd": "node scripts/verify/checks/task-8.8.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.9",
@@ -771,7 +799,9 @@
           "desc": "播放会话原子持久化与启动 paused 恢复（落盘线程 + restore/prime 命令接线）",
           "cmd": "node scripts/verify/checks/task-8.9.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.10",
@@ -781,7 +811,9 @@
           "desc": "真实单调时钟累计听歌时长并幂等 RecordPlayback（生产 watcher 接线到 Core sink）",
           "cmd": "node scripts/verify/checks/task-8.10.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.11",
@@ -791,7 +823,9 @@
           "desc": "桌面删除协调器：快照/unload 屏障/提交/回滚接入命令层与 actor Stop 真静音",
           "cmd": "node scripts/verify/checks/task-8.11.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.12",
@@ -808,8 +842,8 @@
       "title": "single-instance 与初始化请求 FIFO 生产化，冷/热/重复启动和初始化期间文件打开只由主实例处理",
       "commands": [
         {
-          "desc": "echo-app 编译/clippy 干净，runtime FIFO 测试通过，shell 两条 OS open 路径都经 StartupSupervisor FIFO；跨平台原生验证递延至平台 Gate",
-          "cmd": "node scripts/verify/checks/task-9.1.mjs"
+          "desc": "echo-app 编译/clippy 干净，runtime FIFO 测试通过，shell 两条 OS open 路径都经 StartupSupervisor FIFO；跨平台原生验证递延至平台 Gate；release gate 仅跑静态契约（--static-only），cargo 半由 workspace-test 承载",
+          "cmd": "node scripts/verify/checks/task-9.1.mjs --static-only"
         }
       ]
     },
@@ -818,8 +852,8 @@
       "title": "保证格式文件关联与 open-file/argv 统一，活动根/非活动旧根/库外文件的临时项语义由播放层解析",
       "commands": [
         {
-          "desc": "tauri.conf 文件关联等于保证格式集合的 drift 测试通过，macOS Opened 与单实例 argv 都以一次批量经 deliver_file_opens 入 FIFO；SongId/临时项解析归属播放层",
-          "cmd": "node scripts/verify/checks/task-9.2.mjs"
+          "desc": "tauri.conf 文件关联等于保证格式集合（静态断言保留），macOS Opened 与单实例 argv 都以一次批量经 deliver_file_opens 入 FIFO；drift 测试由 workspace-test 承载",
+          "cmd": "node scripts/verify/checks/task-9.2.mjs --static-only"
         }
       ]
     },
@@ -828,8 +862,8 @@
       "title": "生产化 macOS 菜单栏/Windows-Linux 托盘：摘要、播放/暂停、上一首、下一首、显示窗口、退出；后台状态与主窗口 snapshot 一致",
       "commands": [
         {
-          "desc": "status_menu 决策逻辑单测通过（摘要/标签/命令映射/sink），echo-app clippy 干净，main.rs 构建六项托盘菜单并经 sink 派发；协调器接线归属 composition root",
-          "cmd": "node scripts/verify/checks/task-9.3.mjs"
+          "desc": "status_menu 六项菜单/标签/命令映射/sink 静态契约，main.rs 经 sink 派发；status_menu 单测由 workspace-test 承载",
+          "cmd": "node scripts/verify/checks/task-9.3.mjs --static-only"
         }
       ]
     },
@@ -838,8 +872,8 @@
       "title": "macOS Now Playing / Windows SMTC / Linux MPRIS 媒体控制 Adapter；媒体键只触发一次协调器 command，能力不可用时降级到窗口控制",
       "commands": [
         {
-          "desc": "media_control seam 单测通过（键名解码、一命令映射、降级 noop sink），echo-app clippy 干净；OS 专属 adapter 与协调器接线归属 composition root/平台 Gate",
-          "cmd": "node scripts/verify/checks/task-9.4.mjs"
+          "desc": "media_control seam 静态契约（键名解码、一命令映射、降级 noop sink）；单测由 workspace-test 承载，OS 专属 adapter 归属 composition root/平台 Gate",
+          "cmd": "node scripts/verify/checks/task-9.4.mjs --static-only"
         }
       ]
     },
@@ -848,8 +882,8 @@
       "title": "系统回收站与 reveal Adapter：回收站不可逆点、Windows 文件锁重试、Linux 无法定位时打开父目录、入口只接收 SongId/OperationId",
       "commands": [
         {
-          "desc": "trash 重试/不可逆策略与 reveal 父目录回退策略单测通过，reveal 入口只收 SongId 且只返回相对路径，echo-app clippy 干净；真实 OS 后端接线归属 composition root",
-          "cmd": "node scripts/verify/checks/task-9.5.mjs"
+          "desc": "trash 重试/不可逆与 reveal 父目录回退静态契约，reveal 入口只收 SongId 且只返回相对路径；策略单测由 workspace-test 承载",
+          "cmd": "node scripts/verify/checks/task-9.5.mjs --static-only"
         }
       ]
     },
@@ -858,8 +892,8 @@
       "title": "窗口 close/hide/explicit quit 与 window-state 可见区域校验：macOS 默认后台、Windows/Linux 默认退出、用户覆盖、断显示器后回可见区域",
       "commands": [
         {
-          "desc": "local_state 关闭行为默认值与 WindowState::clamp_to_visible 可见区域策略单测通过，echo-app clippy 干净；close-handler 接线归属 shell/composition root",
-          "cmd": "node scripts/verify/checks/task-9.6.mjs"
+          "desc": "local_state 关闭行为默认值与 WindowState::clamp_to_visible 静态契约；可见区域策略单测由 workspace-test 承载，close-handler 接线归属 shell/composition root",
+          "cmd": "node scripts/verify/checks/task-9.6.mjs --static-only"
         }
       ]
     },
@@ -911,7 +945,9 @@
           "desc": "设计 token 三主题与语义收藏红不被主题覆盖",
           "cmd": "node scripts/verify/checks/task-10.1.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "10.2",
@@ -921,7 +957,9 @@
           "desc": "bridge 唯一封装与三分状态回归",
           "cmd": "node scripts/verify/checks/task-10.2.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "10.3",
@@ -931,7 +969,9 @@
           "desc": "资料库工作区状态机（未配置/候选/只读/不可用）",
           "cmd": "node scripts/verify/checks/task-10.3.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "10.4",
@@ -941,7 +981,9 @@
           "desc": "壳层布局与一期范围守卫（同步/全选/手动排序/编辑入口不渲染）",
           "cmd": "node scripts/verify/checks/task-10.4.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "10.5",
@@ -951,7 +993,9 @@
           "desc": "曲库视图/搜索/四排序双方向/服务端 cursor",
           "cmd": "node scripts/verify/checks/task-10.5.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "10.6",
@@ -961,7 +1005,9 @@
           "desc": "SongMenu 组件测试通过（下一首播放→onPlayNext、加入播放队列→onEnqueue、未接线时禁用）；echo-app clippy 干净；actor SongId→path 解析并加载测试通过",
           "cmd": "node scripts/verify/checks/task-10.6.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 workspace test 或 Frontend job 重复：命令中的 cargo test 是工作区测试的包子集，Vitest/typecheck 是 Frontend job 的子集，二者均已逐条覆盖。"
     },
     {
       "id": "10.7",
@@ -971,7 +1017,9 @@
           "desc": "SongList 状态测试（loading/empty/search-empty/failure-retry/错误不伪造空库）通过，typecheck 干净；unavailable/read-only/missing 命中 LibraryStatusView 与 SongRow",
           "cmd": "node scripts/verify/checks/task-10.7.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "10.8",
@@ -981,7 +1029,9 @@
           "desc": "SongMenu 组件测试通过：详情仅相对路径、确认/失败/取消不伪造成功、仅成功删除出现 undo；delete_song/undo_delete/reveal_song service-layer 已实现，Tauri 注册归属 composition root",
           "cmd": "node scripts/verify/checks/task-10.8.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "10.9",
@@ -991,7 +1041,9 @@
           "desc": "PlaylistsView + AddToPlaylistDialog 组件测试通过：40 grapheme 拒绝、rename/delete 经确认、多选 target 单命令提交；重复幂等/追加顺序/删除不删文件由 echo-core 6.6/6.7 保证",
           "cmd": "node scripts/verify/checks/task-10.9.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "10.10",
@@ -1001,7 +1053,9 @@
           "desc": "ImportBatchDialog 组件测试通过：逐文件结果渲染（imported/duplicate/unsupported/failed/libraryUnavailable）、汇总计数、取消为真 no-op、重试不重做已导入项；核心 5.x 输出驱动",
           "cmd": "node scripts/verify/checks/task-10.10.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "11.1",
@@ -1011,7 +1065,9 @@
           "desc": "playerStore 由 player://snapshot 事件驱动（startPlayerEvents 订阅→publish，不伪造）测试通过；runtime::player::map_snapshot 映射（含 currentSongId/currentTitle）测试通过；echo-app clippy 干净",
           "cmd": "node scripts/verify/checks/task-11.1.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 workspace test 或 Frontend job 重复：命令中的 cargo test 是工作区测试的包子集，Vitest/typecheck 是 Frontend job 的子集，二者均已逐条覆盖。"
     },
     {
       "id": "11.2",
@@ -1021,7 +1077,9 @@
           "desc": "UI snapshot 携带完整队列（UiQueueEntry 含 entryId/songId/title/isCurrent/failed），map_snapshot 映射测试通过；QueuePanel 渲染当前+待播/失败项、清空待播仅发 clearPending、空态浏览曲库；echo-app typecheck + QueuePanel 测试 + echo-desktop runtime::player 测试 + clippy 通过",
           "cmd": "node scripts/verify/checks/task-11.2.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 workspace test 或 Frontend job 重复：命令中的 cargo test 是工作区测试的包子集，Vitest/typecheck 是 Frontend job 的子集，二者均已逐条覆盖。"
     },
     {
       "id": "11.3",
@@ -1031,7 +1089,9 @@
           "desc": "ImmersivePlayer 组件：黑胶视觉（无封面占位）、从 song_detail 权威取元信息（不伪造）、展开/收起仅切 UI 态不停止播放、切歌保持沉浸不闪回；playerStore 增 immersiveOpen；echo-app typecheck + ImmersivePlayer 测试 + clippy 通过",
           "cmd": "node scripts/verify/checks/task-11.3.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 workspace test 或 Frontend job 重复：命令中的 cargo test 是工作区测试的包子集，Vitest/typecheck 是 Frontend job 的子集，二者均已逐条覆盖。"
     },
     {
       "id": "11.4",
@@ -1041,7 +1101,9 @@
           "desc": "GetSongLyrics 用例（source 沿用领域 select_effective_lyrics，乱序/越界由 4.5 LRC parser 预排序/过滤）测试通过；get_lyrics command + IPC DTO 漂移锁通过；ImmersivePlayer 按权威 snapshot position 高亮当前行（二分查找 + 插值）、点击行发 seek（tests 验证 12s→{position:12}）；typecheck + clippy 通过",
           "cmd": "node scripts/verify/checks/task-11.4.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 workspace test 或 Frontend job 重复：命令中的 cargo test 是工作区测试的包子集，Vitest/typecheck 是 Frontend job 的子集，二者均已逐条覆盖。"
     },
     {
       "id": "11.5",
@@ -1051,7 +1113,9 @@
           "desc": "ImmersivePlayer：纯文本歌词以静态列表展示（无当前行指示、不自动 seek）；无歌词显示“暂无歌词”空态；来源标签（内嵌歌词/LRC 侧车文件/覆盖层）展示；切歌经 key remount 立即清残留；损坏高优先级回退由 Core select_effective_lyrics（4.5）保证。verify:task 11.5 通过",
           "cmd": "node scripts/verify/checks/task-11.5.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 workspace test 或 Frontend job 重复：命令中的 cargo test 是工作区测试的包子集，Vitest/typecheck 是 Frontend job 的子集，二者均已逐条覆盖。"
     },
     {
       "id": "11.6",
@@ -1061,15 +1125,17 @@
           "desc": "LyricsFocus 专注覆盖层（隐藏黑胶/元信息、歌词为主阅读区、保留进度+最小播放控制）；Escape 仅关专注不关沉浸播放器；专注内播放/下一首不退出；“回到当前行”恢复自动跟随（手动滚动暂停 5s 计时 + 按钮）。playerStore 增 focusOpen；verify:task 11.6 通过（ImmersivePlayer 专注测试 + typecheck + clippy）",
           "cmd": "node scripts/verify/checks/task-11.6.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 workspace test 或 Frontend job 重复：命令中的 cargo test 是工作区测试的包子集，Vitest/typecheck 是 Frontend job 的子集，二者均已逐条覆盖。"
     },
     {
       "id": "11.7",
       "title": "临时播放项标识和“导入到资料库”入口；收藏/加入歌单/统计被禁用，显式导入后才产生正常 SongId",
       "commands": [
         {
-          "desc": "PlayerBar/QueuePanel/ImmersivePlayer 渲染临时播放项 badge（currentCanImport/queue canImport，由 map_snapshot 派生）；PlayerBar “导入到资料库”按钮调用桌面 import_current_temporary_file（Rust 侧 SingleFileImport 以绝对路径直连 PlanImport，路径不经过 WebView，返回 ImportResultDto：imported/duplicate/unsupported/failed）。收藏/加入歌单/统计对临时项禁用：temp 项无 song_id、不入库/歌单/统计（8.10 recorder 跳过），导入后经 Core PlanImport 产生正常 SongId。verify:task 11.7 通过（PlayerBar 测试 + platform::import 测试 + runtime::player 映射测试 + typecheck + clippy）",
-          "cmd": "node scripts/verify/checks/task-11.7.mjs"
+          "desc": "PlayerBar/QueuePanel/ImmersivePlayer 渲染临时播放项 badge（currentCanImport/queue canImport，由 map_snapshot 派生）；PlayerBar “导入到资料库”按钮调用桌面 import_current_temporary_file（Rust 侧 SingleFileImport 以绝对路径直连 PlanImport，路径不经过 WebView，返回 ImportResultDto：imported/duplicate/unsupported/failed）。收藏/加入歌单/统计对临时项禁用：temp 项无 song_id、不入库/歌单/统计（8.10 recorder 跳过），导入后经 Core PlanImport 产生正常 SongId。verify:task 11.7 通过（PlayerBar 测试 + platform::import 测试 + runtime::player 映射测试 + typecheck + clippy）；release gate 仅跑静态契约（--static-only），行为由 workspace-test / frontend-test 承载",
+          "cmd": "node scripts/verify/checks/task-11.7.mjs --static-only"
         }
       ]
     },
@@ -1078,8 +1144,8 @@
       "title": "应用快捷键、range 键盘步进和媒体状态辅助文本；输入框/对话框内 Space 不误触播放，进度 5 秒、音量 5% 步进正确",
       "commands": [
         {
-          "desc": "useGlobalPlayerHotkeys：全局 Space 播放/暂停（焦点在 input/textarea/select 或队列对话框时禁用）、M 静音、,/前/后一、方向键 seek/音量；浮层（队列/沉浸/专注）打开时方向键让位给浮层。seek range step=5s、volume step=0.05（5%）；PlayerBar/ImmersivePlayer 进度 aria-valuetext 展示时间、音量带“音量 x%”；sr-only aria-live 播报播放状态+歌曲+模式（buildStatusText）。verify:task 11.8 通过（hotkeys 测试 + PlayerBar range/status 测试 + typecheck + clippy）",
-          "cmd": "node scripts/verify/checks/task-11.8.mjs"
+          "desc": "useGlobalPlayerHotkeys：全局 Space 播放/暂停（焦点在 input/textarea/select 或队列对话框时禁用）、M 静音、,/前/后一、方向键 seek/音量；浮层（队列/沉浸/专注）打开时方向键让位给浮层。seek range step=5s、volume step=0.05（5%）；PlayerBar/ImmersivePlayer 进度 aria-valuetext 展示时间、音量带“音量 x%”；sr-only aria-live 播报播放状态+歌曲+模式（buildStatusText）。verify:task 11.8 通过（hotkeys 测试 + PlayerBar range/status 测试 + typecheck + clippy）；release gate 仅跑静态契约（--static-only），行为由 frontend-test 承载",
+          "cmd": "node scripts/verify/checks/task-11.8.mjs --static-only"
         }
       ]
     },
@@ -1091,7 +1157,9 @@
           "desc": "单个浮层栈按优先级一次只关闭最上层（阻断确认→选择器→菜单/队列→歌词专注→沉浸→窄屏侧边栏）；打开移焦入内容、关闭回触发控件；Tab 困在浮层内；role=menu 走 roving 焦点。verify:task 12.1 通过（overlays.test.tsx + typecheck + echo-app clippy）",
           "cmd": "node scripts/verify/checks/task-12.1.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "12.2",
@@ -1101,7 +1169,9 @@
           "desc": "Testing Library 键盘路径测试（导航/搜索/设置可达、Enter 激活、歌曲菜单 roving 焦点可达）+ axe 全壳扫描无 critical/serious 阻断（修正歌曲行 role=option→listitem 以消除 option 含可聚焦后代的违反）；typecheck + lint + echo-app clippy。verify:task 12.2 通过",
           "cmd": "node scripts/verify/checks/task-12.2.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "12.3",
@@ -1111,15 +1181,17 @@
           "desc": "窄屏侧边栏菜单按钮开合 + 遮罩、关闭回焦点到触发控件；次要列（艺人/专辑/时长）760px 收敛、触发按钮避让工具栏、搜索换行保留；resize/开合不丢当前视图、搜索文本或播放快照。verify:task 12.3 通过（narrow.test.tsx + typecheck + echo-app clippy）",
           "cmd": "node scripts/verify/checks/task-12.3.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "12.4",
       "title": "reduced-motion 与三主题 WCAG 2.2 AA 检查",
       "commands": [
         {
-          "desc": "三主题（coral/cobalt/turquoise）文本对比度 AA 达标；reduced-motion 关闭唱片/平滑滚动但保留当前行、焦点与播放态；axe 键盘/SR 扫描与沉浸/播放栏测试通过",
-          "cmd": "node scripts/verify/checks/task-12.4.mjs"
+          "desc": "三主题（coral/cobalt/turquoise）文本对比度 AA 达标；reduced-motion 关闭唱片/平滑滚动但保留当前行、焦点与播放态；axe 键盘/SR 扫描与沉浸/播放栏测试通过；release gate 仅跑静态契约（--static-only），typecheck/Vitest 半由 frontend-test 承载",
+          "cmd": "node scripts/verify/checks/task-12.4.mjs --static-only"
         }
       ]
     },
@@ -1138,8 +1210,8 @@
       "title": "扫描/hash/标签/封面 worker CPU/内存/取消压力测试",
       "commands": [
         {
-          "desc": "默认并发 min(CPU,4)、压力下边界不破、取消不落 missing、输入上限(4KiB/2MiB/20MiB)与封面缓存容量生效",
-          "cmd": "node scripts/verify/checks/task-12.6.mjs"
+          "desc": "输入上限(4KiB/2MiB/20MiB)、min(CPU,4) 默认与封面缓存容量在源码中固定；worker 压力测试由 workspace-test 承载",
+          "cmd": "node scripts/verify/checks/task-12.6.mjs --static-only"
         }
       ]
     },
@@ -1148,8 +1220,8 @@
       "title": "路径穿越、symlink/reparse、TOCTOU、恶意标签/LRC、任意 asset key、Tauri capability 安全测试",
       "commands": [
         {
-          "desc": "echo-core 安全测试（escape/symlink/TOCTOU/hostile+cover key）+ echo-desktop platform::security（CSP/capability/cover protocol）",
-          "cmd": "node scripts/verify/checks/task-12.7.mjs"
+          "desc": "echo-core 安全测试（escape/symlink/TOCTOU/hostile+cover key）+ echo-desktop platform::security（CSP/capability/cover protocol）；release gate 仅跑静态契约（--static-only），cargo 半由 workspace-test 承载",
+          "cmd": "node scripts/verify/checks/task-12.7.mjs --static-only"
         }
       ]
     },
@@ -1176,6 +1248,8 @@
     {
       "id": "13.2",
       "title": "macOS native e2e（真实壳 + Gate dialogs）",
+      "archived": true,
+      "archivedReason": "与 workspace test 重复：native_e2e 的 driver 是 host-agnostic（无 cfg(target_os) 分支，DesktopTrash::default() 直接返回 Unavailable 不触达 OS），其 native_loop_and_restart_preserve_relationships 与 player::coordinator::tests:: 的 45 个用例都由 Linux 的 cargo test --workspace --all-targets --all-features 执行（实测 run 44074127969 日志逐条 ... ok）。删掉这一步省 42s（几乎全是 macOS 上编译 native_e2e 测试目标的时间）。",
       "commands": [
         {
           "desc": "macOS native e2e（真实壳 + Gate dialogs）",
@@ -1210,8 +1284,8 @@
       "title": "运行期无账号/遥测/同步 command/event/table 或业务网络请求；UI 不显示可操作同步/全选/歌单排序/歌曲编辑",
       "commands": [
         {
-          "desc": "0001 迁移无同步/遥测表 + IPC 命令/事件面无同步命令 + 无网络客户端依赖 + 桌面 CSP 拒绝远端 + UI 组件测试断言作用域守卫",
-          "cmd": "node scripts/verify/checks/task-13.8.mjs"
+          "desc": "0001 迁移无同步/遥测表 + IPC 命令/事件面无同步命令 + 无网络客户端依赖 + 桌面 CSP 拒绝远端 + UI 组件测试断言作用域守卫；release gate 仅跑静态契约（--static-only），cargo/typecheck/Vitest 半由 workspace-test / frontend-test 承载",
+          "cmd": "node scripts/verify/checks/task-13.8.mjs --static-only"
         }
       ]
     },
@@ -1372,8 +1446,8 @@
       "title": "OS 文件打开载荷在壳边界归一化为本地路径（normalize-os-file-open-paths）",
       "commands": [
         {
-          "desc": "open_targets owns the URL->path conversion; shell<->runtime contract carried by PathBuf",
-          "cmd": "node scripts/verify/checks/task-16.1.mjs"
+          "desc": "open_targets owns the URL->path conversion; shell<->runtime contract carried by PathBuf (static contract; behavior covered by workspace test)",
+          "cmd": "node scripts/verify/checks/task-16.1.mjs --static-only"
         }
       ]
     },
@@ -1385,7 +1459,9 @@
           "desc": "begin_load is the single reset entry point; three Failed entry points and the Loading snapshot carry no stale progress",
           "cmd": "node scripts/verify/checks/task-16.2.mjs"
         }
-      ]
+      ],
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "16.3",
@@ -1646,7 +1722,8 @@
           "kind": "rust",
           "target": "root_switch::tests::empty_directory_activates"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R01-S02",
@@ -1657,7 +1734,8 @@
           "kind": "rust",
           "target": "root_switch::tests::root_level_error_keeps_old_active_root"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R01-S03",
@@ -1668,7 +1746,8 @@
           "kind": "rust",
           "target": "root_switch::tests::read_only_root_activates_readonly"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R01-S04",
@@ -1679,7 +1758,8 @@
           "kind": "rust",
           "target": "boot::tests::clean_active_root_recovers_idle_and_releases_the_scan_exclusion"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R02-S01",
@@ -1690,7 +1770,8 @@
           "kind": "vitest",
           "target": "src/app/narrow.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R02-S02",
@@ -1701,12 +1782,13 @@
           "kind": "vitest",
           "target": "src/features/library/SongList.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R02-S03",
       "title": "进入多选模式",
-      "command": "node scripts/verify/checks/task-13.8.mjs",
+      "command": "node scripts/verify/checks/task-13.8.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -1723,12 +1805,13 @@
           "kind": "vitest",
           "target": "src/features/library/SongRow.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R02-S05",
       "title": "访问一期明确排除的入口",
-      "command": "node scripts/verify/checks/task-13.8.mjs",
+      "command": "node scripts/verify/checks/task-13.8.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -1767,7 +1850,8 @@
           "kind": "vitest",
           "target": "src/app/accessibility.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R02-S09",
@@ -1800,7 +1884,8 @@
           "kind": "vitest",
           "target": "src/features/settings/SettingsView.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R02-S12",
@@ -1811,7 +1896,8 @@
           "kind": "vitest",
           "target": "src/features/settings/SettingsView.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R02-S13",
@@ -1822,7 +1908,8 @@
           "kind": "vitest",
           "target": "src/features/settings/SettingsView.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R02-S14",
@@ -1833,7 +1920,8 @@
           "kind": "vitest",
           "target": "src/features/settings/SettingsView.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R02-S15",
@@ -1844,7 +1932,8 @@
           "kind": "vitest",
           "target": "src/features/settings/SettingsView.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R03-S01",
@@ -1856,7 +1945,8 @@
           "target": "src/app/App.test.tsx",
           "name": "keeps the import entry in the titlebar strip under the playlist view"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R03-S02",
@@ -1868,7 +1958,8 @@
           "target": "src/app/App.test.tsx",
           "name": "keeps the import entry in the titlebar strip under the artist directory"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R03-S03",
@@ -1880,7 +1971,8 @@
           "target": "src/app/App.test.tsx",
           "name": "hides the import entry for a read-only library"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R04-S01",
@@ -1891,7 +1983,8 @@
           "kind": "rust",
           "target": "platform::local_state"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R04-S02",
@@ -1902,7 +1995,8 @@
           "kind": "rust",
           "target": "platform::local_state"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R04-S03",
@@ -1913,7 +2007,8 @@
           "kind": "rust",
           "target": "platform::local_state"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R04-S04",
@@ -1924,7 +2019,8 @@
           "kind": "vitest",
           "target": "src/features/settings/SettingsView.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R04-S05",
@@ -1935,12 +2031,13 @@
           "kind": "vitest",
           "target": "src/features/settings/SettingsView.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R05-S01",
       "title": "选择退出应用",
-      "command": "node scripts/verify/checks/task-9.6.mjs",
+      "command": "node scripts/verify/checks/task-9.6.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -1951,7 +2048,7 @@
     {
       "id": "DAS-R05-S02",
       "title": "选择后台运行",
-      "command": "node scripts/verify/checks/task-9.6.mjs",
+      "command": "node scripts/verify/checks/task-9.6.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -1962,7 +2059,7 @@
     {
       "id": "DAS-R05-S03",
       "title": "关闭期间存在未完成初始化",
-      "command": "node scripts/verify/checks/task-9.6.mjs",
+      "command": "node scripts/verify/checks/task-9.6.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -1973,7 +2070,7 @@
     {
       "id": "DAS-R06-S01",
       "title": "从平台入口显示主窗口",
-      "command": "node scripts/verify/checks/task-9.3.mjs",
+      "command": "node scripts/verify/checks/task-9.3.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -1984,7 +2081,7 @@
     {
       "id": "DAS-R06-S02",
       "title": "从平台入口控制播放",
-      "command": "node scripts/verify/checks/task-9.3.mjs",
+      "command": "node scripts/verify/checks/task-9.3.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -1995,7 +2092,7 @@
     {
       "id": "DAS-R06-S03",
       "title": "托盘或菜单栏初始化失败",
-      "command": "node scripts/verify/checks/task-9.3.mjs",
+      "command": "node scripts/verify/checks/task-9.3.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -2006,7 +2103,7 @@
     {
       "id": "DAS-R07-S01",
       "title": "重复启动应用",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -2017,7 +2114,7 @@
     {
       "id": "DAS-R07-S02",
       "title": "系统文件关联触发打开",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -2028,7 +2125,7 @@
     {
       "id": "DAS-R07-S03",
       "title": "首实例尚未就绪",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -2067,7 +2164,8 @@
           "kind": "rust",
           "target": "notch_window_never_constructs_a_second_playback_session"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R08-S01",
@@ -2078,7 +2176,8 @@
           "kind": "vitest",
           "target": "src/app/narrow.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R08-S02",
@@ -2089,7 +2188,8 @@
           "kind": "vitest",
           "target": "src/app/overlays.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R08-S03",
@@ -2100,7 +2200,8 @@
           "kind": "vitest",
           "target": "src/app/overlays.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R08-S04",
@@ -2111,7 +2212,8 @@
           "kind": "vitest",
           "target": "src/features/player/QueuePanel.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R08-S05",
@@ -2122,7 +2224,8 @@
           "kind": "vitest",
           "target": "src/features/player/PlayerBar.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R08-S06",
@@ -2133,7 +2236,8 @@
           "kind": "vitest",
           "target": "src/app/overlays.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R08-S07",
@@ -2144,7 +2248,8 @@
           "kind": "vitest",
           "target": "src/app/overlays.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R08-S08",
@@ -2155,7 +2260,8 @@
           "kind": "vitest",
           "target": "src/features/player/EffectsPanel.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R08-S09",
@@ -2166,7 +2272,8 @@
           "kind": "vitest",
           "target": "src/features/player/EffectsPanel.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R09-S01",
@@ -2177,7 +2284,8 @@
           "kind": "vitest",
           "target": "src/app/accessibility.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R09-S02",
@@ -2188,7 +2296,8 @@
           "kind": "vitest",
           "target": "src/app/accessibility.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R09-S03",
@@ -2199,7 +2308,8 @@
           "kind": "vitest",
           "target": "src/app/overlays.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R09-S04",
@@ -2210,7 +2320,8 @@
           "kind": "vitest",
           "target": "src/app/overlays.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R09-S05",
@@ -2221,7 +2332,8 @@
           "kind": "vitest",
           "target": "src/features/player/EffectsPanel.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R09-S06",
@@ -2232,7 +2344,8 @@
           "kind": "vitest",
           "target": "src/features/player/EffectsPanel.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R09-S07",
@@ -2243,12 +2356,13 @@
           "kind": "vitest",
           "target": "src/features/player/EffectsPanel.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R10-S01",
       "title": "离线启动",
-      "command": "node scripts/verify/checks/task-13.8.mjs",
+      "command": "node scripts/verify/checks/task-13.8.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -2259,7 +2373,7 @@
     {
       "id": "DAS-R10-S02",
       "title": "跨平台验证",
-      "command": "node scripts/verify/checks/task-13.8.mjs",
+      "command": "node scripts/verify/checks/task-13.8.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -2309,7 +2423,8 @@
           "kind": "vitest",
           "target": "src/app/App.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R12-S02",
@@ -2320,7 +2435,8 @@
           "kind": "vitest",
           "target": "src/app/App.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R13-S01",
@@ -2562,7 +2678,8 @@
           "kind": "rust",
           "target": "app_menu"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R19-S01",
@@ -2584,7 +2701,8 @@
           "kind": "vitest",
           "target": "src/app/WindowControls.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R19-S03",
@@ -2595,7 +2713,8 @@
           "kind": "rust",
           "target": "platform::security"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R19-S04",
@@ -2607,7 +2726,8 @@
           "target": "src/app/WindowControls.test.tsx",
           "name": "renders nothing outside the Windows platform"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R19-S05",
@@ -2618,7 +2738,8 @@
           "kind": "rust",
           "target": "platform::security"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R20-S01",
@@ -2650,7 +2771,8 @@
           "target": "src/features/library/SongMenu.test.tsx",
           "name": "renders the menu thumbnail through the list tier"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R20-S02",
@@ -2662,7 +2784,8 @@
           "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
           "name": "renders a saved cover at detail size and passes data URL previews through"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R20-S03",
@@ -2674,7 +2797,8 @@
           "target": "src/features/player/ImmersivePlayer.test.tsx",
           "name": "puts the embedded artwork on the record label (内置优先)"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R20-S04",
@@ -2689,7 +2813,8 @@
           "kind": "rust",
           "target": "cover_uri_parses_size_selector_before_stripping_query"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R20-S05",
@@ -2704,7 +2829,8 @@
           "kind": "rust",
           "target": "cover_uri_rejects_path_traversal_and_absolute_paths"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R20-S06",
@@ -2715,7 +2841,8 @@
           "kind": "rust",
           "target": "cover_responses_are_immutable_and_keep_cors_vary"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R20-S07",
@@ -2734,7 +2861,8 @@
           "kind": "rust",
           "target": "cover_cache_thumbnail_drops_alpha_and_keeps_jpeg"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R20-S08",
@@ -2749,7 +2877,8 @@
           "kind": "rust",
           "target": "cover_cache_thumbnail_tiers_are_independent"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R21-S01",
@@ -2771,7 +2900,8 @@
           "kind": "rust",
           "target": "cover_cache_concurrent_thumbnail_generation_decodes_once"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R21-S03",
@@ -2786,7 +2916,8 @@
           "kind": "rust",
           "target": "cover_cache_thumbnail_missing_and_corrupt_originals"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R22-S01",
@@ -2798,7 +2929,8 @@
           "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
           "name": "sends the picked cover as a base64 payload instead of a byte array"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R22-S02",
@@ -2809,7 +2941,8 @@
           "kind": "rust",
           "target": "cover_payload::tests::decodes_valid_base64_to_original_bytes"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R22-S03",
@@ -2820,7 +2953,8 @@
           "kind": "rust",
           "target": "cover_payload::tests::both_cover_commands_decode_through_the_same_helper"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R22-S04",
@@ -2832,7 +2966,8 @@
           "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
           "name": "rejects a picked cover larger than the size limit"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R22-S05",
@@ -2843,7 +2978,8 @@
           "kind": "rust",
           "target": "playlist_cover_rejects_unsupported_mime_without_replacing_the_saved_cover"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R22-S06",
@@ -2854,7 +2990,8 @@
           "kind": "rust",
           "target": "cover_payload::tests::rejects_malformed_base64_as_a_validation_error"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R23-S01",
@@ -2866,7 +3003,8 @@
           "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
           "name": "releases the previous preview when another cover is picked"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R23-S02",
@@ -2878,7 +3016,8 @@
           "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
           "name": "clears the preview when the dialog unmounts or the automatic cover is restored"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R23-S03",
@@ -2890,7 +3029,8 @@
           "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
           "name": "renders the picked cover preview as a bounded data URL instead of a blob"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R24-S01",
@@ -2901,7 +3041,8 @@
           "kind": "rust",
           "target": "infrastructure::metadata::cover::tests::cover_cache_thumbnail_decodes_webp_original"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R24-S02",
@@ -2912,7 +3053,8 @@
           "kind": "rust",
           "target": "infrastructure::metadata::cover::tests::cover_cache_thumbnail_decodes_webp_original"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R25-S01",
@@ -2923,7 +3065,8 @@
           "kind": "rust",
           "target": "cover_preview::tests::preview_thumbnail_caps_the_longest_edge_at_detail_tier"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R25-S02",
@@ -2934,7 +3077,8 @@
           "kind": "rust",
           "target": "cover_preview::tests::preview_thumbnail_returns_jpeg_bytes_without_touching_disk"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R25-S03",
@@ -2945,7 +3089,8 @@
           "kind": "rust",
           "target": "cover_preview::tests::preview_thumbnail_rejects_oversized_pixel_allocation_before_decoding"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R25-S04",
@@ -2957,7 +3102,8 @@
           "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
           "name": "keeps the saved cover and name when preview generation fails"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R25-S05",
@@ -2968,7 +3114,8 @@
           "kind": "rust",
           "target": "cover_preview::tests::preview_thumbnail_caps_the_longest_edge_at_detail_tier"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R26-S01",
@@ -2980,7 +3127,8 @@
           "target": "src/app/FileDropOverlay.test.tsx",
           "name": "appears when a drag enters and disappears when it leaves or drops"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R26-S02",
@@ -2992,7 +3140,8 @@
           "target": "src/app/FileDropOverlay.test.tsx",
           "name": "appears when a drag enters and disappears when it leaves or drops"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R26-S03",
@@ -3004,7 +3153,8 @@
           "target": "src/app/FileDropOverlay.test.tsx",
           "name": "appears when a drag enters and disappears when it leaves or drops"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R26-S04",
@@ -3020,7 +3170,8 @@
           "kind": "vitest",
           "target": "src/app/overlays.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R26-S05",
@@ -3032,7 +3183,8 @@
           "target": "src/app/FileDropOverlay.test.tsx",
           "name": "removes motion but keeps the state change under prefers-reduced-motion"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R27-S01",
@@ -3047,7 +3199,8 @@
           "kind": "rust",
           "target": "file_open_gate::tests::one_batch_keeps_platform_order_when_the_frontend_is_ready"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R27-S02",
@@ -3058,7 +3211,8 @@
           "kind": "rust",
           "target": "runtime::services::tests::open_path::open_path_of_an_active_library_song_resolves_to_its_uuid"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R27-S03",
@@ -3069,7 +3223,8 @@
           "kind": "rust",
           "target": "file_drop::tests::supported_extensions_match_core_and_are_case_insensitive"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R27-S04",
@@ -3080,7 +3235,8 @@
           "kind": "rust",
           "target": "file_drop::tests::directories_are_rejected_without_scanning_them"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R27-S05",
@@ -3091,12 +3247,13 @@
           "kind": "rust",
           "target": "file_drop::tests::mixed_drop_keeps_accepted_order_and_reports_each_rejection"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R27-S06",
       "title": "不扩权限面",
-      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-app --all-features",
+      "command": "node scripts/verify/checks/file-drop-config.mjs",
       "evidence": [
         {
           "kind": "node",
@@ -3107,7 +3264,7 @@
     {
       "id": "DAS-R27-S07",
       "title": "资料库只读或不可用时仍可播",
-      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features",
+      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid",
       "evidence": [
         {
           "kind": "node",
@@ -3117,7 +3274,8 @@
           "kind": "rust",
           "target": "runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R28-S01",
@@ -3129,7 +3287,8 @@
           "target": "src/app/App.test.tsx",
           "name": "never URL-decodes a payload that already contains a literal %20"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R28-S02",
@@ -3140,12 +3299,13 @@
           "kind": "rust",
           "target": "file_open_gate::tests::one_batch_queues_every_path_until_the_frontend_listener_is_ready"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R28-S03",
       "title": "三平台行为一致",
-      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-app --all-features",
+      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-app --all-features file_drop::tests::hover_overlay_follows_drag_lifecycle",
       "evidence": [
         {
           "kind": "node",
@@ -3155,7 +3315,8 @@
           "kind": "rust",
           "target": "file_drop::tests::hover_overlay_follows_drag_lifecycle"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R29-S01",
@@ -3167,7 +3328,8 @@
           "target": "src/app/useAppShell.test.tsx",
           "name": "selectView clears an unconsumed target and the source"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R29-S02",
@@ -3179,7 +3341,8 @@
           "target": "src/app/useAppShell.test.tsx",
           "name": "consumes only the target and keeps the source for the return"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R29-S03",
@@ -3191,7 +3354,8 @@
           "target": "src/app/useAppShell.test.tsx",
           "name": "entering a directory directly produces no source record"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DAS-R29-S04",
@@ -3203,12 +3367,13 @@
           "target": "src/app/useAppShell.test.tsx",
           "name": "returnToSource restores the recorded view and playlist"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DP-R01-S01",
       "title": "播放资料库歌曲",
-      "command": "cargo test -p echo-desktop --all-features --test player_smoke",
+      "command": "cargo test -p echo-desktop --all-features",
       "evidence": [
         {
           "kind": "rust",
@@ -3226,7 +3391,8 @@
           "kind": "rust",
           "target": "cold_restored_playback_advances_after_natural_eof_with_real_libmpv"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R01-S02",
@@ -3245,7 +3411,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests::error_skips_bad_entry_and_plays_next_sequential"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R01-S03",
@@ -3267,7 +3434,8 @@
           "kind": "vitest",
           "target": "src/features/player/QueuePanel.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DP-R02-S02",
@@ -3278,7 +3446,8 @@
           "kind": "vitest",
           "target": "src/features/player/QueuePanel.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DP-R02-S03",
@@ -3289,7 +3458,8 @@
           "kind": "vitest",
           "target": "src/features/player/QueuePanel.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DP-R02-S04",
@@ -3300,7 +3470,8 @@
           "kind": "vitest",
           "target": "src/features/player/QueuePanel.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DP-R02-S05",
@@ -3311,7 +3482,8 @@
           "kind": "rust",
           "target": "player::queue::tests::play_next_lane_is_fifo_and_projection_precedes_normal_entries"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R02-S06",
@@ -3322,7 +3494,8 @@
           "kind": "rust",
           "target": "player::queue::tests::view_projection_keeps_current_first_and_includes_loop_wrap"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R02-S07",
@@ -3333,7 +3506,8 @@
           "kind": "rust",
           "target": "player::queue::tests::clear_pending_keeps_current_and_history"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R02-S08",
@@ -3344,7 +3518,8 @@
           "kind": "rust",
           "target": "promote_does_not_fold_ordinary_duplicates_or_current"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R02-S09",
@@ -3355,7 +3530,8 @@
           "kind": "rust",
           "target": "priority_lane_physical_contiguity"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R02-S10",
@@ -3366,7 +3542,8 @@
           "kind": "rust",
           "target": "restore_with_duplicate_lane_ids_for_one_song_collapses_on_promote"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R02-S11",
@@ -3377,7 +3554,8 @@
           "kind": "rust",
           "target": "promote_does_not_fold_ordinary_duplicates_or_current"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R02-S12",
@@ -3388,7 +3566,8 @@
           "kind": "rust",
           "target": "play_next_lane_is_fifo_and_projection_precedes_normal_entries"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R02-S13",
@@ -3399,7 +3578,8 @@
           "kind": "rust",
           "target": "clear_pending_keeps_only_current_even_after_loop_wrap"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R02-S14",
@@ -3410,7 +3590,8 @@
           "kind": "rust",
           "target": "priority_lane_round_trips_through_snapshot_and_rebuild"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R03-S01",
@@ -3421,7 +3602,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests::mode_switch_keeps_current_item"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R03-S02",
@@ -3432,7 +3614,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests::next_advances_in_order"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R03-S03",
@@ -3443,7 +3626,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests::previous_moves_back_within_5_seconds"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R03-S04",
@@ -3466,7 +3650,8 @@
           "target": "src/features/player/QueuePanel.test.tsx",
           "name": "renders a bounded number of rows for a long queue"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DP-R03-S06",
@@ -3478,7 +3663,8 @@
           "target": "src/features/player/QueuePanel.test.tsx",
           "name": "moves the window with the scroll offset"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DP-R04-S01",
@@ -3489,7 +3675,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests::error_skips_bad_entry_and_plays_next_sequential"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R04-S02",
@@ -3500,7 +3687,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests::error_advance_all_bad_stops_without_spin"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R04-S03",
@@ -3511,7 +3699,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests::error_advance_never_retries_same_entry_in_round"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R04-S04",
@@ -3522,7 +3711,8 @@
           "kind": "rust",
           "target": "repeat_one"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R04-S05",
@@ -3533,7 +3723,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests::mode_switch_keeps_current_item"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R04-S06",
@@ -3544,12 +3735,13 @@
           "kind": "rust",
           "target": "_through_coordinator"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R05-S01",
       "title": "单曲加载失败",
-      "command": "node scripts/verify/checks/task-9.2.mjs",
+      "command": "node scripts/verify/checks/task-9.2.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -3560,7 +3752,7 @@
     {
       "id": "DP-R05-S02",
       "title": "单曲循环中的加载失败",
-      "command": "node scripts/verify/checks/task-11.7.mjs",
+      "command": "node scripts/verify/checks/task-11.7.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -3577,7 +3769,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests::recovered_blocked_entry_becomes_eligible_after_retry"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R06-S01",
@@ -3588,7 +3781,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::playback_sessions_are_idempotent"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R06-S02",
@@ -3599,7 +3793,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::playback_sessions_are_idempotent"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R06-S03",
@@ -3610,7 +3805,8 @@
           "kind": "rust",
           "target": "entering_loading_starts_without_stale_progress_facts"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R06-S04",
@@ -3621,7 +3817,8 @@
           "kind": "rust",
           "target": "file_loaded_still_drives_progress_from_mpv_reports"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R07-S01",
@@ -3632,7 +3829,8 @@
           "kind": "rust",
           "target": "platform::local_state"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R07-S02",
@@ -3651,7 +3849,8 @@
           "kind": "vitest",
           "target": "src/features/player/PlayerBar.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R07-S03",
@@ -3662,7 +3861,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests::importing_current_temporary_entry_replaces_it_in_place_and_resumes_playing"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R07-S04",
@@ -3673,7 +3873,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests::importing_current_temporary_entry_preserves_pause_and_rejects_stale_completion"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R07-S05",
@@ -3684,7 +3885,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests_opened_files::opened_batch_creates_one_entry_per_path_in_order"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R07-S06",
@@ -3695,7 +3897,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests_opened_files::opened_batch_mixes_library_and_temporary_in_input_order"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R07-S07",
@@ -3706,12 +3909,13 @@
           "kind": "rust",
           "target": "player::coordinator::tests_opened_files::opened_batch_replaces_the_current_queue_and_priority_lane"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R07-S08",
       "title": "系统打开多个文件同样不再丢失",
-      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features",
+      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features player::coordinator::tests_opened_files",
       "evidence": [
         {
           "kind": "node",
@@ -3725,12 +3929,13 @@
           "kind": "rust",
           "target": "player::coordinator::tests_opened_files::single_temporary_open_is_still_a_one_item_batch"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R08-S01",
       "title": "达到播放阈值",
-      "command": "node scripts/verify/checks/task-9.4.mjs",
+      "command": "node scripts/verify/checks/task-9.4.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -3747,12 +3952,13 @@
           "kind": "vitest",
           "target": "src/player/useGlobalPlayerHotkeys.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DP-R09-S01",
       "title": "正常恢复",
-      "command": "node scripts/verify/checks/task-9.3.mjs",
+      "command": "node scripts/verify/checks/task-9.3.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -3763,7 +3969,7 @@
     {
       "id": "DP-R09-S02",
       "title": "部分歌曲不可用",
-      "command": "node scripts/verify/checks/task-9.3.mjs",
+      "command": "node scripts/verify/checks/task-9.3.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -3774,7 +3980,7 @@
     {
       "id": "DP-R09-S03",
       "title": "文件关联覆盖普通恢复",
-      "command": "node scripts/verify/checks/task-9.6.mjs",
+      "command": "node scripts/verify/checks/task-9.6.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -3785,7 +3991,7 @@
     {
       "id": "DP-R10-S01",
       "title": "使用媒体键",
-      "command": "node scripts/verify/checks/task-9.4.mjs",
+      "command": "node scripts/verify/checks/task-9.4.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -3796,7 +4002,7 @@
     {
       "id": "DP-R10-S02",
       "title": "使用应用快捷键",
-      "command": "node scripts/verify/checks/task-11.8.mjs",
+      "command": "node scripts/verify/checks/task-11.8.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -3813,7 +4019,8 @@
           "kind": "rust",
           "target": "player::queue::tests::previous_in_loop_walks_the_context_backwards_and_wraps_to_the_tail"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R11-S02",
@@ -3824,7 +4031,8 @@
           "kind": "rust",
           "target": "player::queue::tests::previous_returns_history_entry"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R11-S03",
@@ -3835,7 +4043,8 @@
           "kind": "rust",
           "target": "player::session::tests::state_store_save_load_round_trip_is_atomic_and_clears"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R12-S01",
@@ -3847,7 +4056,8 @@
           "target": "src/features/player/PlayerBar.test.tsx",
           "name": "with a neutral button"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DP-R12-S02",
@@ -3859,7 +4069,8 @@
           "target": "src/features/player/PlayerBar.test.tsx",
           "name": "while the theme changes"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DP-R12-S03",
@@ -3870,7 +4081,8 @@
           "kind": "rust",
           "target": "restore_keeps_fresh_history_and_counts_only_blocked_entries"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R12-S04",
@@ -3881,7 +4093,8 @@
           "kind": "rust",
           "target": "player::session::tests::restore_keeps_fresh_history_and_counts_only_blocked_entries"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R12-S05",
@@ -3892,7 +4105,8 @@
           "kind": "rust",
           "target": "player::deletion::tests::rollback_restores_timestamped_history_so_previous_remains_available"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R13-S01",
@@ -3903,7 +4117,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests::restore_session_recovers_queue_mode_and_settings_paused"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R13-S02",
@@ -3914,7 +4129,8 @@
           "kind": "rust",
           "target": "playback_restore"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R14-S01",
@@ -3925,7 +4141,8 @@
           "kind": "rust",
           "target": "application::playback_context::tests::resolves_all_pages_and_validates_selected_song"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R14-S02",
@@ -3936,7 +4153,8 @@
           "kind": "rust",
           "target": "application::playback_context::tests::recent_filters_case_insensitively_and_rejects_absent_selection"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R15-S01",
@@ -3947,7 +4165,8 @@
           "kind": "rust",
           "target": "application::playback_context::tests::resolves_all_pages_and_validates_selected_song"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R15-S02",
@@ -3958,7 +4177,8 @@
           "kind": "rust",
           "target": "application::playback_context::tests::recent_filters_case_insensitively_and_rejects_absent_selection"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R15-S03",
@@ -3969,7 +4189,8 @@
           "kind": "rust",
           "target": "application::playback_context::tests::playlist_uses_newest_member_first"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R15-S04",
@@ -3980,7 +4201,8 @@
           "kind": "rust",
           "target": "application::playback_context::tests::unknown_library_view_is_rejected_in_core"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R16-S01",
@@ -3991,7 +4213,8 @@
           "kind": "rust",
           "target": "restore_or_prime_primes_the_first_song_of_the_default_view"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R16-S02",
@@ -4002,7 +4225,8 @@
           "kind": "rust",
           "target": "restore_or_prime_replaces_a_dropped_current_with_the_newest_candidate"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R16-S03",
@@ -4013,7 +4237,8 @@
           "kind": "rust",
           "target": "restore_or_prime_yields_an_empty_bar_for_an_empty_library"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R16-S04",
@@ -4024,7 +4249,8 @@
           "kind": "rust",
           "target": "restore_session_recovers_queue_mode_and_settings_paused"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R17-S01",
@@ -4035,7 +4261,8 @@
           "kind": "rust",
           "target": "prime_context_paused_preserves_settings_without_playing"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R18-S01",
@@ -4046,7 +4273,8 @@
           "kind": "vitest",
           "target": "src/features/player/PlayerBar.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DP-R18-S02",
@@ -4057,7 +4285,8 @@
           "kind": "vitest",
           "target": "src/features/player/PlayerBar.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DP-R19-S01",
@@ -4068,7 +4297,8 @@
           "kind": "rust",
           "target": "runtime::player::tests::snapshot::snapshot_payload_carries_no_queue_entries_or_effects"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R19-S02",
@@ -4083,7 +4313,8 @@
           "kind": "rust",
           "target": "runtime::player::tests::snapshot::map_queue_projection_carries_the_revision_it_was_built_at"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R19-S03",
@@ -4094,7 +4325,8 @@
           "kind": "rust",
           "target": "runtime::player::tests::forwarder::snapshot_forwarder_emits_queue_projection_only_when_revision_changes"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R19-S04",
@@ -4105,7 +4337,8 @@
           "kind": "rust",
           "target": "runtime::player::tests::snapshot::snapshot_payload_size_does_not_depend_on_the_queue_length"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R20-S01",
@@ -4116,7 +4349,8 @@
           "kind": "rust",
           "target": "player::queue::tests::queue_revision_advances_on_every_projection_changing_mutation"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R20-S02",
@@ -4127,7 +4361,8 @@
           "kind": "rust",
           "target": "player::queue::tests::queue_revision_advances_on_every_projection_changing_mutation"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R20-S03",
@@ -4138,7 +4373,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests::coordinator_revision_advances_on_mode_and_failed_round_changes"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R20-S04",
@@ -4149,7 +4385,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests::queue_revision_survives_whole_queue_replacement"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R20-S05",
@@ -4160,7 +4397,8 @@
           "kind": "rust",
           "target": "player::queue::tests::queue_revision_is_unchanged_by_reads"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R21-S01",
@@ -4171,7 +4409,8 @@
           "kind": "rust",
           "target": "player::queue::tests::queue_projection_stays_within_budget_for_ten_thousand_entries"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R21-S02",
@@ -4182,7 +4421,8 @@
           "kind": "rust",
           "target": "player::queue::tests::queue_projection_order_and_content_unchanged"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R22-S01",
@@ -4194,7 +4434,8 @@
           "target": "src/player/playerStore.test.ts",
           "name": "asks the desktop to re-publish the queue and effects on startup"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DP-R22-S02",
@@ -4206,7 +4447,8 @@
           "target": "src/player/playerStore.test.ts",
           "name": "ignores a queue projection that is not newer than the applied one"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "DP-R22-S03",
@@ -4218,7 +4460,8 @@
           "target": "src/player/playerStore.test.ts",
           "name": "applies a newer queue projection as a whole"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R01-S01",
@@ -4229,7 +4472,8 @@
           "kind": "vitest",
           "target": "src/features/player/PlayerBar.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R01-S02",
@@ -4240,7 +4484,8 @@
           "kind": "vitest",
           "target": "src/features/player/PlayerBar.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R01-S03",
@@ -4251,7 +4496,8 @@
           "kind": "vitest",
           "target": "src/features/player/PlayerBar.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R01-S04",
@@ -4263,7 +4509,8 @@
           "target": "src/features/player/PlayerBar.test.tsx",
           "name": "navigates to the artist without touching playback, the current song or the queue"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R02-S01",
@@ -4274,7 +4521,8 @@
           "kind": "vitest",
           "target": "src/features/player/PlayerBar.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R02-S02",
@@ -4285,7 +4533,8 @@
           "kind": "vitest",
           "target": "src/features/player/PlayerBar.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R02-S03",
@@ -4296,7 +4545,8 @@
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R03-S01",
@@ -4307,7 +4557,8 @@
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R03-S02",
@@ -4318,7 +4569,8 @@
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R03-S03",
@@ -4329,7 +4581,8 @@
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R03-S04",
@@ -4346,7 +4599,8 @@
           "target": "src/features/player/ImmersivePlayer.test.tsx",
           "name": "closes the immersive surface before navigating to the album"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R04-S01",
@@ -4357,7 +4611,8 @@
           "kind": "rust",
           "target": "lyrics"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "IL-R04-S02",
@@ -4368,7 +4623,8 @@
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R04-S03",
@@ -4379,7 +4635,8 @@
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R04-S04",
@@ -4390,7 +4647,8 @@
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R05-S01",
@@ -4401,7 +4659,8 @@
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R05-S02",
@@ -4412,7 +4671,8 @@
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R05-S03",
@@ -4423,7 +4683,8 @@
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R06-S01",
@@ -4434,7 +4695,8 @@
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R06-S02",
@@ -4445,7 +4707,8 @@
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R06-S03",
@@ -4456,7 +4719,8 @@
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R07-S01",
@@ -4467,7 +4731,8 @@
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R07-S02",
@@ -4478,7 +4743,8 @@
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R07-S03",
@@ -4489,7 +4755,8 @@
           "kind": "vitest",
           "target": "src/features/player/ImmersivePlayer.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R08-S01",
@@ -4500,7 +4767,8 @@
           "kind": "vitest",
           "target": "src/app/overlays.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R08-S02",
@@ -4511,7 +4779,8 @@
           "kind": "vitest",
           "target": "src/app/overlays.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R08-S03",
@@ -4522,12 +4791,13 @@
           "kind": "vitest",
           "target": "src/app/overlays.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R09-S01",
       "title": "减少动画偏好",
-      "command": "node scripts/verify/checks/task-12.4.mjs",
+      "command": "node scripts/verify/checks/task-12.4.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -4538,7 +4808,7 @@
     {
       "id": "IL-R09-S02",
       "title": "跨平台离线歌词播放",
-      "command": "node scripts/verify/checks/task-12.4.mjs",
+      "command": "node scripts/verify/checks/task-12.4.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -4549,7 +4819,7 @@
     {
       "id": "IL-R09-S03",
       "title": "暂停时停止旋转",
-      "command": "node scripts/verify/checks/task-12.4.mjs",
+      "command": "node scripts/verify/checks/task-12.4.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -4567,7 +4837,8 @@
           "target": "src/features/player/useLyricsStartOffset.test.tsx",
           "name": "re-observes when the signature changes"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R10-S02",
@@ -4579,7 +4850,8 @@
           "target": "src/features/player/useLyricsStartOffset.test.tsx",
           "name": "re-measures when the info block resizes (ResizeObserver)"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R10-S03",
@@ -4591,7 +4863,8 @@
           "target": "src/features/player/useLyricsStartOffset.test.tsx",
           "name": "re-measures on window resize"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "IL-R10-S04",
@@ -4603,7 +4876,8 @@
           "target": "src/features/player/useLyricsStartOffset.test.tsx",
           "name": "measures the metadata's height while the previous offset is still laid out"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LD-R01-S01",
@@ -4614,7 +4888,8 @@
           "kind": "rust",
           "target": "library_durability_refused_commit_leaves_every_wired_entrypoint_untouched"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R01-S02",
@@ -4625,7 +4900,8 @@
           "kind": "rust",
           "target": "library_durability_retry_projection_failure_keeps_original_identity"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R01-S03",
@@ -4636,7 +4912,8 @@
           "kind": "rust",
           "target": "library_durability_later_edit_catches_up_failed_earlier_playlist"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R01-S04",
@@ -4651,7 +4928,8 @@
           "kind": "rust",
           "target": "unfavorite_is_visible_to_every_read_path_too"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R01-S05",
@@ -4662,7 +4940,8 @@
           "kind": "rust",
           "target": "library_durability_favorite_failure_is_saved_and_later_false_catches_up"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R01-S06",
@@ -4673,7 +4952,8 @@
           "kind": "rust",
           "target": "a_favorite_projects_only_the_incremental_commit"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R02-S01",
@@ -4684,7 +4964,8 @@
           "kind": "rust",
           "target": "library_durability_playlist_delete_saves_cascade_before_projection"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R02-S02",
@@ -4695,7 +4976,8 @@
           "kind": "rust",
           "target": "library_durability_every_native_commit_boundary_recovers_same_operation"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R02-S03",
@@ -4706,7 +4988,8 @@
           "kind": "rust",
           "target": "library_durability_prepared_only_is_not_accepted_as_saved_recovery"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R02-S04",
@@ -4717,7 +5000,8 @@
           "kind": "rust",
           "target": "library_durability_c1_failure_then_c2_never_rolls_back_latest_record"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R02-S05",
@@ -4728,7 +5012,8 @@
           "kind": "rust",
           "target": "library_durability_actual_record_rename_failure_remains_saved_and_retryable"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R03-S01",
@@ -4739,7 +5024,8 @@
           "kind": "rust",
           "target": "library_durability_distinct_directory_and_sync_ids_survive_recovery_and_fresh_projection"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R03-S02",
@@ -4750,7 +5036,8 @@
           "kind": "rust",
           "target": "library_durability_scan_preserves_record_when_media_disappears"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R04-S01",
@@ -4761,7 +5048,8 @@
           "kind": "rust",
           "target": "library_durability_legacy_committed_canonical_digest_is_unchanged"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R04-S02",
@@ -4772,7 +5060,8 @@
           "kind": "rust",
           "target": "library_durability_projection_retains_orphans_and_links_when_evidence_arrives_without_echo"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R05-S01",
@@ -4783,7 +5072,8 @@
           "kind": "rust",
           "target": "library_durability_projection_rejects_cross_directory_chain_and_anchor_without_sql_writes"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R06-S01",
@@ -4794,7 +5084,8 @@
           "kind": "rust",
           "target": "library_durability_issue72_fixture_reproduces_legacy_missing_relationships"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R06-S02",
@@ -4805,7 +5096,8 @@
           "kind": "rust",
           "target": "library_durability_broken_chain_and_corrupt_checkpoint_fail_closed_preserve_bytes"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R07-S01",
@@ -4816,7 +5108,8 @@
           "kind": "rust",
           "target": "library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R07-S02",
@@ -4827,7 +5120,8 @@
           "kind": "rust",
           "target": "library_durability_trusted_sync_retry_unverifiable_anchor_never_installs_baseline_or_pending"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R07-S03",
@@ -4838,7 +5132,8 @@
           "kind": "rust",
           "target": "library_durability_mark_published_legacy_unseeded_ledger_keeps_full_rescue"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R08-S01",
@@ -4849,7 +5144,8 @@
           "kind": "rust",
           "target": "library_durability_playlist_cover_reuses_original_and_clear_survives_rebuild"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R08-S02",
@@ -4860,7 +5156,8 @@
           "kind": "rust",
           "target": "library_durability_export_uses_declared_logical_path_for_managed_audio"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R09-S01",
@@ -4871,7 +5168,8 @@
           "kind": "rust",
           "target": "library_durability_publication_v1_and_unknown_schema_keep_original_evidence"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R09-S02",
@@ -4882,7 +5180,8 @@
           "kind": "rust",
           "target": "library_durability_commit_checks_future_format_before_recovery"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R09-S03",
@@ -4893,7 +5192,8 @@
           "kind": "rust",
           "target": "library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R10-S01",
@@ -4916,7 +5216,8 @@
           "kind": "rust",
           "target": "library_durability_standalone_startup_purges_legacy_sync_projection"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R12-S01",
@@ -4927,7 +5228,8 @@
           "kind": "rust",
           "target": "validate_rejects_non_image_bytes_declared_as_png"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R12-S02",
@@ -4938,7 +5240,8 @@
           "kind": "rust",
           "target": "validate_rejects_declared_mime_that_differs_from_detected_format"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R12-S03",
@@ -4949,7 +5252,8 @@
           "kind": "rust",
           "target": "validate_rejects_truncated_or_malformed_container_header"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R12-S04",
@@ -4964,7 +5268,8 @@
           "kind": "rust",
           "target": "save_and_resolve_round_trip_all_three_formats"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R12-S05",
@@ -4975,7 +5280,8 @@
           "kind": "rust",
           "target": "playlist_and_artist_cover_writes_share_the_same_validation"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R12-S06",
@@ -4986,7 +5292,8 @@
           "kind": "rust",
           "target": "validate_reads_only_the_container_header_without_pixel_decoding"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R12-S07",
@@ -4997,7 +5304,8 @@
           "kind": "rust",
           "target": "existing_size_and_mime_whitelist_rejections_are_unchanged"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LD-R12-S08",
@@ -5012,7 +5320,8 @@
           "kind": "rust",
           "target": "legacy_cache_only_cover_is_unaffected"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R01-S01",
@@ -5023,7 +5332,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::catalog_all_songs_view"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R01-S02",
@@ -5034,7 +5344,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::catalog_search_no_results"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R01-S03",
@@ -5045,7 +5356,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::catalog_repository_gate_empty"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R01-S04",
@@ -5056,7 +5368,8 @@
           "kind": "vitest",
           "target": "src/features/library/CollectionDirectory.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R01-S05",
@@ -5068,7 +5381,8 @@
           "target": "src/features/library/LibraryWorkspace.test.tsx",
           "name": "clears the search when switching between library views"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R01-S06",
@@ -5080,7 +5394,8 @@
           "target": "src/features/library/CollectionDirectory.test.tsx",
           "name": "clears the search when switching between artist and album directories"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R02-S01",
@@ -5091,7 +5406,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::catalog_search_matches_full_query"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R02-S02",
@@ -5102,7 +5418,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::catalog_search_empty_query"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R02-S03",
@@ -5113,7 +5430,8 @@
           "kind": "vitest",
           "target": "src/features/library/SongList.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R02-S04",
@@ -5124,7 +5442,8 @@
           "kind": "vitest",
           "target": "src/features/library/useSongs.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R02-S05",
@@ -5135,7 +5454,8 @@
           "kind": "vitest",
           "target": "src/features/library/useSongs.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R03-S01",
@@ -5146,7 +5466,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::catalog_all_songs_keyset_pages"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R03-S02",
@@ -5158,7 +5479,8 @@
           "target": "src/features/library/songSortControl.test.tsx",
           "name": "uses 歌手 terminology, offers 专辑, and updates the selected sort"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R03-S03",
@@ -5170,7 +5492,8 @@
           "target": "src/features/library/songSortControl.test.tsx",
           "name": "uses 歌手 terminology, offers 专辑, and updates the selected sort"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R03-S04",
@@ -5181,7 +5504,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::catalog_favorites_view"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R03-S05",
@@ -5192,7 +5516,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::catalog_recent_100"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R03-S06",
@@ -5204,7 +5529,8 @@
           "target": "src/features/library/songSortControl.test.tsx",
           "name": "retains the existing artist preference and restores the album preference"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R04-S01",
@@ -5215,7 +5541,8 @@
           "kind": "vitest",
           "target": "src/features/library/SongList.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R04-S02",
@@ -5226,7 +5553,8 @@
           "kind": "vitest",
           "target": "src/features/library/SongMenu.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R05-S01",
@@ -5237,7 +5565,8 @@
           "kind": "vitest",
           "target": "src/features/library/SongMenu.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R05-S02",
@@ -5248,7 +5577,8 @@
           "kind": "vitest",
           "target": "src/features/library/SongMenu.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R05-S03",
@@ -5259,7 +5589,8 @@
           "kind": "vitest",
           "target": "src/features/library/SongMenu.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R06-S01",
@@ -5270,7 +5601,8 @@
           "kind": "vitest",
           "target": "src/features/library/SongList.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R06-S02",
@@ -5281,7 +5613,8 @@
           "kind": "vitest",
           "target": "src/features/library/SongList.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R06-S03",
@@ -5292,7 +5625,8 @@
           "kind": "vitest",
           "target": "src/features/library/SongList.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R06-S04",
@@ -5303,12 +5637,13 @@
           "kind": "rust",
           "target": "application::scan::tests::relink::enumerate_failure_marks_run_failed_without_missing"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R06-S05",
       "title": "打开本地目录",
-      "command": "node scripts/verify/checks/task-9.5.mjs",
+      "command": "node scripts/verify/checks/task-9.5.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -5326,7 +5661,8 @@
           "target": "src/features/library/SongMenu.test.tsx",
           "name": "dispatches delete and shows the 10-second undo affordance on success"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R06-S07",
@@ -5337,7 +5673,8 @@
           "kind": "rust",
           "target": "trash::tests::explicit_system_trash_success_persists_applied_then_finalizes"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R06-S08",
@@ -5348,7 +5685,8 @@
           "kind": "rust",
           "target": "trash::tests::system_trash_failure_keeps_the_verified_staging_for_retry"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R06-S09",
@@ -5359,12 +5697,13 @@
           "kind": "rust",
           "target": "trash::tests::post_call_trash_error_rechecks_missing_staging_and_stops_other_operations"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R06-S10",
       "title": "回收站目标受路径边界保护",
-      "command": "node scripts/verify/checks/task-12.7.mjs",
+      "command": "node scripts/verify/checks/task-12.7.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -5381,7 +5720,8 @@
           "kind": "vitest",
           "target": "src/features/library/SongMenu.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R06-S12",
@@ -5392,7 +5732,8 @@
           "kind": "vitest",
           "target": "src/features/library/batchLibraryOperations.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R06-S13",
@@ -5404,7 +5745,8 @@
           "target": "src/features/library/LibraryWorkspace.test.tsx",
           "name": "右键打开的菜单仍由面板外按压和 Escape 收起"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R07-S01",
@@ -5415,7 +5757,8 @@
           "kind": "rust",
           "target": "bench_50k_search_and_first_screen_p95_meet_prd_budgets"
         }
-      ]
+      ],
+      "delegatedTo": "benchmark"
     },
     {
       "id": "LE-R07-S02",
@@ -5426,7 +5769,8 @@
           "kind": "vitest",
           "target": "src/features/library/SongList.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R07-S03",
@@ -5438,7 +5782,8 @@
           "target": "src/features/library/CollectionDirectory.test.tsx",
           "name": "shows artist cards and reuses the library song table with selection in the detail"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R07-S04",
@@ -5460,7 +5805,8 @@
           "kind": "vitest",
           "target": "src/features/library/batchLibraryOperations.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R07-S06",
@@ -5471,7 +5817,8 @@
           "kind": "vitest",
           "target": "src/features/library/useSongSelection.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R07-S07",
@@ -5483,7 +5830,8 @@
           "target": "src/features/library/SongList.test.tsx",
           "name": "restores a controlled bulk selection after a virtual row leaves and re-enters"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R07-S08",
@@ -5495,7 +5843,8 @@
           "target": "src/features/library/useSongSelection.test.tsx",
           "name": "clears when the view/query selection scope changes"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R07-S09",
@@ -5506,7 +5855,8 @@
           "kind": "vitest",
           "target": "src/features/library/SongList.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R08-S01",
@@ -5517,7 +5867,8 @@
           "kind": "vitest",
           "target": "src/features/library/libraryNavCounts.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R08-S02",
@@ -5528,7 +5879,8 @@
           "kind": "vitest",
           "target": "src/features/library/libraryNavCounts.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R08-S03",
@@ -5539,7 +5891,8 @@
           "kind": "vitest",
           "target": "src/features/playlists/PlaylistsView.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R08-S04",
@@ -5550,7 +5903,8 @@
           "kind": "vitest",
           "target": "src/features/library/batchOperations.test.ts"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R08-S05",
@@ -5561,7 +5915,8 @@
           "kind": "vitest",
           "target": "src/features/library/batchLibraryOperations.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R08-S06",
@@ -5572,7 +5927,8 @@
           "kind": "vitest",
           "target": "src/features/library/batchOperations.test.ts"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R08-S07",
@@ -5583,7 +5939,8 @@
           "kind": "vitest",
           "target": "src/features/library/BatchSongActions.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R08-S08",
@@ -5594,7 +5951,8 @@
           "kind": "vitest",
           "target": "src/features/library/batchLibraryOperations.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R09-S01",
@@ -5605,7 +5963,8 @@
           "kind": "vitest",
           "target": "src/features/library/libraryNavCounts.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R09-S02",
@@ -5616,7 +5975,8 @@
           "kind": "vitest",
           "target": "src/features/library/libraryNavCounts.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R09-S03",
@@ -5627,7 +5987,8 @@
           "kind": "vitest",
           "target": "src/features/library/libraryNavCounts.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R09-S04",
@@ -5638,7 +5999,8 @@
           "kind": "vitest",
           "target": "src/features/library/libraryNavCounts.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R10-S01",
@@ -5650,7 +6012,8 @@
           "target": "src/features/library/SongList.test.tsx",
           "name": "renders only a viewport slice of a 50,000-song library, not all rows"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R10-S02",
@@ -5662,7 +6025,8 @@
           "target": "src/features/library/SongList.test.tsx",
           "name": "keeps rows keyed by stable SongId at their absolute position"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R11-S01",
@@ -5674,7 +6038,8 @@
           "target": "src/features/library/libraryNavCounts.test.tsx",
           "name": "shows 喜欢的音乐's count without the user ever opening that view"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R11-S02",
@@ -5686,7 +6051,8 @@
           "target": "src/features/library/libraryNavCounts.test.tsx",
           "name": "prints the backend total, not the number of rows the page loaded"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R11-S03",
@@ -5697,7 +6063,8 @@
           "kind": "rust",
           "target": "catalog_counts_match_view_membership_over_sqlite"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R11-S04",
@@ -5720,7 +6087,8 @@
           "target": "src/features/library/useSongs.test.tsx",
           "name": "keeps the full query total stable while loading another page"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R12-S02",
@@ -5732,7 +6100,8 @@
           "target": "src/features/library/useSongs.test.tsx",
           "name": "uses the filtered favorites search total"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R12-S03",
@@ -5743,7 +6112,8 @@
           "kind": "rust",
           "target": "catalog_search_pages_deterministically_across_large_library"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R12-S04",
@@ -5755,7 +6125,8 @@
           "target": "src/features/library/useSongs.test.tsx",
           "name": "keeps the full query total stable while loading another page"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R12-S05",
@@ -5767,7 +6138,8 @@
           "target": "src/features/library/useSongs.test.tsx",
           "name": "sends normalized search through the recent view command"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R13-S01",
@@ -5999,7 +6371,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "searches within the current playlist through the scoped search command"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R18-S02",
@@ -6011,7 +6384,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "restores the full member list when the search is cleared"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R18-S03",
@@ -6023,7 +6397,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "shows the playlist search empty state with a clear action on no hit"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R18-S04",
@@ -6035,7 +6410,8 @@
           "target": "src/features/library/useSongs.test.ts",
           "name": "playlistId 变化触发新的抓取请求（缓存键区分布同歌单）"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R18-S05",
@@ -6047,7 +6423,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "appends the next page when the playlist search spills past one page"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R18-S06",
@@ -6059,7 +6436,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "stops requesting pages once the playlist search reaches the last page"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R18-S07",
@@ -6071,7 +6449,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "appends the next page when the playlist search spills past one page"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R18-S08",
@@ -6083,7 +6462,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "discards a continuation page from a superseded playlist search"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R18-S09",
@@ -6095,7 +6475,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "appends the next page when the playlist search spills past one page"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R19-S01",
@@ -6107,7 +6488,8 @@
           "target": "src/features/library/SongList.test.tsx",
           "name": "scrolls the matched song row to the top of the visible area"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R19-S02",
@@ -6119,7 +6501,8 @@
           "target": "src/features/library/favoriteSync.test.tsx",
           "name": "voices 当前没有正在播放的歌曲"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R19-S03",
@@ -6131,7 +6514,8 @@
           "target": "src/features/library/favoriteSync.test.tsx",
           "name": "voices 当前歌曲不在此列表中"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R19-S04",
@@ -6143,7 +6527,8 @@
           "target": "src/features/library/SongList.test.tsx",
           "name": "clamps an end-of-list target to the last reachable position"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R19-S05",
@@ -6166,7 +6551,8 @@
           "target": "src/features/playlists/AddToPlaylistDialog.test.tsx",
           "name": "preselects existing memberships read-only and submits only new targets"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R20-S02",
@@ -6178,7 +6564,8 @@
           "target": "src/features/playlists/AddToPlaylistDialog.test.tsx",
           "name": "falls back to additive selection with a visible warning"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R20-S03",
@@ -6190,7 +6577,8 @@
           "target": "src/features/playlists/AddToPlaylistDialog.test.tsx",
           "name": "runs a multi-song add sequentially and keeps partial failures visible"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R20-S04",
@@ -6202,7 +6590,8 @@
           "target": "src/features/playlists/AddToPlaylistDialog.test.tsx",
           "name": "closes unchanged single-song selection without a mutation"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R21-S01",
@@ -6213,7 +6602,8 @@
           "kind": "rust",
           "target": "library_durability_favorite_failure_is_saved_and_later_false_catches_up"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R21-S02",
@@ -6236,7 +6626,8 @@
           "kind": "rust",
           "target": "library_durability_refused_commit_leaves_every_wired_entrypoint_untouched"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R21-S04",
@@ -6248,7 +6639,8 @@
           "target": "src/features/library/savedPendingFeedback.test.tsx",
           "name": "reports each batch item's own outcome and retries only the saved ones"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R21-S05",
@@ -6259,7 +6651,8 @@
           "kind": "rust",
           "target": "library_durability_retry_catches_up_all_saved_operations_without_new_commits"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R21-S06",
@@ -6271,7 +6664,8 @@
           "target": "src/features/library/libraryNavCounts.test.tsx",
           "name": "keeps the heart, the favorites view and the count on one click"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R22-S01",
@@ -6283,7 +6677,8 @@
           "target": "src/features/library/favoriteMutation.test.ts",
           "name": "counts a repeated like once even when the row is still the pre-write value"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R22-S02",
@@ -6295,7 +6690,8 @@
           "target": "src/features/library/favoriteMutation.test.ts",
           "name": "counts a repeated unlike once even when the row is still the pre-write value"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R23-S01",
@@ -6307,7 +6703,8 @@
           "target": "src/features/library/SongRow.test.tsx",
           "name": "navigates to the artist without starting playback"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R23-S02",
@@ -6319,7 +6716,8 @@
           "target": "src/features/library/SongRow.test.tsx",
           "name": "navigates to the album without starting playback"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R23-S03",
@@ -6331,7 +6729,8 @@
           "target": "src/features/library/SongRow.test.tsx",
           "name": "treats Enter/Space on a link the same as a click"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R23-S04",
@@ -6343,7 +6742,8 @@
           "target": "src/features/library/SongRow.test.tsx",
           "name": "keeps the selection set intact in multi-select mode"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R23-S05",
@@ -6355,7 +6755,8 @@
           "target": "src/features/library/SongRow.test.tsx",
           "name": "renders no link when the read model has no grouping key"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LE-R23-S06",
@@ -6372,7 +6773,8 @@
           "target": "src/features/library/SongMenu.test.tsx",
           "name": "closes the detail and the menu before navigating from the album link"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LL-R01-S01",
@@ -6383,7 +6785,8 @@
           "kind": "rust",
           "target": "root_switch::"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R01-S02",
@@ -6394,7 +6797,8 @@
           "kind": "rust",
           "target": "root_switch::"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R01-S03",
@@ -6405,7 +6809,8 @@
           "kind": "rust",
           "target": "root_switch::"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R01-S04",
@@ -6416,7 +6821,8 @@
           "kind": "rust",
           "target": "root_switch::tests::prepare_reuses_record_identities_and_leaves_media_untouched"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R01-S05",
@@ -6427,7 +6833,8 @@
           "kind": "rust",
           "target": "consecutive_multi_song_add_keeps_every_membership"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R02-S01",
@@ -6438,7 +6845,8 @@
           "kind": "rust",
           "target": "application::scan::tests::relink::manual_rescan_is_repeatable_and_converges"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R02-S02",
@@ -6449,7 +6857,8 @@
           "kind": "rust",
           "target": "watch::tests::watch_events_converge_under_out_of_order_and_duplicate_delivery"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R02-S03",
@@ -6460,7 +6869,8 @@
           "kind": "rust",
           "target": "application::scan::tests::relink::progress_persisted_throttled_and_terminal_state_kept"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R02-S04",
@@ -6471,7 +6881,8 @@
           "kind": "rust",
           "target": "manifest_incompatible_version_fails_check"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R02-S05",
@@ -6482,7 +6893,8 @@
           "kind": "rust",
           "target": "application::watch::tests::"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R02-S06",
@@ -6494,7 +6906,8 @@
           "target": "src/features/settings/SettingsView.test.tsx",
           "name": "starts a scan for the active library and reports completion"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LL-R02-S07",
@@ -6506,7 +6919,8 @@
           "target": "src/features/settings/SettingsView.test.tsx",
           "name": "disables rescan when no library root is configured"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "LL-R03-S01",
@@ -6517,7 +6931,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::playback_sessions_are_idempotent"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R03-S02",
@@ -6528,7 +6943,8 @@
           "kind": "rust",
           "target": "probe"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R03-S03",
@@ -6539,7 +6955,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::scan_pipeline_persists"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R03-S04",
@@ -6550,7 +6967,8 @@
           "kind": "rust",
           "target": "infrastructure::metadata::tags::tests::m4a_tags_parse_from_in_memory_import_source_bytes"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R03-S05",
@@ -6561,7 +6979,8 @@
           "kind": "rust",
           "target": "tagless_wav_reads_as_ok_with_empty_fields"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R04-S01",
@@ -6572,7 +6991,8 @@
           "kind": "rust",
           "target": "application::scan::tests::relink::fast_skip_unchanged_files_and_relink_on_move"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R04-S02",
@@ -6583,7 +7003,8 @@
           "kind": "rust",
           "target": "application::scan::tests::pipeline::external_missing_relinks_on_same_hash_path_keeping_relationships"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R04-S03",
@@ -6594,7 +7015,8 @@
           "kind": "rust",
           "target": "application::scan::tests::relink::duplicate_hash_paths_get_deterministic_primary"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R04-S04",
@@ -6605,7 +7027,8 @@
           "kind": "rust",
           "target": "application::scan::tests::relink::music_key_never_relinks_identities"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R05-S01",
@@ -6616,7 +7039,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::fts_and_short_like_search"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R05-S02",
@@ -6627,7 +7051,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::keyset_pages_are_deterministic"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R06-S01",
@@ -6638,7 +7063,8 @@
           "kind": "rust",
           "target": "cover_cache_key_and_db_reference"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R06-S02",
@@ -6649,7 +7075,8 @@
           "kind": "rust",
           "target": "lyrics"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R07-S01",
@@ -6660,7 +7087,8 @@
           "kind": "rust",
           "target": "trash::tests::persisted_trash_applied_is_the_only_automatic_database_finalization_proof"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R07-S02",
@@ -6671,7 +7099,8 @@
           "kind": "rust",
           "target": "trash::tests::external_staging_cleanup_becomes_unknown_and_preserves_relationships"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R07-S03",
@@ -6682,7 +7111,8 @@
           "kind": "rust",
           "target": "application::scan::tests::pipeline::external_deletion_is_missing_not_pending_delete_and_keeps_relationships"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R07-S04",
@@ -6693,12 +7123,13 @@
           "kind": "rust",
           "target": "application::scan::tests::pipeline::external_missing_recovers_on_original_path_restoring_everything"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R08-S01",
       "title": "Unicode 和平台路径",
-      "command": "node scripts/verify/checks/task-12.7.mjs",
+      "command": "node scripts/verify/checks/task-12.7.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -6709,7 +7140,7 @@
     {
       "id": "LL-R08-S02",
       "title": "扫描期间继续使用界面",
-      "command": "node scripts/verify/checks/task-12.6.mjs",
+      "command": "node scripts/verify/checks/task-12.6.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -6726,7 +7157,8 @@
           "kind": "rust",
           "target": "permission"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R09-S01",
@@ -6737,7 +7169,8 @@
           "kind": "rust",
           "target": "revision_and_added_at_survive_rescans"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R09-S02",
@@ -6748,7 +7181,8 @@
           "kind": "rust",
           "target": "revision_and_added_at_survive_rescans"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R09-S03",
@@ -6770,7 +7204,8 @@
           "kind": "rust",
           "target": "library_durability_scan_saves_identity_before_projection_and_reuses_it_on_retry"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R10-S02",
@@ -6781,7 +7216,8 @@
           "kind": "rust",
           "target": "library_durability_scan_refresh_preserves_saved_after_image_on_projection_failure"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R10-S03",
@@ -6792,7 +7228,8 @@
           "kind": "rust",
           "target": "library_durability_scan_refuses_unwritable_library_before_indexing"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R10-S04",
@@ -6803,7 +7240,8 @@
           "kind": "rust",
           "target": "library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R11-S01",
@@ -6814,7 +7252,8 @@
           "kind": "rust",
           "target": "a_wiped_database_is_rebuilt_from_the_records_at_real_scale"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R11-S02",
@@ -6825,7 +7264,8 @@
           "kind": "rust",
           "target": "a_failed_switch_restores_the_previous_session"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R12-S01",
@@ -6836,7 +7276,8 @@
           "kind": "rust",
           "target": "infrastructure::metadata::tags::tests::mime_of_uses_webp_declaration"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R12-S02",
@@ -6847,7 +7288,8 @@
           "kind": "rust",
           "target": "infrastructure::metadata::tags::tests::mime_of_downgrades_unsupported_declaration"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LL-R12-S03",
@@ -6858,7 +7300,8 @@
           "kind": "rust",
           "target": "infrastructure::metadata::tags::tests::mime_of_outputs_stay_within_the_enabled_decoders"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PHA-R01-S01",
@@ -6892,7 +7335,8 @@
           "kind": "rust",
           "target": "playlist"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R01-S02",
@@ -6903,7 +7347,8 @@
           "kind": "rust",
           "target": "playlist"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R01-S03",
@@ -6914,7 +7359,8 @@
           "kind": "rust",
           "target": "playlist"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R01-S04",
@@ -6925,7 +7371,8 @@
           "kind": "rust",
           "target": "playlist"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R01-S05",
@@ -6936,7 +7383,8 @@
           "kind": "rust",
           "target": "delete_owns_playlist_and_members_but_not_songs_or_other_playlists"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R02-S01",
@@ -6947,7 +7395,8 @@
           "kind": "rust",
           "target": "playlist"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R02-S02",
@@ -6958,7 +7407,8 @@
           "kind": "rust",
           "target": "playlist"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R03-S01",
@@ -6969,7 +7419,8 @@
           "kind": "rust",
           "target": "playlist"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R03-S02",
@@ -6980,7 +7431,8 @@
           "kind": "rust",
           "target": "playlist"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R03-S03",
@@ -6991,7 +7443,8 @@
           "kind": "rust",
           "target": "playlist"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R03-S04",
@@ -7003,7 +7456,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "opens the add-to-playlist picker from a member's song menu"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R03-S05",
@@ -7015,7 +7469,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "keeps 添加到歌单 disabled for a read-only playlist"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R03-S06",
@@ -7026,7 +7481,8 @@
           "kind": "rust",
           "target": "add_to_multiple_playlists_is_atomic_and_idempotent"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R03-S07",
@@ -7038,7 +7494,8 @@
           "target": "src/features/playlists/AddToPlaylistDialog.test.tsx",
           "name": "runs a multi-song add sequentially and keeps partial failures visible"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R04-S01",
@@ -7049,7 +7506,8 @@
           "kind": "rust",
           "target": "playlist"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R04-S02",
@@ -7061,7 +7519,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "removes the selected members one by one and refreshes the playlist"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R04-S03",
@@ -7072,7 +7531,8 @@
           "kind": "vitest",
           "target": "src/features/library/batchOperations.test.ts"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R05-S01",
@@ -7083,7 +7543,8 @@
           "kind": "rust",
           "target": "playlist_missing_members_stay_visible"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R05-S02",
@@ -7094,7 +7555,8 @@
           "kind": "rust",
           "target": "playlist_missing_members_stay_visible"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R05-S03",
@@ -7105,7 +7567,8 @@
           "kind": "rust",
           "target": "echo_delete_finalize_cascades_memberships"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R05-S04",
@@ -7116,7 +7579,8 @@
           "kind": "rust",
           "target": "playlist"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R05-S05",
@@ -7128,7 +7592,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "refreshes the sidebar after a batch delete and its undo"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R05-S06",
@@ -7139,7 +7604,8 @@
           "kind": "rust",
           "target": "playlist_missing_members_stay_visible_and_recover_without_duplicates"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R06-S01",
@@ -7151,7 +7617,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "keeps the member in place"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R06-S02",
@@ -7163,7 +7630,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "never claims"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R06-S03",
@@ -7174,7 +7642,8 @@
           "kind": "vitest",
           "target": "src/features/library/batchOperations.test.ts"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R07-S01",
@@ -7185,7 +7654,8 @@
           "kind": "vitest",
           "target": "src/features/playlists/AddToPlaylistDialog.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R07-S02",
@@ -7196,7 +7666,8 @@
           "kind": "vitest",
           "target": "src/features/playlists/PlaylistNameDialog.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R07-S03",
@@ -7207,7 +7678,8 @@
           "kind": "vitest",
           "target": "src/features/playlists/AddToPlaylistDialog.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R07-S04",
@@ -7218,7 +7690,8 @@
           "kind": "vitest",
           "target": "src/features/playlists/AddToPlaylistDialog.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R08-S01",
@@ -7274,7 +7747,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "searches within the current playlist"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R09-S02",
@@ -7286,7 +7760,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "restores the full member list when the search is cleared"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R09-S03",
@@ -7298,7 +7773,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "appends the next page when the playlist search spills past one page"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R09-S04",
@@ -7310,7 +7786,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "stops requesting pages once the playlist search reaches the last page"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R09-S05",
@@ -7322,7 +7799,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "clears the search when switching to another playlist"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R10-S01",
@@ -7334,7 +7812,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "rolls to a playing member of the playlist without a toast"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R10-S02",
@@ -7346,7 +7825,8 @@
           "target": "src/features/playlists/PlaylistsView.test.tsx",
           "name": "voices 当前"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R11-S01",
@@ -7358,7 +7838,8 @@
           "target": "src/features/playlists/AddToPlaylistDialog.test.tsx",
           "name": "preselects existing memberships read-only and submits only new targets"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R11-S02",
@@ -7370,7 +7851,8 @@
           "target": "src/features/playlists/AddToPlaylistDialog.test.tsx",
           "name": "preselects existing memberships read-only and submits only new targets"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R11-S03",
@@ -7382,7 +7864,8 @@
           "target": "src/features/playlists/AddToPlaylistDialog.test.tsx",
           "name": "closes unchanged single-song selection without a mutation"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R11-S04",
@@ -7394,7 +7877,8 @@
           "target": "src/features/playlists/AddToPlaylistDialog.test.tsx",
           "name": "runs a multi-song add sequentially and keeps partial failures visible"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "PM-R12-S01",
@@ -7405,7 +7889,8 @@
           "kind": "rust",
           "target": "playlists_for_song_reads_membership_ids_from_the_active_database"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R12-S02",
@@ -7416,7 +7901,8 @@
           "kind": "rust",
           "target": "playlists_for_song_reads_membership_ids_from_the_active_database"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R12-S03",
@@ -7427,7 +7913,8 @@
           "kind": "rust",
           "target": "playlists_for_song_reads_membership_ids_from_the_active_database"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R13-S01",
@@ -7438,7 +7925,8 @@
           "kind": "rust",
           "target": "library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R13-S02",
@@ -7449,7 +7937,8 @@
           "kind": "rust",
           "target": "library_durability_member_append_is_saved_before_failed_projection"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R13-S03",
@@ -7460,7 +7949,8 @@
           "kind": "rust",
           "target": "library_durability_playlist_rename_saves_before_failed_projection"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R13-S04",
@@ -7471,7 +7961,8 @@
           "kind": "rust",
           "target": "consecutive_multi_song_add_keeps_every_membership"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PM-R13-S05",
@@ -7494,7 +7985,8 @@
           "kind": "rust",
           "target": "final_tombstone_is_never_recovered_but_history_can_be_dismissed"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R01-S01",
@@ -7505,7 +7997,8 @@
           "kind": "rust",
           "target": "default_target_is_artist_folder_with_artist_minus_title"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R01-S02",
@@ -7516,7 +8009,8 @@
           "kind": "rust",
           "target": "control_plane_usable_detects_writable_and_readable"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R01-S03",
@@ -7538,7 +8032,8 @@
           "kind": "rust",
           "target": "online_backup_contains_matching_catalog_pending_and_ledger_without_independent_checkpoint"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R02-S01",
@@ -7549,7 +8044,8 @@
           "kind": "rust",
           "target": "manifest_round_trips_atomically"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R02-S02",
@@ -7560,7 +8056,8 @@
           "kind": "rust",
           "target": "sync_payloads_carry_no_absolute_paths"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R02-S03",
@@ -7571,7 +8068,8 @@
           "kind": "rust",
           "target": "tmp_files_are_ignored_as_records"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R02-S04",
@@ -7582,7 +8080,8 @@
           "kind": "rust",
           "target": "playlist_mutations_materialize_records_and_tombstones"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R02-S05",
@@ -7593,7 +8092,8 @@
           "kind": "rust",
           "target": "recorded_plays_materialize_additive_play_stats"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R02-S06",
@@ -7604,7 +8104,8 @@
           "kind": "rust",
           "target": "unfavorite_materializes_a_false_record_so_it_never_returns"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R02-S07",
@@ -7615,7 +8116,8 @@
           "kind": "rust",
           "target": "library_durability_playback_event_is_materialized_outside_shared_records"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R02-S08",
@@ -7626,7 +8128,8 @@
           "kind": "rust",
           "target": "library_durability_playlist_cover_original_survives_cache_loss_and_clear"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R03-S01",
@@ -7637,7 +8140,8 @@
           "kind": "rust",
           "target": "application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R03-S02",
@@ -7648,7 +8152,8 @@
           "kind": "rust",
           "target": "restore_projects_records_and_keeps_missing_without_media"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R03-S03",
@@ -7659,7 +8164,8 @@
           "kind": "rust",
           "target": "root_switch::tests::prepare_continues_object_records_before_scanning_media"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R04-S01",
@@ -7670,7 +8176,8 @@
           "kind": "rust",
           "target": "application::portable::tests::ensure_control_plane_initializes_a_fresh_writable_root"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R04-S02",
@@ -7681,7 +8188,8 @@
           "kind": "rust",
           "target": "application::portable::tests::ensure_control_plane_heals_a_manifest_less_directory_with_records"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R04-S03",
@@ -7692,7 +8200,8 @@
           "kind": "rust",
           "target": "application::portable::tests::ensure_control_plane_reports_an_unusable_surface_without_writing"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R04-S04",
@@ -7703,7 +8212,8 @@
           "kind": "rust",
           "target": "song_record_without_added_at_reads_back_as_zero"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R05-S01",
@@ -7714,7 +8224,8 @@
           "kind": "rust",
           "target": "root_switch::tests::prepare_continues_records_then_scans_only_unrecorded_media"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R05-S02",
@@ -7725,7 +8236,8 @@
           "kind": "rust",
           "target": "application::continuation::tests::dangling_records_are_counted_and_never_invented"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R05-S03",
@@ -7736,7 +8248,8 @@
           "kind": "rust",
           "target": "application::continuation::tests::tombstone_outranks_a_stale_record_and_is_never_resurrected"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R05-S04",
@@ -7747,7 +8260,8 @@
           "kind": "rust",
           "target": "application::continuation::tests::continuation_is_idempotent_across_repeated_opens"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R06-S01",
@@ -7758,7 +8272,8 @@
           "kind": "rust",
           "target": "application::portable::tests::ensure_control_plane_initializes_a_fresh_writable_root"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R06-S02",
@@ -7769,7 +8284,8 @@
           "kind": "rust",
           "target": "application::portable::tests::ensure_control_plane_heals_a_manifest_less_directory_with_records"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R06-S03",
@@ -7780,7 +8296,8 @@
           "kind": "rust",
           "target": "application::portable::tests::ensure_control_plane_reports_an_unusable_surface_without_writing"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R07-S01",
@@ -7791,7 +8308,8 @@
           "kind": "rust",
           "target": "root_switch::tests::prepare_continues_object_records_before_scanning_media"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R07-S02",
@@ -7802,7 +8320,8 @@
           "kind": "rust",
           "target": "restore_projects_records_and_keeps_missing_without_media"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R07-S03",
@@ -7813,7 +8332,8 @@
           "kind": "rust",
           "target": "application::continuation::tests::tombstone_outranks_a_stale_record_and_is_never_resurrected"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R07-S04",
@@ -7824,7 +8344,8 @@
           "kind": "rust",
           "target": "application::continuation::tests::continuation_is_idempotent_across_repeated_opens"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R07-S05",
@@ -7835,7 +8356,8 @@
           "kind": "rust",
           "target": "application::continuation::tests::detached_legacy_records_are_superseded_by_the_matching_local_rows"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R07-S06",
@@ -7846,7 +8368,8 @@
           "kind": "rust",
           "target": "application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R07-S07",
@@ -7857,7 +8380,8 @@
           "kind": "rust",
           "target": "library_durability_publication_v1_and_unknown_schema_keep_original_evidence"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R07-S08",
@@ -7868,7 +8392,8 @@
           "kind": "rust",
           "target": "application::continuation::tests::continuation_is_idempotent_across_repeated_opens"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "PLL-R07-S09",
@@ -7879,7 +8404,8 @@
           "kind": "rust",
           "target": "library_durability_incomplete_or_foreign_local_allocation_stays_unresolved"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R01-S01",
@@ -7890,7 +8416,8 @@
           "kind": "rust",
           "target": "import"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R01-S02",
@@ -7901,7 +8428,8 @@
           "kind": "rust",
           "target": "import"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R01-S03",
@@ -7912,7 +8440,8 @@
           "kind": "rust",
           "target": "untagged_wav_import_uses_the_missing_tag_fallbacks"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R02-S01",
@@ -7923,7 +8452,8 @@
           "kind": "rust",
           "target": "import"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R03-S01",
@@ -7934,7 +8464,8 @@
           "kind": "rust",
           "target": "sidecar"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R03-S02",
@@ -7945,7 +8476,8 @@
           "kind": "rust",
           "target": "sidecar"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R04-S01",
@@ -7956,7 +8488,8 @@
           "kind": "rust",
           "target": "dedup"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R04-S02",
@@ -7967,7 +8500,8 @@
           "kind": "rust",
           "target": "import"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R04-S03",
@@ -7978,7 +8512,8 @@
           "kind": "rust",
           "target": "application::recover::tests::imports::nothing_recoverable_rolls_back_and_releases_cleanly"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R04-S04",
@@ -7989,7 +8524,8 @@
           "kind": "rust",
           "target": "dedup"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R05-S01",
@@ -8000,7 +8536,8 @@
           "kind": "rust",
           "target": "import"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R05-S02",
@@ -8011,7 +8548,8 @@
           "kind": "rust",
           "target": "import"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R05-S03",
@@ -8034,7 +8572,8 @@
           "kind": "rust",
           "target": "application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R05-S05",
@@ -8045,7 +8584,8 @@
           "kind": "rust",
           "target": "sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R05-S06",
@@ -8056,7 +8596,8 @@
           "kind": "rust",
           "target": "application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R05-S07",
@@ -8067,7 +8608,8 @@
           "kind": "rust",
           "target": "library_durability_actual_record_rename_failure_remains_saved_and_retryable"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R05-S08",
@@ -8078,7 +8620,8 @@
           "kind": "rust",
           "target": "library_durability_memory_failed_projection_reserves_the_saved_sequence"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R06-S01",
@@ -8089,7 +8632,8 @@
           "kind": "rust",
           "target": "import"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R06-S02",
@@ -8100,12 +8644,13 @@
           "kind": "rust",
           "target": "import"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R07-S01",
       "title": "外部文件直接打开",
-      "command": "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
       "evidence": [
         {
           "kind": "node",
@@ -8115,12 +8660,13 @@
           "kind": "rust",
           "target": "runtime::services::tests::open_path"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R07-S02",
       "title": "活动资料库内文件直接打开",
-      "command": "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
       "evidence": [
         {
           "kind": "node",
@@ -8130,12 +8676,13 @@
           "kind": "rust",
           "target": "runtime::services::tests::open_path"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R07-S03",
       "title": "非活动旧资料库文件直接打开",
-      "command": "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
       "evidence": [
         {
           "kind": "node",
@@ -8145,7 +8692,8 @@
           "kind": "rust",
           "target": "runtime::services::tests::open_path"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R07-S04",
@@ -8156,7 +8704,8 @@
           "kind": "rust",
           "target": "import"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R07-S05",
@@ -8167,12 +8716,13 @@
           "kind": "rust",
           "target": "staging"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R07-S06",
       "title": "投放不入库且源文件不变",
-      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features",
+      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid",
       "evidence": [
         {
           "kind": "node",
@@ -8182,7 +8732,8 @@
           "kind": "rust",
           "target": "runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R07-S07",
@@ -8193,7 +8744,8 @@
           "kind": "rust",
           "target": "player::coordinator::tests::importing_current_temporary_entry_replaces_it_in_place_and_resumes_playing"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R07-S08",
@@ -8205,7 +8757,8 @@
           "target": "src/app/App.test.tsx",
           "name": "never URL-decodes a payload that already contains a literal %20"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "SFI-R07-S09",
@@ -8216,12 +8769,13 @@
           "kind": "rust",
           "target": "file_drop::tests::directories_are_rejected_without_scanning_them"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R08-S01",
       "title": "已运行实例接收文件关联",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8232,7 +8786,7 @@
     {
       "id": "SFI-R08-S02",
       "title": "冷启动文件关联",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8243,7 +8797,7 @@
     {
       "id": "SFI-R09-S01",
       "title": "带百分号编码的 file URL 被归一化",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8254,7 +8808,7 @@
     {
       "id": "SFI-R09-S02",
       "title": "非文件 scheme 被丢弃",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8265,7 +8819,7 @@
     {
       "id": "SFI-R09-S03",
       "title": "归一化契约由类型强制",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8276,7 +8830,7 @@
     {
       "id": "SFI-R09-S04",
       "title": "前端不得二次解码",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8287,7 +8841,7 @@
     {
       "id": "SFI-R09-S05",
       "title": "纵深防御不得被放宽",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8304,7 +8858,8 @@
           "kind": "rust",
           "target": "import"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R10-S02",
@@ -8315,7 +8870,8 @@
           "kind": "rust",
           "target": "import"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R11-S01",
@@ -8326,7 +8882,8 @@
           "kind": "rust",
           "target": "batch_import_lands_under_media_and_keeps_dedup_and_numbering"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R11-S02",
@@ -8338,7 +8895,8 @@
           "target": "src/features/import/importFeedback.test.ts",
           "name": "treats imported, duplicate and skipped as non-failures"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "SFI-R11-S03",
@@ -8350,7 +8908,8 @@
           "target": "src/features/import/importFeedback.test.ts",
           "name": "reports only real failures in the failure list"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "SFI-R11-S04",
@@ -8361,7 +8920,8 @@
           "kind": "vitest",
           "target": "src/features/import/ImportBatchDialog.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "frontend-test"
     },
     {
       "id": "SFI-R11-S05",
@@ -8415,12 +8975,13 @@
           "kind": "rust",
           "target": "import_dialog_is_refused_before_the_write_gate_resolves"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SYN-R01-S01",
       "title": "数据形状已就绪且离线边界不变",
-      "command": "node scripts/verify/checks/task-3.10.mjs",
+      "command": "node scripts/verify/checks/task-3.10.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8437,7 +8998,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::sync_foundation"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SYN-R02-S01",
@@ -8448,12 +9010,13 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::sync_foundation"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SYN-R02-S02",
       "title": "预写不产生可操作同步",
-      "command": "node scripts/verify/checks/task-3.14.mjs",
+      "command": "node scripts/verify/checks/task-3.14.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8470,7 +9033,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::sync_foundation"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SYN-R03-S01",
@@ -8481,7 +9045,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::sync_foundation"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SYN-R04-S01",
@@ -8492,7 +9057,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::sync_payloads_carry_no_absolute_paths"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SYN-R05-S01",
@@ -8503,7 +9069,8 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::sync_foundation"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SYN-R05-S02",
@@ -8514,12 +9081,13 @@
           "kind": "rust",
           "target": "infrastructure::sqlite::tests::sync_foundation"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SYN-R05-S03",
       "title": "迁移与架构验证",
-      "command": "node scripts/verify/checks/task-3.10.mjs",
+      "command": "node scripts/verify/checks/task-3.10.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8536,7 +9104,8 @@
           "kind": "rust",
           "target": "crash_during_record_materialization_converges_to_one_record_and_outbox"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SYN-R06-S02",
@@ -8547,7 +9116,8 @@
           "kind": "rust",
           "target": "library_durability_trusted_sync_retry_restores_exact_baseline_and_pending_without_echo"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SYN-R06-S03",
@@ -8558,7 +9128,8 @@
           "kind": "rust",
           "target": "library_durability_legacy_write_cannot_transfer_confirmation_to_new_value"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SYN-R06-S04",
@@ -8569,7 +9140,8 @@
           "kind": "rust",
           "target": "library_durability_standalone_playlist_keeps_no_sync_allocations"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SYN-R07-S01",
@@ -8580,7 +9152,8 @@
           "kind": "rust",
           "target": "library_durability_scoped_key_retains_same_event_across_bindings_and_epochs"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SYN-R07-S02",
@@ -8591,7 +9164,8 @@
           "kind": "rust",
           "target": "library_durability_local_allocation_unproven_predecessor_never_advances_fences"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SYN-R07-S03",
@@ -8602,7 +9176,8 @@
           "kind": "rust",
           "target": "confirmed_play_stats_buckets_authorize_exactly_their_recorded_counts"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SYN-R08-S01",
@@ -8613,7 +9188,8 @@
           "kind": "rust",
           "target": "library_durability_playback_later_session_catches_up_and_rebuild_has_no_echo"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     }
   ]
 }

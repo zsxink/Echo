@@ -9,9 +9,12 @@
 // Fails (nonzero) unless:
 //   1. the status_menu unit tests pass (summary lines, play/pause label,
 //      transport→command mapping, show/quit are shell lifecycle, sink seam);
-//   2. the binary is clippy-clean;
-//   3. main.rs builds the full six-item tray menu (summary header + transport
+//   2. main.rs builds the full six-item tray menu (summary header + transport
 //      + show + quit) and dispatches transport clicks through the sink.
+// Clippy on the thin binary is the Rust job's concern, not this check's.
+//
+// `--static-only` skips the unit-test run (the Linux workspace Test step
+// already covers it); the shell/module assertions above stay.
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -33,18 +36,23 @@ function run(cmd, args, what) {
   return result.stdout;
 }
 
+const staticOnly = process.argv.includes("--static-only");
+
 // 1. status_menu decision logic is green.
-const testOut = run(
-  "cargo",
-  ["test", "-p", "echo-desktop", "--lib", "--locked", "platform::status_menu"],
-  "status_menu tests",
-);
-if (!testOut.includes("test result: ok.")) {
-  fail("status_menu tests not green");
+if (!staticOnly) {
+  const testOut = run(
+    "cargo",
+    ["test", "-p", "echo-desktop", "--lib", "--locked", "platform::status_menu"],
+    "status_menu tests",
+  );
+  if (!testOut.includes("test result: ok.")) {
+    fail("status_menu tests not green");
+  }
+} else {
+  process.stdout.write("  skip: status_menu cargo tests (covered by the workspace-test job)\n");
 }
 
-// 2. The thin binary stays clippy-clean.
-// 3. The shell builds the full entry + dispatches through the sink.
+// 2. The shell builds the full entry + dispatches through the sink.
 const src = resolve(ROOT, "apps", "desktop", "src-tauri", "src");
 const main = readFileSync(resolve(src, "main.rs"), "utf8");
 const bootstrap = readFileSync(resolve(src, "bootstrap.rs"), "utf8");
@@ -68,4 +76,4 @@ for (const token of [
   }
 }
 
-process.stdout.write("ok 9.3: productionized menu-bar/tray entry (summary + transport + show/quit)\n");
+process.stdout.write(`ok 9.3: productionized menu-bar/tray entry (summary + transport + show/quit)${staticOnly ? " (static-only)" : ""}\n`);

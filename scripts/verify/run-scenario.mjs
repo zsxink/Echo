@@ -10,6 +10,9 @@
 //                                               skip scenarios whose registry
 //                                               entry explicitly declares
 //                                               `delegatedTo: "governance"`
+//                                               (the same applies to the
+//                                               `perf`, `workspace-test` and
+//                                               `frontend-test` gates)
 //   pnpm verify:scenario -- --list             print scenario ids from the manifest
 //
 // Scenarios are resolved/validated against scripts/verify/manifest.json's
@@ -58,6 +61,14 @@ function parallelizableTestCommand(command) {
 // argument — including a reporter flag. The execution form must drop it:
 // `test --run --reporter=verbose` becomes `vitest run --run --reporter=verbose`.
 function groupedTestCommand(command) {
+  // Three registry commands select one package each with the same feature set.
+  // The execution form is the workspace shape the Linux Test step builds, so a
+  // restored `linux-workspace` cache serves it instead of recompiling per
+  // package. Commands carrying extra arguments (a `--test` target or a filter)
+  // are left alone: their shape is not the workspace shape.
+  if (/^cargo test -p (?:echo-core|echo-desktop|echo-app) --all-features$/.test(command.trim())) {
+    return "cargo test --workspace --all-targets --all-features";
+  }
   if (/^pnpm --filter @echo\/desktop test -- --run(?:\s|$)/.test(command)) {
     return "pnpm --filter @echo/desktop test --run --reporter=verbose";
   }

@@ -12,7 +12,8 @@
 // validation is deferred to the platform Gate.
 //
 // Fails (nonzero) unless those local_state tests pass and the binary is
-// clippy-clean.
+// clippy-clean. `--static-only` skips the cargo run (the Linux workspace Test
+// step covers it) and keeps the source assertions below.
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -34,22 +35,28 @@ function run(cmd, args, what) {
   return result.stdout;
 }
 
-const testOut = run(
-  "cargo",
-  ["test", "-p", "echo-desktop", "--lib", "--locked", "platform::local_state"],
-  "local_state tests",
-);
-for (const name of [
-  "window_left_on_a_disconnected_display_is_recentered_on_screen",
-  "a_still_visible_window_is_left_untouched",
-  "a_window_off_screen_and_bigger_than_the_screen_snaps_to_the_work_origin",
-  "a_partially_visible_window_is_left_untouched",
-  "a_degenerate_work_area_leaves_the_position_unchanged",
-  "windows_platform_default_is_exit",
-]) {
-  if (!testOut.includes(`test platform::local_state::tests::${name} ... ok`)) {
-    fail(`local_state test not green: ${name}`);
+const staticOnly = process.argv.includes("--static-only");
+
+if (!staticOnly) {
+  const testOut = run(
+    "cargo",
+    ["test", "-p", "echo-desktop", "--lib", "--locked", "platform::local_state"],
+    "local_state tests",
+  );
+  for (const name of [
+    "window_left_on_a_disconnected_display_is_recentered_on_screen",
+    "a_still_visible_window_is_left_untouched",
+    "a_window_off_screen_and_bigger_than_the_screen_snaps_to_the_work_origin",
+    "a_partially_visible_window_is_left_untouched",
+    "a_degenerate_work_area_leaves_the_position_unchanged",
+    "windows_platform_default_is_exit",
+  ]) {
+    if (!testOut.includes(`test platform::local_state::tests::${name} ... ok`)) {
+      fail(`local_state test not green: ${name}`);
+    }
   }
+} else {
+  process.stdout.write("  skip: local_state cargo tests (covered by the workspace-test job)\n");
 }
 
 const localState = readFileSync(
@@ -63,5 +70,5 @@ for (const token of ["clamp_to_visible", "pub struct WorkArea", "is_usable"]) {
 }
 
 process.stdout.write(
-  "ok 9.6: close-behavior defaults + window visible-area clamp; close-handler wiring deferred to shell/composition root\n",
+  `ok 9.6: close-behavior defaults + window visible-area clamp; close-handler wiring deferred to shell/composition root${staticOnly ? " (static-only)" : ""}\n`,
 );

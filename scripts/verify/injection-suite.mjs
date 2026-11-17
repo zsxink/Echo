@@ -582,7 +582,6 @@ const ENTRIES = [
   // ---- embedded-frontend freshness -------------------------------------
   {
     id: "embedded-frontend/stale-binary",
-    shard: 1,
     guard: "a binary that embeds no frontend asset from the current dist",
     check: ["node", ["scripts/verify/checks/check-embedded-frontend.mjs"]],
     expect: /FAIL embedded-frontend: [\s\S]*embeds no frontend asset at all/,

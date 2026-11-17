@@ -12,6 +12,8 @@
 //     absolute path.
 //
 // Fails (nonzero) unless those unit tests pass and the binary is clippy-clean.
+// `--static-only` skips the cargo runs (the Linux workspace Test step covers
+// them) and keeps the source assertions below.
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -33,22 +35,28 @@ function run(cmd, args, what) {
   return result.stdout;
 }
 
-const trashOut = run(
-  "cargo",
-  ["test", "-p", "echo-desktop", "--lib", "--locked", "platform::trash"],
-  "trash policy tests",
-);
-if (!trashOut.includes("test result: ok.")) {
-  fail("trash policy tests not green");
-}
+const staticOnly = process.argv.includes("--static-only");
 
-const revealOut = run(
-  "cargo",
-  ["test", "-p", "echo-desktop", "--lib", "--locked", "platform::reveal"],
-  "reveal policy tests",
-);
-if (!revealOut.includes("test result: ok.")) {
-  fail("reveal policy tests not green");
+if (!staticOnly) {
+  const trashOut = run(
+    "cargo",
+    ["test", "-p", "echo-desktop", "--lib", "--locked", "platform::trash"],
+    "trash policy tests",
+  );
+  if (!trashOut.includes("test result: ok.")) {
+    fail("trash policy tests not green");
+  }
+
+  const revealOut = run(
+    "cargo",
+    ["test", "-p", "echo-desktop", "--lib", "--locked", "platform::reveal"],
+    "reveal policy tests",
+  );
+  if (!revealOut.includes("test result: ok.")) {
+    fail("reveal policy tests not green");
+  }
+} else {
+  process.stdout.write("  skip: trash/reveal cargo tests (covered by the workspace-test job)\n");
 }
 
 // The service boundary accepts SongId and returns only a relative path.
@@ -67,5 +75,5 @@ if (!/relative_path: record\.path\(\)\.normalized\(\)/.test(services)) {
 }
 
 process.stdout.write(
-  "ok 9.5: trash retry/irreversibility + reveal parent-fallback policies, id-only boundary; OS backends deferred to composition root\n",
+  `ok 9.5: trash retry/irreversibility + reveal parent-fallback policies, id-only boundary; OS backends deferred to composition root${staticOnly ? " (static-only)" : ""}\n`,
 );
