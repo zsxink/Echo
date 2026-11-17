@@ -3369,7 +3369,7 @@
     {
       "id": "DP-R01-S01",
       "title": "播放资料库歌曲",
-      "command": "cargo test -p echo-desktop --all-features --test player_smoke",
+      "command": "cargo test -p echo-desktop --all-features",
       "evidence": [
         {
           "kind": "rust",
@@ -3387,7 +3387,8 @@
           "kind": "rust",
           "target": "cold_restored_playback_advances_after_natural_eof_with_real_libmpv"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R01-S02",
@@ -8964,7 +8965,8 @@
           "kind": "rust",
           "target": "import_dialog_is_refused_before_the_write_gate_resolves"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SYN-R01-S01",

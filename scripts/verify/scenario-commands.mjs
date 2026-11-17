@@ -12,7 +12,6 @@
 const CORE_ALL = "cargo test -p echo-core --all-features";
 const DESK_ALL = "cargo test -p echo-desktop --all-features";
 const APP_ALL = "cargo test -p echo-app --all-features";
-const PLAYER_ALL = "cargo test -p echo-desktop --all-features --test player_smoke";
 const PERF_ALL =
   "cargo test -p echo-desktop --all-features --release --test local_edit_performance -- --ignored --nocapture";
 const VITEST_ALL = "pnpm --filter @echo/desktop test -- --run --reporter=verbose";
@@ -186,7 +185,8 @@ export const SCENARIOS = {
 "SFI-R11-S03": { command: VITEST_ALL, evidence: [vitest("src/features/import/importFeedback.test.ts", "reports only real failures in the failure list")], },
 "SFI-R11-S04": { command: VITEST_ALL, evidence: [vitest("src/features/import/ImportBatchDialog.test.tsx")], },
   "SFI-R11-S05": { command: ATTEST("SFI-R11-S05"), evidence: [attest("SFI-R11-S05")] },
-"SFI-R12-S01": { command: "cargo test -p echo-core --all-features import && cargo test -p echo-core --all-features a_wiped_database_is_rebuilt_from_the_records_at_real_scale && cargo test -p echo-desktop --all-features import", evidence: [rust("application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"), rust("application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts"), rust("application::recover::tests::imports::nothing_recoverable_rolls_back_and_releases_cleanly"), rust("batch_import_lands_under_media_and_keeps_dedup_and_numbering"), rust("sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent"), rust("publish_never_overwrites_a_target_created_after_planning"), rust("application::continuation::tests::a_wiped_database_is_rebuilt_from_the_records_at_real_scale"), rust("cancelled_import_dialog_is_a_noop_never_a_success"), rust("import_dialog_is_refused_before_the_write_gate_resolves")], },
+// `import` filters + the real-scale rebuild are all in the workspace suite.
+"SFI-R12-S01": { command: "cargo test -p echo-core --all-features import && cargo test -p echo-core --all-features a_wiped_database_is_rebuilt_from_the_records_at_real_scale && cargo test -p echo-desktop --all-features import", delegatedTo: "workspace-test", evidence: [rust("application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"), rust("application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts"), rust("application::recover::tests::imports::nothing_recoverable_rolls_back_and_releases_cleanly"), rust("batch_import_lands_under_media_and_keeps_dedup_and_numbering"), rust("sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent"), rust("publish_never_overwrites_a_target_created_after_planning"), rust("application::continuation::tests::a_wiped_database_is_rebuilt_from_the_records_at_real_scale"), rust("cancelled_import_dialog_is_a_noop_never_a_success"), rust("import_dialog_is_refused_before_the_write_gate_resolves")], },
 
   // sync-foundation
 "SYN-R01-S01": { command: "node scripts/verify/checks/task-3.10.mjs", evidence: [node("scripts/verify/checks/task-3.10.mjs")], },
@@ -208,7 +208,9 @@ export const SCENARIOS = {
 "SYN-R07-S03": { command: CORE_ALL, evidence: [rust("confirmed_play_stats_buckets_authorize_exactly_their_recorded_counts")], },
 "SYN-R08-S01": { command: CORE_ALL, evidence: [rust("library_durability_playback_later_session_catches_up_and_rebuild_has_no_echo")], },
   // desktop-playback
-"DP-R01-S01": { command: PLAYER_ALL, evidence: [rust("guaranteed_formats_each_load_via_real_libmpv"), rust("a_play_load_after_a_primed_paused_load_really_starts_the_clock"), rust("consecutive_loads_then_clean_exit"), rust("cold_restored_playback_advances_after_natural_eof_with_real_libmpv")], },
+// player_smoke's four tests are part of `--workspace --all-targets`; the same
+// Rust job runs them, so the release gate no longer launches a second mpv.
+"DP-R01-S01": { command: DESK_ALL, delegatedTo: "workspace-test", evidence: [rust("guaranteed_formats_each_load_via_real_libmpv"), rust("a_play_load_after_a_primed_paused_load_really_starts_the_clock"), rust("consecutive_loads_then_clean_exit"), rust("cold_restored_playback_advances_after_natural_eof_with_real_libmpv")], },
 "DP-R01-S02": { command: DESK_ALL, evidence: [rust("a_library_song_resolve_failure_clears_stale_progress_facts"), rust("a_rejected_non_local_load_clears_stale_progress_facts"), rust("player::coordinator::tests::error_skips_bad_entry_and_plays_next_sequential")], },
 "DP-R01-S03": { command: "node scripts/verify/checks/task-9.7.mjs", evidence: [node("scripts/verify/checks/task-9.7.mjs")], },
 "DP-R02-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/QueuePanel.test.tsx")], },

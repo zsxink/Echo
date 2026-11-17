@@ -517,8 +517,9 @@ PR」，不是「PR 里的文档提交」；后者只能靠合并前压提交来
 已预先授权，不改 spec）在本分支实施：`task-9.1` / `11.7` / `11.8` / `12.4` / `12.7` / `13.8` 增加
 `--static-only`，release gate 只跑各自的静态契约（结构守卫、WCAG 对比度与 reduced-motion、迁移与命令面、
 快捷键映射、导入 wiring），cargo/typecheck/Vitest 半由 `workspace-test` / `frontend-test` 承载；
-`DP-R07-S02` 显式 `delegatedTo: workspace-test`；文件投放组合的整包 `cargo test` 收窄到各自的测试名过滤。
-本地暖缓存下 release gate 场景执行 24s（26 批 / 561 场景 / 495 委托）；CI 冷缓存仍要付一次
+`DP-R07-S02` / `DP-R01-S01` / `SFI-R12-S01` 显式 `delegatedTo: workspace-test`（player_smoke 四例与
+import 契约均由 workspace suite 承载）；文件投放组合的整包 `cargo test` 收窄到各自的测试名过滤。
+本地暖缓存下 release gate 场景执行 8s（24 批 / 561 场景 / 497 委托）；CI 冷缓存仍要付一次
 `echo-core` / `echo-desktop` 测试编译（由第一个 cargo 命令吸收），预计 `Release gate` 降到约 450–550s。
 届时关键路径变成 `Rust (Linux workspace)`（670s，其中 `Test` 469s），10 分钟墙钟目标仍达不到。
 
