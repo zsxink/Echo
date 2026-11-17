@@ -842,8 +842,8 @@
       "title": "single-instance 与初始化请求 FIFO 生产化，冷/热/重复启动和初始化期间文件打开只由主实例处理",
       "commands": [
         {
-          "desc": "echo-app 编译/clippy 干净，runtime FIFO 测试通过，shell 两条 OS open 路径都经 StartupSupervisor FIFO；跨平台原生验证递延至平台 Gate",
-          "cmd": "node scripts/verify/checks/task-9.1.mjs"
+          "desc": "echo-app 编译/clippy 干净，runtime FIFO 测试通过，shell 两条 OS open 路径都经 StartupSupervisor FIFO；跨平台原生验证递延至平台 Gate；release gate 仅跑静态契约（--static-only），cargo 半由 workspace-test 承载",
+          "cmd": "node scripts/verify/checks/task-9.1.mjs --static-only"
         }
       ]
     },
@@ -1134,8 +1134,8 @@
       "title": "临时播放项标识和“导入到资料库”入口；收藏/加入歌单/统计被禁用，显式导入后才产生正常 SongId",
       "commands": [
         {
-          "desc": "PlayerBar/QueuePanel/ImmersivePlayer 渲染临时播放项 badge（currentCanImport/queue canImport，由 map_snapshot 派生）；PlayerBar “导入到资料库”按钮调用桌面 import_current_temporary_file（Rust 侧 SingleFileImport 以绝对路径直连 PlanImport，路径不经过 WebView，返回 ImportResultDto：imported/duplicate/unsupported/failed）。收藏/加入歌单/统计对临时项禁用：temp 项无 song_id、不入库/歌单/统计（8.10 recorder 跳过），导入后经 Core PlanImport 产生正常 SongId。verify:task 11.7 通过（PlayerBar 测试 + platform::import 测试 + runtime::player 映射测试 + typecheck + clippy）",
-          "cmd": "node scripts/verify/checks/task-11.7.mjs"
+          "desc": "PlayerBar/QueuePanel/ImmersivePlayer 渲染临时播放项 badge（currentCanImport/queue canImport，由 map_snapshot 派生）；PlayerBar “导入到资料库”按钮调用桌面 import_current_temporary_file（Rust 侧 SingleFileImport 以绝对路径直连 PlanImport，路径不经过 WebView，返回 ImportResultDto：imported/duplicate/unsupported/failed）。收藏/加入歌单/统计对临时项禁用：temp 项无 song_id、不入库/歌单/统计（8.10 recorder 跳过），导入后经 Core PlanImport 产生正常 SongId。verify:task 11.7 通过（PlayerBar 测试 + platform::import 测试 + runtime::player 映射测试 + typecheck + clippy）；release gate 仅跑静态契约（--static-only），行为由 workspace-test / frontend-test 承载",
+          "cmd": "node scripts/verify/checks/task-11.7.mjs --static-only"
         }
       ]
     },
@@ -1144,8 +1144,8 @@
       "title": "应用快捷键、range 键盘步进和媒体状态辅助文本；输入框/对话框内 Space 不误触播放，进度 5 秒、音量 5% 步进正确",
       "commands": [
         {
-          "desc": "useGlobalPlayerHotkeys：全局 Space 播放/暂停（焦点在 input/textarea/select 或队列对话框时禁用）、M 静音、,/前/后一、方向键 seek/音量；浮层（队列/沉浸/专注）打开时方向键让位给浮层。seek range step=5s、volume step=0.05（5%）；PlayerBar/ImmersivePlayer 进度 aria-valuetext 展示时间、音量带“音量 x%”；sr-only aria-live 播报播放状态+歌曲+模式（buildStatusText）。verify:task 11.8 通过（hotkeys 测试 + PlayerBar range/status 测试 + typecheck + clippy）",
-          "cmd": "node scripts/verify/checks/task-11.8.mjs"
+          "desc": "useGlobalPlayerHotkeys：全局 Space 播放/暂停（焦点在 input/textarea/select 或队列对话框时禁用）、M 静音、,/前/后一、方向键 seek/音量；浮层（队列/沉浸/专注）打开时方向键让位给浮层。seek range step=5s、volume step=0.05（5%）；PlayerBar/ImmersivePlayer 进度 aria-valuetext 展示时间、音量带“音量 x%”；sr-only aria-live 播报播放状态+歌曲+模式（buildStatusText）。verify:task 11.8 通过（hotkeys 测试 + PlayerBar range/status 测试 + typecheck + clippy）；release gate 仅跑静态契约（--static-only），行为由 frontend-test 承载",
+          "cmd": "node scripts/verify/checks/task-11.8.mjs --static-only"
         }
       ]
     },
@@ -1190,8 +1190,8 @@
       "title": "reduced-motion 与三主题 WCAG 2.2 AA 检查",
       "commands": [
         {
-          "desc": "三主题（coral/cobalt/turquoise）文本对比度 AA 达标；reduced-motion 关闭唱片/平滑滚动但保留当前行、焦点与播放态；axe 键盘/SR 扫描与沉浸/播放栏测试通过",
-          "cmd": "node scripts/verify/checks/task-12.4.mjs"
+          "desc": "三主题（coral/cobalt/turquoise）文本对比度 AA 达标；reduced-motion 关闭唱片/平滑滚动但保留当前行、焦点与播放态；axe 键盘/SR 扫描与沉浸/播放栏测试通过；release gate 仅跑静态契约（--static-only），typecheck/Vitest 半由 frontend-test 承载",
+          "cmd": "node scripts/verify/checks/task-12.4.mjs --static-only"
         }
       ]
     },
@@ -1220,8 +1220,8 @@
       "title": "路径穿越、symlink/reparse、TOCTOU、恶意标签/LRC、任意 asset key、Tauri capability 安全测试",
       "commands": [
         {
-          "desc": "echo-core 安全测试（escape/symlink/TOCTOU/hostile+cover key）+ echo-desktop platform::security（CSP/capability/cover protocol）",
-          "cmd": "node scripts/verify/checks/task-12.7.mjs"
+          "desc": "echo-core 安全测试（escape/symlink/TOCTOU/hostile+cover key）+ echo-desktop platform::security（CSP/capability/cover protocol）；release gate 仅跑静态契约（--static-only），cargo 半由 workspace-test 承载",
+          "cmd": "node scripts/verify/checks/task-12.7.mjs --static-only"
         }
       ]
     },
@@ -1282,8 +1282,8 @@
       "title": "运行期无账号/遥测/同步 command/event/table 或业务网络请求；UI 不显示可操作同步/全选/歌单排序/歌曲编辑",
       "commands": [
         {
-          "desc": "0001 迁移无同步/遥测表 + IPC 命令/事件面无同步命令 + 无网络客户端依赖 + 桌面 CSP 拒绝远端 + UI 组件测试断言作用域守卫",
-          "cmd": "node scripts/verify/checks/task-13.8.mjs"
+          "desc": "0001 迁移无同步/遥测表 + IPC 命令/事件面无同步命令 + 无网络客户端依赖 + 桌面 CSP 拒绝远端 + UI 组件测试断言作用域守卫；release gate 仅跑静态契约（--static-only），cargo/typecheck/Vitest 半由 workspace-test / frontend-test 承载",
+          "cmd": "node scripts/verify/checks/task-13.8.mjs --static-only"
         }
       ]
     },
@@ -1786,7 +1786,7 @@
     {
       "id": "DAS-R02-S03",
       "title": "进入多选模式",
-      "command": "node scripts/verify/checks/task-13.8.mjs",
+      "command": "node scripts/verify/checks/task-13.8.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -1809,7 +1809,7 @@
     {
       "id": "DAS-R02-S05",
       "title": "访问一期明确排除的入口",
-      "command": "node scripts/verify/checks/task-13.8.mjs",
+      "command": "node scripts/verify/checks/task-13.8.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -2101,7 +2101,7 @@
     {
       "id": "DAS-R07-S01",
       "title": "重复启动应用",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -2112,7 +2112,7 @@
     {
       "id": "DAS-R07-S02",
       "title": "系统文件关联触发打开",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -2123,7 +2123,7 @@
     {
       "id": "DAS-R07-S03",
       "title": "首实例尚未就绪",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -2360,7 +2360,7 @@
     {
       "id": "DAS-R10-S01",
       "title": "离线启动",
-      "command": "node scripts/verify/checks/task-13.8.mjs",
+      "command": "node scripts/verify/checks/task-13.8.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -2371,7 +2371,7 @@
     {
       "id": "DAS-R10-S02",
       "title": "跨平台验证",
-      "command": "node scripts/verify/checks/task-13.8.mjs",
+      "command": "node scripts/verify/checks/task-13.8.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -3251,7 +3251,7 @@
     {
       "id": "DAS-R27-S06",
       "title": "不扩权限面",
-      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-app --all-features",
+      "command": "node scripts/verify/checks/file-drop-config.mjs",
       "evidence": [
         {
           "kind": "node",
@@ -3262,7 +3262,7 @@
     {
       "id": "DAS-R27-S07",
       "title": "资料库只读或不可用时仍可播",
-      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features",
+      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid",
       "evidence": [
         {
           "kind": "node",
@@ -3302,7 +3302,7 @@
     {
       "id": "DAS-R28-S03",
       "title": "三平台行为一致",
-      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-app --all-features",
+      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-app --all-features file_drop::tests::hover_overlay_follows_drag_lifecycle",
       "evidence": [
         {
           "kind": "node",
@@ -3747,7 +3747,7 @@
     {
       "id": "DP-R05-S02",
       "title": "单曲循环中的加载失败",
-      "command": "node scripts/verify/checks/task-11.7.mjs",
+      "command": "node scripts/verify/checks/task-11.7.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -3844,7 +3844,8 @@
           "kind": "vitest",
           "target": "src/features/player/PlayerBar.test.tsx"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R07-S03",
@@ -3909,7 +3910,7 @@
     {
       "id": "DP-R07-S08",
       "title": "系统打开多个文件同样不再丢失",
-      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features",
+      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features player::coordinator::tests_opened_files",
       "evidence": [
         {
           "kind": "node",
@@ -3995,7 +3996,7 @@
     {
       "id": "DP-R10-S02",
       "title": "使用应用快捷键",
-      "command": "node scripts/verify/checks/task-11.8.mjs",
+      "command": "node scripts/verify/checks/task-11.8.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -4790,7 +4791,7 @@
     {
       "id": "IL-R09-S01",
       "title": "减少动画偏好",
-      "command": "node scripts/verify/checks/task-12.4.mjs",
+      "command": "node scripts/verify/checks/task-12.4.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -4801,7 +4802,7 @@
     {
       "id": "IL-R09-S02",
       "title": "跨平台离线歌词播放",
-      "command": "node scripts/verify/checks/task-12.4.mjs",
+      "command": "node scripts/verify/checks/task-12.4.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -4812,7 +4813,7 @@
     {
       "id": "IL-R09-S03",
       "title": "暂停时停止旋转",
-      "command": "node scripts/verify/checks/task-12.4.mjs",
+      "command": "node scripts/verify/checks/task-12.4.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -5696,7 +5697,7 @@
     {
       "id": "LE-R06-S10",
       "title": "回收站目标受路径边界保护",
-      "command": "node scripts/verify/checks/task-12.7.mjs",
+      "command": "node scripts/verify/checks/task-12.7.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -7121,7 +7122,7 @@
     {
       "id": "LL-R08-S01",
       "title": "Unicode 和平台路径",
-      "command": "node scripts/verify/checks/task-12.7.mjs",
+      "command": "node scripts/verify/checks/task-12.7.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8642,7 +8643,7 @@
     {
       "id": "SFI-R07-S01",
       "title": "外部文件直接打开",
-      "command": "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
       "evidence": [
         {
           "kind": "node",
@@ -8657,7 +8658,7 @@
     {
       "id": "SFI-R07-S02",
       "title": "活动资料库内文件直接打开",
-      "command": "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
       "evidence": [
         {
           "kind": "node",
@@ -8672,7 +8673,7 @@
     {
       "id": "SFI-R07-S03",
       "title": "非活动旧资料库文件直接打开",
-      "command": "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
       "evidence": [
         {
           "kind": "node",
@@ -8711,7 +8712,7 @@
     {
       "id": "SFI-R07-S06",
       "title": "投放不入库且源文件不变",
-      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features",
+      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid",
       "evidence": [
         {
           "kind": "node",
@@ -8763,7 +8764,7 @@
     {
       "id": "SFI-R08-S01",
       "title": "已运行实例接收文件关联",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8774,7 +8775,7 @@
     {
       "id": "SFI-R08-S02",
       "title": "冷启动文件关联",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8785,7 +8786,7 @@
     {
       "id": "SFI-R09-S01",
       "title": "带百分号编码的 file URL 被归一化",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8796,7 +8797,7 @@
     {
       "id": "SFI-R09-S02",
       "title": "非文件 scheme 被丢弃",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8807,7 +8808,7 @@
     {
       "id": "SFI-R09-S03",
       "title": "归一化契约由类型强制",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8818,7 +8819,7 @@
     {
       "id": "SFI-R09-S04",
       "title": "前端不得二次解码",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8829,7 +8830,7 @@
     {
       "id": "SFI-R09-S05",
       "title": "纵深防御不得被放宽",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs --static-only",
       "evidence": [
         {
           "kind": "node",

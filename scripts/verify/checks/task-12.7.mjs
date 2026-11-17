@@ -26,6 +26,10 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
+// `--static-only` keeps the structural symlink guard and skips the 19 cargo
+// test invocations: every one of them is part of the workspace suite the Linux
+// `Rust (Linux workspace)` job already runs.
+const staticOnly = process.argv.includes("--static-only");
 
 function fail(msg) {
   process.stderr.write(`FAIL 12.7: ${msg}\n`);
@@ -59,9 +63,13 @@ const CORE_TESTS = [
   // arbitrary asset key
   "cover_cache_rejects_bad_keys_and_arbitrary_paths",
 ];
-for (const name of CORE_TESTS) {
-  run("cargo", ["test", "-p", "echo-core", "--all-features", name]);
-  process.stdout.write(`  ok: echo-core ${name}\n`);
+if (!staticOnly) {
+  for (const name of CORE_TESTS) {
+    run("cargo", ["test", "-p", "echo-core", "--all-features", name]);
+    process.stdout.write(`  ok: echo-core ${name}\n`);
+  }
+} else {
+  process.stdout.write("  skip: echo-core security tests (covered by the workspace-test job)\n");
 }
 
 // --- Desktop security surface (CoverProtocol / CSP / capability) ---
@@ -76,9 +84,13 @@ const DESKTOP_FILTERS = [
   "platform::security::tests::committed_capability_grants_only_the_minimal_set",
   "platform::security::tests::tauri_conf_csp_matches_the_pinned_policy",
 ];
-for (const filter of DESKTOP_FILTERS) {
-  run("cargo", ["test", "-p", "echo-desktop", "--all-features", filter]);
-  process.stdout.write(`  ok: echo-desktop ${filter}\n`);
+if (!staticOnly) {
+  for (const filter of DESKTOP_FILTERS) {
+    run("cargo", ["test", "-p", "echo-desktop", "--all-features", filter]);
+    process.stdout.write(`  ok: echo-desktop ${filter}\n`);
+  }
+} else {
+  process.stdout.write("  skip: echo-desktop platform::security tests (covered by the workspace-test job)\n");
 }
 
 // --- Static guard: filesystem adapter discards never follow symlinks ---
@@ -90,5 +102,8 @@ if (!adapter.includes("file_type().is_symlink()")) {
   fail("adapter discard path no longer guards symlinks");
 }
 
-// --- clippy + fmt on the touched crates ---
-process.stdout.write("ok 12.7: security tests pass (no root escape, no arbitrary read, no remote/network access)\n");
+process.stdout.write(
+  staticOnly
+    ? "ok 12.7: symlink guard intact (static-only; security tests delegated to workspace-test)\n"
+    : "ok 12.7: security tests pass (no root escape, no arbitrary read, no remote/network access)\n",
+);

@@ -513,11 +513,14 @@ PR」，不是「PR 里的文档提交」；后者只能靠合并前压提交来
 所以「删重复执行 / 删元测试」是一比一收益；「删编译步骤」只有整实例移除时才算全额，留在同一 job 内
 只是把编译搬到了后面第一个真正编译的命令里。**改 CI 前先判断要删的步骤是不是该 job 的第一个编译动作。**
 
-**关键路径 937s（`Release gate`），未达 design.md 的 ≤600s 目标。** 下一步杠杆（design.md 迁移步骤 4
-已预先授权，不改 spec）：`Release gate` 内 `task-9.1`（307s）、`task-12.7`（194s）、`task-13.8`（161s）、
-`task-11.7`/`11.8`/`12.4`（120s）合计约 782s 是按包 `cargo test` 子集，与 Rust Linux 的 workspace test
-重复；把这些检查的子进程半委托给 `workspace-test` / `frontend-test`、只保留静态断言，可把 `Release gate`
-压到约 100s。届时关键路径变成 `Rust (Linux workspace)`（670s，其中 `Test` 469s），10 分钟墙钟目标仍达不到。
+**关键路径 937s（`Release gate`），未达 design.md 的 ≤600s 目标。** 第二轮改造（design.md 迁移步骤 4
+已预先授权，不改 spec）在本分支实施：`task-9.1` / `11.7` / `11.8` / `12.4` / `12.7` / `13.8` 增加
+`--static-only`，release gate 只跑各自的静态契约（结构守卫、WCAG 对比度与 reduced-motion、迁移与命令面、
+快捷键映射、导入 wiring），cargo/typecheck/Vitest 半由 `workspace-test` / `frontend-test` 承载；
+`DP-R07-S02` 显式 `delegatedTo: workspace-test`；文件投放组合的整包 `cargo test` 收窄到各自的测试名过滤。
+本地暖缓存下 release gate 场景执行 24s（26 批 / 561 场景 / 495 委托）；CI 冷缓存仍要付一次
+`echo-core` / `echo-desktop` 测试编译（由第一个 cargo 命令吸收），预计 `Release gate` 降到约 450–550s。
+届时关键路径变成 `Rust (Linux workspace)`（670s，其中 `Test` 469s），10 分钟墙钟目标仍达不到。
 
 **合并后需复核的悬项**：旧拓扑的热态数据里 core 会逼近 Release gate（`42847291259` 667s vs 684s；
 `42779096853` 681s vs 785s），但旧拓扑的 release-gate 有专属缓存键，本分支改为共享 `linux-workspace`，

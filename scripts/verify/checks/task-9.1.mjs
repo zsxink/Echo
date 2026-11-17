@@ -32,6 +32,11 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
+// The release gate runs `--static-only`: the structural guards below stay, the
+// cargo calls do not. Their tests are the same workspace suite the Linux
+// `Rust (Linux workspace)` job executes (`delegatedTo: workspace-test`); running
+// them a second time in the release gate bought no extra coverage.
+const staticOnly = process.argv.includes("--static-only");
 
 function fail(msg) {
   process.stderr.write(`FAIL 9.1: ${msg}\n`);
@@ -46,34 +51,38 @@ function run(cmd, args, what) {
   return result.stdout;
 }
 
-// 1. The thin binary stays thin but now wires the runtime FIFO: it must
-//    compile and be clippy-clean.
-run("cargo", ["check", "-p", "echo-app", "--locked", "--all-features"], "echo-app compiles");
-// 2. The FIFO semantics backing task 9.1 are proven by the runtime tests.
-const testOut = run(
-  "cargo",
-  ["test", "-p", "echo-desktop", "--lib", "--locked", "--all-features", "runtime::"],
-  "echo-desktop runtime tests",
-);
-for (const name of [
-  "supervisor_sequence_resolves_gate_and_drains_pending_opens",
-  "pending_open_fifo_is_bounded_and_keeps_newest",
-  "frontend_ready_gate_is_idempotent_and_never_replays",
-  "gate_kind_maps_recovery_states",
-]) {
-  if (!testOut.includes(`test runtime::tests::${name} ... ok`)) {
-    fail(`runtime test not green: ${name}`);
+if (!staticOnly) {
+  // 1. The thin binary stays thin but now wires the runtime FIFO: it must
+  //    compile and be clippy-clean.
+  run("cargo", ["check", "-p", "echo-app", "--locked", "--all-features"], "echo-app compiles");
+  // 2. The FIFO semantics backing task 9.1 are proven by the runtime tests.
+  const testOut = run(
+    "cargo",
+    ["test", "-p", "echo-desktop", "--lib", "--locked", "--all-features", "runtime::"],
+    "echo-desktop runtime tests",
+  );
+  for (const name of [
+    "supervisor_sequence_resolves_gate_and_drains_pending_opens",
+    "pending_open_fifo_is_bounded_and_keeps_newest",
+    "frontend_ready_gate_is_idempotent_and_never_replays",
+    "gate_kind_maps_recovery_states",
+  ]) {
+    if (!testOut.includes(`test runtime::tests::${name} ... ok`)) {
+      fail(`runtime test not green: ${name}`);
+    }
   }
-}
-// The composition-root single-supervisor assertion lives in the services
-// module (runtime::services::tests::open_path), which already existed before
-// this change.
-if (
-  !testOut.includes(
-    "test runtime::services::tests::open_path::the_composition_root_shares_the_shells_startup_supervisor ... ok",
-  )
-) {
-  fail("runtime test not green: the_composition_root_shares_the_shells_startup_supervisor");
+  // The composition-root single-supervisor assertion lives in the services
+  // module (runtime::services::tests::open_path), which already existed before
+  // this change.
+  if (
+    !testOut.includes(
+      "test runtime::services::tests::open_path::the_composition_root_shares_the_shells_startup_supervisor ... ok",
+    )
+  ) {
+    fail("runtime test not green: the_composition_root_shares_the_shells_startup_supervisor");
+  }
+} else {
+  process.stdout.write("  skip: cargo check/tests (covered by the workspace-test job)\n");
 }
 
 // 3. Structural guard: the shell routes both OS open paths through the
@@ -118,18 +127,20 @@ if (directEmits > 2) {
 //    decoded path from a raw `file://` string (the original bug slipped past
 //    them), so the behavior itself is pinned by the `open_targets` unit tests,
 //    which run on every host even though the only caller is macOS-only.
-const appTestOut = run(
-  "cargo",
-  ["test", "-p", "echo-app", "--locked", "--all-features", "open_targets"],
-  "echo-app open_targets tests",
-);
-for (const name of [
-  "decodes_percent_encoding_and_keeps_order",
-  "drops_non_file_schemes",
-  "mixed_input_keeps_only_file_targets_in_order",
-]) {
-  if (!appTestOut.includes(`test open_targets::tests::${name} ... ok`)) {
-    fail(`open_targets test not green: ${name}`);
+if (!staticOnly) {
+  const appTestOut = run(
+    "cargo",
+    ["test", "-p", "echo-app", "--locked", "--all-features", "open_targets"],
+    "echo-app open_targets tests",
+  );
+  for (const name of [
+    "decodes_percent_encoding_and_keeps_order",
+    "drops_non_file_schemes",
+    "mixed_input_keeps_only_file_targets_in_order",
+  ]) {
+    if (!appTestOut.includes(`test open_targets::tests::${name} ... ok`)) {
+      fail(`open_targets test not green: ${name}`);
+    }
   }
 }
 if (bootstrap.includes("url.to_string()")) {
@@ -229,5 +240,5 @@ if (capturedCalls < 2) {
 }
 
 process.stdout.write(
-  "ok 9.1: process-wide supervisor before Builder, single-instance + init FIFO wiring, frontend-ready delivery gate, open normalization, runtime FIFO tests green\n",
+  `ok 9.1: process-wide supervisor before Builder, single-instance + init FIFO wiring, frontend-ready delivery gate, open normalization${staticOnly ? " (static-only; behavior delegated to workspace-test)" : ", runtime FIFO tests green"}\n`,
 );

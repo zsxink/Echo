@@ -3,6 +3,8 @@
   "declared": {
     "scripts/verify/checks/task-3.10.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
     "scripts/verify/checks/task-3.14.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
+    "scripts/verify/checks/task-11.7.mjs": "hybrid (cargo/Vitest + repo-content wiring assertions); entry pending the injection-proof follow-up change",
+    "scripts/verify/checks/task-11.8.mjs": "hybrid (typecheck/Vitest + repo-content key-map assertions); entry pending the injection-proof follow-up change",
     "scripts/verify/checks/task-12.4.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
     "scripts/verify/checks/task-12.6.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
     "scripts/verify/checks/task-12.7.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",

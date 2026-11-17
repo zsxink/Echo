@@ -33,6 +33,10 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 const APP = resolve(ROOT, "apps", "desktop");
+// `--static-only` keeps the drift guards (migrations, bridge surface, Cargo
+// deps, CSP text, UI guard test source) and skips the cargo/typecheck/Vitest
+// half: all three run in the `Rust (Linux workspace)` / `Frontend (Linux)` jobs.
+const staticOnly = process.argv.includes("--static-only");
 
 function fail(msg) {
   process.stderr.write(`FAIL 13.8: ${msg}\n`);
@@ -112,8 +116,14 @@ for (const dep of ["rust-s3", "aws-sdk", "webdav-client"]) {
 process.stdout.write("  ok: no cloud object-store client dependency in Cargo workspace\n");
 
 // 4. Desktop security suite still asserts offline/no-network.
-run("cargo", ["test", "-p", "echo-desktop", "--all-features", "platform::security::tests::csp_never_opens_a_remote_or_network_source"]);
-process.stdout.write("  ok: desktop CSP still denies remote/network sources\n");
+if (!staticOnly) {
+  run("cargo", ["test", "-p", "echo-desktop", "--all-features", "platform::security::tests::csp_never_opens_a_remote_or_network_source"]);
+}
+process.stdout.write(
+  staticOnly
+    ? "  skip: desktop CSP test (covered by the workspace-test job)\n"
+    : "  ok: desktop CSP still denies remote/network sources\n",
+);
 
 // 5. Sync remains explicitly opt-in and the WebView cannot make network calls
 //    directly. Native LAN networking is owned by Tauri commands.
@@ -144,7 +154,6 @@ if (!guardBody.includes("已关闭") || !guardBody.includes("lan-sync-now")) {
 }
 process.stdout.write("  ok: App.test.tsx carries the sync opt-in guard assertion\n");
 
-run("pnpm", ["--filter", "@echo/desktop", "typecheck"], APP);
 // NOTE: `"test": "vitest run"` already includes `run`. Passing an extra
 // `-- --run <file>` makes vitest treat the leftover `--` as part of the filter
 // set, silently dropping every filter and running the WHOLE suite — which is
@@ -160,9 +169,16 @@ function runDesktopTest(filter) {
   }
 }
 
-runDesktopTest("src/app/App.test.tsx");
-runDesktopTest("src/features/library/SongList.test.tsx");
-runDesktopTest("src/features/playlists/PlaylistsView.test.tsx");
-process.stdout.write("  ok: UI scope-guard for sync opt-in / select-all / manual playlist sort / song edit asserted by component suites\n");
+if (!staticOnly) {
+  run("pnpm", ["--filter", "@echo/desktop", "typecheck"], APP);
+  runDesktopTest("src/app/App.test.tsx");
+  runDesktopTest("src/features/library/SongList.test.tsx");
+  runDesktopTest("src/features/playlists/PlaylistsView.test.tsx");
+  process.stdout.write("  ok: UI scope-guard for sync opt-in / select-all / manual playlist sort / song edit asserted by component suites\n");
+} else {
+  process.stdout.write("  skip: typecheck + component suites (covered by the Frontend job; source guard above still checked)\n");
+}
 
-process.stdout.write("ok 13.8: opt-in sync, no account/telemetry, no WebView remote network, excluded entries remain absent\n");
+process.stdout.write(
+  `ok 13.8: opt-in sync, no account/telemetry, no WebView remote network, excluded entries remain absent${staticOnly ? " (static-only)" : ""}\n`,
+);
