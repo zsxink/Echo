@@ -3,17 +3,19 @@
 ## 1. rust 矩阵 5 分片、步骤重排、purity 迁出
 
 - [ ] 1.1 把 `rust` 矩阵改为 5 个 include 条目：Linux `workspace`、macOS `core` / `desktop`、Windows `core` / `desktop`；`desktop` 分片 job 级仅在非 `pull_request` 执行，`core` 分片的 `Test` 按事件与分片设置 `if`；矩阵条目包含 `platform` / `shard` / `os` / `cache` / `packages` / `clippy`。验证：`node scripts/verify/checks/task-1.5.mjs` 退出 0，且 `cargo test ${{ matrix.packages }} --all-targets --all-features` 的包并集等于全部 workspace 包。
-- [ ] 1.2 重排 `Rust (Linux)` 步骤为 Format check → Task 16.1 → Task 9.7/9.8 → Clippy → Test → Rust static gates，保证 `Test` 是该 job 最后一次全量编译；把 `purity` section 从 `Rust (Linux)` 迁到 `governance-static`（`ECHO_PURITY_REQUIRE_BUILD=1`，位于 coverage 之前）。验证：`node scripts/verify/checks/task-1.5.mjs` 退出 0；`node scripts/verify/checks/task-16.1.mjs`、`task-9.1.mjs` 与 `task-9.7`/`task-9.8` 相关检查退出 0。
+- [ ] 1.2 重排整个 `rust` job（含 Linux `workspace` 分片）的步骤为 Format check → Task 16.1 → Task 9.7/9.8 → Clippy → Test → Rust static gates，保证 `Test` 是该 job 最后一次全量编译；`Task 16.1`、`Task 9.7/9.8`、`Rust static gates` 限定 `matrix.shard == 'workspace'`，`Clippy` 按 `matrix.clippy` 执行；把 `purity` section 从 `Rust (Linux)` 迁到 `governance-static`（`ECHO_PURITY_REQUIRE_BUILD=1`，位于 coverage 之前）。验证：`node scripts/verify/checks/task-1.5.mjs` 退出 0；`node scripts/verify/checks/task-16.1.mjs`、`task-9.1.mjs` 与 `task-9.7`/`task-9.8` 相关检查退出 0。
+- [ ] 1.3 新增 `macos-native-gate` job（插在 `macos-platform-gate` 之后），承接从 `rust` job 迁出的 8.12/13.2 libmpv smoke 与 native e2e 门禁；该 job 自行 stage vendored libmpv dylibs 到 `target/Frameworks`，只运行 `pnpm verify:task -- 8.12 13.2`，不执行 `pnpm install`；同时更新 `ci.yml` 的 `task-gates` 注释中关于 8.12/13.2 执行位置的过时说明。验证：`node scripts/verify/checks/task-1.5.mjs` 的 `assertAlwaysRuns` 覆盖 `macos-native-gate` 且退出 0；`rg -n '8.12 13.2' .github/workflows/ci.yml` 只命中新 job。
 
 ## 2. 依赖审计分层、删除 dependency-audit job、新增定时 workflow
 
-- [ ] 2.1 删除 `ci.yml` 的 `dependency-audit` job，把 `pnpm verify:task -- 1.7` 并入 `governance-static`；在线 RUSTSEC 公告扫描按事件分层：PR 只跑离线半，`main` 跑在线半，PR 跳过在线半时打印显式 note。验证：`node scripts/verify/checks/task-1.7.mjs` 退出 0；`rg -n 'dependency-audit' .github/workflows/ci.yml` 无输出。
+- [ ] 2.1 删除 `ci.yml` 的 `dependency-audit` job，把 `pnpm verify:task -- 1.7` 并入 `governance-static`；在线 RUSTSEC 公告扫描按事件分层：PR 只跑离线半，`main` 跑在线半，PR 跳过在线半时打印显式 note；同步更新 `ci.yml` 中关于 1.7 执行位置的过时注释（`dependency-audit job` → `governance-static job`）。验证：`node scripts/verify/checks/task-1.7.mjs` 退出 0；`rg -n 'dependency-audit' .github/workflows/ci.yml` 无输出。
 - [ ] 2.2 新增 `.github/workflows/dependency-audit.yml`，仅含 `schedule` 与 `workflow_dispatch` 触发，1 个 job 真实执行在线扫描。验证：`rg -n 'schedule|workflow_dispatch|task-1.7' .github/workflows/dependency-audit.yml` 命中三项；结构门禁断言该 workflow 存在。
+- [ ] 2.3 在 `task-1.5.mjs` 增加静态断言：读取 `scripts/verify/checks/task-1.7.mjs` 源码，要求同时包含 `ECHO_AUDIT_OFFLINE_ONLY` 与 note 文案 `1.7: note — online advisory checks`，使跳过 note 的存在性不再依赖人工检查。验证：`node scripts/verify/checks/task-1.5.mjs` 退出 0；临时删除 note 文案后该检查以非零退出并报告缺失的 needle。
 
 ## 3. 缓存治理（shared-key + save-if）
 
 - [ ] 3.1 删除现存 14 条 Actions 缓存（`gh api -X DELETE`），避免旧配额继续触发淘汰。验证：`gh api repos/zsxink/Echo/actions/cache/usage` 的 `active_caches_count` 归零或仅剩本次实施后的新缓存。
-- [ ] 3.2 为所有 `Swatinem/rust-cache` 步骤统一 `shared-key`（矩阵 job 用 `${{ matrix.cache }}`，`governance-static` 用 `governance-static`），写者恰好 6 个（`linux-workspace`、`windows-core`、`windows-desktop`、`macos-core`、`macos-desktop`、`governance-static`）且 `save-if: ${{ github.ref == 'refs/heads/main' }}`，其余 job `save-if: false`。验证：`node scripts/verify/checks/task-1.5.mjs` 的缓存写者断言退出 0；`rg -n 'save-if' .github/workflows/ci.yml` 的 true 条件只出现在 6 个 writer job。
+- [ ] 3.2 为所有 `Swatinem/rust-cache` 步骤统一 `shared-key`（`rust` job 用 `${{ matrix.cache }}` 展开为 5 个 key，`governance-static` 用 `governance-static`），写者集合恰好 6 个 key（`linux-workspace`、`windows-core`、`windows-desktop`、`macos-core`、`macos-desktop`、`governance-static`）；`save-if: ${{ github.ref == 'refs/heads/main' }}` 只出现在 `rust` 与 `governance-static` 两个 job，其余 job 全部 `save-if: false`。验证：`node scripts/verify/checks/task-1.5.mjs` 的缓存写者集合断言退出 0；`rg -n 'save-if' .github/workflows/ci.yml` 的 main 条件只命中这两个 job。
 
 ## 4. task-gates 4 → 3 分片
 

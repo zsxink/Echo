@@ -8,7 +8,7 @@
 
 Windows / macOS 的全量 workspace 测试 MAY 按包分片执行；各分片所覆盖包的并集 MUST 等于全部 workspace 包，MUST NOT 因分片遗漏或删除任何包。分片引入的跳过 MUST 遵守与整段测试相同的分层规则：分片 MAY 仅在 Pull Request 上跳过，在 `main` 上 MUST 全部真实执行，且结构门禁 MUST 断言分片并集与各分片在 `main` 上的执行条件。
 
-`clippy` MUST 在三平台以 workspace 形态执行，MUST NOT 收窄到单个 crate 或包子集。会写缓存的 job，其最后一条构建型 cargo 调用 MUST 与该缓存 key 对应的固定 cargo 形态一致；MUST NOT 在缓存保存之前执行不同 feature、不同 target 选择或 check 形态的 cargo 调用，使缓存内容与后续读取者的构建形态不符。缓存写入 MUST 只发生在 `main`；Pull Request 上的任何 job MUST NOT 保存缓存。
+`clippy` MUST 在三平台以 workspace 形态执行，MUST NOT 收窄到单个 crate 或包子集。写入共享缓存的 `rust` 矩阵分片，其最后一条构建型 cargo 调用 MUST 是该缓存 key 对应的固定 cargo 形态：Linux `workspace` 分片为 `cargo test --workspace --all-targets --all-features`，Windows / macOS 的 `core` 与 `desktop` 分片为 `cargo test <该分片包列表> --all-targets --all-features`；其后 MAY 执行同形态的 `-- --list`，MUST NOT 在缓存保存之前执行不同 feature、不同 target 选择或 check 形态的 cargo 调用，使缓存内容与后续读取者的构建形态不符。`governance-static` 的缓存 key 是 job 私有的：只有该 job 与定时依赖审计 workflow 读取它，其 coverage 插桩形态不会污染任何其他读者，因此不受上述 cargo 形态约束。缓存写入 MUST 只发生在 `main`；Pull Request 上的任何 job MUST NOT 保存缓存。
 
 CI 的验证结构 MUST 可被静态校验：task 分片的并集 MUST 覆盖全部已登记 task 且无重复；governance 的每个 section MUST 在 `ci.yml` 中有执行位置；场景委托 MUST 指向真实执行的 gate；删除、重命名或移动 job / step 导致上述结构不成立时，结构门禁 MUST 失败。
 
@@ -54,10 +54,15 @@ CI 的验证结构 MUST 可被静态校验：task 分片的并集 MUST 覆盖全
 - **WHEN** 某平台的 `clippy` 以单包选择或非 workspace 形态执行
 - **THEN** 结构门禁失败并指出该平台，而不是把覆盖收缩当作分片优化
 
-#### Scenario: 缓存写者形态与缓存不一致
+#### Scenario: rust 矩阵缓存写者形态与缓存不一致
 
-- **WHEN** 会写缓存的 job 在保存缓存之前执行了与缓存 key 固定形态不一致的 cargo 调用（例如 `clippy` 位于 `Test` 之后，或出现 `--lib` 等不同 target 选择）
-- **THEN** 结构门禁失败并指出该 job 与不一致的 cargo 形态
+- **WHEN** 某个写入共享缓存的 `rust` 矩阵分片在保存缓存之前执行了与缓存 key 固定形态不一致的 cargo 调用（例如 `clippy` 位于 `Test` 之后，或出现 `--lib` 等不同 target 选择）
+- **THEN** 结构门禁失败并指出该分片与不一致的 cargo 形态
+
+#### Scenario: governance-static 的 job 私有缓存不受形态约束
+
+- **WHEN** `governance-static` 以 coverage 插桩形态作为其最后一次 cargo 调用并保存到 `governance-static` 缓存 key
+- **THEN** 该 job 不因形态与 `rust` 矩阵分片不同而失败；结构门禁确认该 key 只被 `governance-static` 与定时依赖审计 workflow 读取，没有任何 `rust` 矩阵分片或其他 job 以它为读者
 
 #### Scenario: Pull Request 写入缓存
 

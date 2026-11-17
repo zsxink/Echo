@@ -35,7 +35,7 @@
 
 - 不新增 job（20 实例已是并发上限），改为同一 job 内 `clippy` 前置、`Test` 作为最后一次全量编译；clippy 的 check 产物被 test 的 build 覆盖，缓存中留下 build 形态。
 - 三平台 clippy 仍在 PR 上执行，满足规格「PR 必须跑三平台 fmt/clippy」。
-- 会写缓存的 job，其最后一条 cargo 调用 MUST 与缓存形态一致（Linux 为 `cargo test --workspace --all-targets --all-features`，core/desktop 分片为 `cargo test ${{ matrix.packages }} --all-targets --all-features`）；其后只允许同形态的 `-- --list`。
+- 写入共享缓存的 `rust` 矩阵分片，其最后一条构建型 cargo 调用 MUST 与缓存形态一致（Linux 为 `cargo test --workspace --all-targets --all-features`，core/desktop 分片为 `cargo test ${{ matrix.packages }} --all-targets --all-features`）；其后只允许同形态的 `-- --list`。`governance-static` 的缓存 key 是 job 私有的（仅该 job 与定时依赖审计 workflow 读取），其 coverage 插桩形态不会污染任何其他读者，因此不受该形态约束；缓存写入只发生在 `main` 的规则仍适用于全部写者。
 
 ### D3. Windows/macOS workspace 测试按包分片，Linux 保持 workspace
 
