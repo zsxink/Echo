@@ -27,7 +27,7 @@
 ### D1. 缓存治理：固定 shared-key，写者收敛为 6 个且只写 main
 
 - 所有 `Swatinem/rust-cache` 统一 `shared-key`：`linux-workspace`、`windows-core`、`windows-desktop`、`macos-core`、`macos-desktop`、`governance-static`；矩阵 job 用 `${{ matrix.cache }}`。
-- 写者只有上述 6 个 job，且 `save-if: ${{ github.ref == 'refs/heads/main' }}`；其余 job 使用相同 `shared-key` 但 `save-if: false`，只读。
+- 写者集合是 6 个 key，由 `rust` 矩阵（经 `${{ matrix.cache }}` 展开为 5 个 key）与 `governance-static` 写入，`save-if: ${{ github.ref == 'refs/heads/main' }}`；其余 job 使用相同 `shared-key` 但 `save-if: false`，只读。
 - 实施第一步删除现存 14 条旧缓存，避免旧配额继续触发淘汰。
 - 选择按分片而非每平台单 key：分片形态不同，共享一个 key 会让缓存内容偏向某一种形态；6 个 key 的预估总量约 4.8 GB，为配额留一半余量。
 

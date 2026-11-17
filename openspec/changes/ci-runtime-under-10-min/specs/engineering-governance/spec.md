@@ -61,7 +61,7 @@ CI 的验证结构 MUST 可被静态校验：task 分片的并集 MUST 覆盖全
 
 #### Scenario: governance-static 的 job 私有缓存不受形态约束
 
-- **WHEN** `governance-static` 以 coverage 插桩形态作为其最后一次 cargo 调用并保存到 `governance-static` 缓存 key
+- **WHEN** `governance-static` 以 coverage 插桩形态作为其最后一次**构建型** cargo 调用并保存到 `governance-static` 缓存 key
 - **THEN** 该 job 不因形态与 `rust` 矩阵分片不同而失败；结构门禁确认该 key 只被 `governance-static` 与定时依赖审计 workflow 读取，没有任何 `rust` 矩阵分片或其他 job 以它为读者
 
 #### Scenario: Pull Request 写入缓存
