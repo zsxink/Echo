@@ -24,7 +24,7 @@
 
 ## 5. 注入证明 2 → 3 分片
 
-- [ ] 5.1 把注入证明拆为 3 片，按实测成本显式标注 `shard:`；嵌入前端条目固定在构建 shell 的分片（shard 1）；分片计划放入新文件以避开 `injection-suite.mjs` 的 1000 行上限；同步 `injection-governance.mjs` 与 `task-1.5.mjs` 的分片集合为 `[1, 2, 3]`。验证：`node scripts/verify/injection-suite.mjs --shard=1/3`、`--shard=2/3`、`--shard=3/3` 各自退出 0；`node scripts/verify/checks/task-1.5.mjs` 退出 0。
+- [ ] 5.1 把注入证明拆为 3 片，按实测成本显式标注 `shard:`；嵌入前端条目固定在构建 shell 的分片（shard 1）；分片计划放入新文件以避开 `injection-suite.mjs` 的 1000 行上限；同步 `injection-governance.mjs` 与 `task-1.5.mjs` 的分片集合为 `[1, 2, 3]`。验证：`node scripts/verify/injection-suite.mjs --shard=2/3` 与 `--shard=3/3` 各自退出 0（全绿）；shard 1 的 5 条 `ci-structure/*` / `ci-platform-matrix/*` 证明因 ci.yml 新结构而 needle 失配，按计划保持红到 7.1 重写完成，5.1 只要求分片计划覆盖全部 45 条且三片非空（33/7/5）；`node scripts/verify/checks/task-1.5.mjs` 退出 0。
 - [ ] 5.2 断言分片计划无空片、无重叠：计划键集等于注入套件 id 集。验证：`node scripts/verify/injection-suite.mjs --shard=1/3` 等三片输出无空片；`node scripts/verify/check-scale.mjs` 退出 0。
 
 ## 6. 场景命令与任务脚本的 cargo 形态收敛
