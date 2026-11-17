@@ -265,7 +265,7 @@ jobs:
       #
       # 16.1 runs in the Rust Linux job (it needs the built Tauri shell);
       # 8.12/13.2 run in the macOS native Gate job (staged dylibs); 1.7 runs in
-      # the dependency-audit job (it installs cargo-deny/cargo-audit).
+      # the governance-static job (it installs cargo-deny/cargo-audit).
       - name: Verify task gates
         env:
           # task-13.1 drives headless Chromium over CDP; the GitHub ubuntu
@@ -284,41 +284,6 @@ jobs:
           name: benchmark-50k
           path: apps/desktop/benchmark-50k.json
           if-no-files-found: error
-
-  dependency-audit:
-    name: Dependency audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain (pinned)
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.98.1
-
-      - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.18.0
-
-      # task-1.7 installs missing tools itself, but naming the step keeps the
-      # multi-minute compile out of the gate's own log and fails early/legibly.
-      - name: Install audit tooling
-        run: cargo install cargo-deny cargo-audit --locked
-
-      # Was registered in the manifest but wired into no CI job (issue #110
-      # P1-6). The offline-safe half (deny.toml licenses/bans/sources, the
-      # advisory-ignore mirror and LICENSES.md) always gates; the online half
-      # reports findings and only skips when the advisory DB is unreachable.
-      - name: Verify dependency audit gate
-        run: pnpm verify:task -- 1.7
 
   macos-platform-gate:
     name: macOS platform Gate
@@ -504,6 +469,21 @@ jobs:
       # injection proofs that own its binary.
       - name: Run governance static gates
         run: pnpm verify:governance -- --sections=registry,static,coverage
+
+      # task-1.7 installs missing tools itself, but naming the install step keeps
+      # the multi-minute compile out of the gate's own log and fails early.
+      - name: Install audit tooling
+        run: cargo install cargo-deny cargo-audit --locked
+
+      # The offline-safe half (deny.toml licenses/bans/sources, the
+      # advisory-ignore mirror and LICENSES.md) always gates. The online half
+      # runs on main and in the scheduled Dependency audit workflow; on PRs it
+      # is skipped with an explicit note (a new advisory must not block every
+      # in-flight PR).
+      - name: Verify dependency audit gate
+        env:
+          ECHO_AUDIT_OFFLINE_ONLY: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+        run: pnpm verify:task -- 1.7
 
   injection-proofs:
     name: Injection proof ${{ matrix.shard }}/2

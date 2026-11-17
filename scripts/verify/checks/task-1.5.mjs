@@ -219,6 +219,20 @@ if (purityStep.run !== "pnpm verify:governance -- --sections=purity") {
 }
 assertEnv(purityStep, "ECHO_PURITY_REQUIRE_BUILD", "1", "governance-static purity step");
 
+const auditStep = step(workflow, "governance-static", "Verify dependency audit gate");
+if (auditStep.run !== "pnpm verify:task -- 1.7") fail("governance-static audit step run must be 'pnpm verify:task -- 1.7'");
+const AUDIT_ENV = "${{ github.event_name == 'pull_request' && '1' || '0' }}";
+if (String(auditStep.env?.ECHO_AUDIT_OFFLINE_ONLY) !== AUDIT_ENV) {
+  fail(`governance-static audit step env ECHO_AUDIT_OFFLINE_ONLY must be '${AUDIT_ENV}'`);
+}
+if (workflow.jobs["dependency-audit"]) fail("ci.yml job 'dependency-audit' must not exist (folded into governance-static)");
+// The skip must never be silent: the gate itself carries the note naming what
+// did not run, and this pins its presence so a later edit cannot drop it.
+const auditSource = readFileSync(resolve(ROOT, "scripts", "verify", "checks", "task-1.7.mjs"), "utf8");
+for (const needle of ["ECHO_AUDIT_OFFLINE_ONLY", "1.7: note — online advisory checks"]) {
+  if (!auditSource.includes(needle)) fail(`task-1.7 must keep '${needle}'`);
+}
+
 const release = step(workflow, "release-gate", "Run release gate without external artifacts");
 if (release.run !== "node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf") {
   fail("release-gate run must use --skip-static --delegated=governance,perf");

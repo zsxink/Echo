@@ -199,6 +199,13 @@ if (!existsSync(DENY_TOML)) {
   fail("deny.toml is missing from the repo root — add it before running the 1.7 check");
 }
 
+// Tiering: on pull requests the online half (advisory DB, registry audit) is
+// skipped — a new RUSTSEC advisory has nothing to do with the PR under review
+// and would block every in-flight PR at once. It still runs for real on pushes
+// to main and in the scheduled Dependency audit workflow. The skip is never
+// silent: the note below names what did not run.
+const OFFLINE_ONLY = process.env.ECHO_AUDIT_OFFLINE_ONLY === "1";
+
 // Single source of truth: the same array `cargo deny check` reads.
 const AUDIT_IGNORES = readAdvisoryIgnores(DENY_TOML);
 for (const id of AUDIT_IGNORES) {
@@ -241,87 +248,96 @@ for (const member of ["echo-app", "echo-core", "echo-desktop"]) {
 
 // 3) Online advisory checks. These FAIL on real findings, but skip cleanly
 //    when the network / advisory DB is unreachable.
-handleOnline("cargo deny check (advisories)", spawn("cargo", ["deny", "check"], { timeout: NET_TIMEOUT }));
-handleOnline("cargo deny check advisories", spawn("cargo", ["deny", "check", "advisories"], { timeout: NET_TIMEOUT }));
+if (!OFFLINE_ONLY) {
+  handleOnline("cargo deny check (advisories)", spawn("cargo", ["deny", "check"], { timeout: NET_TIMEOUT }));
+  handleOnline("cargo deny check advisories", spawn("cargo", ["deny", "check", "advisories"], { timeout: NET_TIMEOUT }));
 
-const audit = spawn("cargo", ["audit", ...AUDIT_IGNORES.flatMap((id) => ["--ignore", id])], {
-  timeout: NET_TIMEOUT,
-});
-if (audit.status !== 0) {
-  const c = classifyOutcome(audit, "cargo audit");
-  if (!c.ok) {
-    if (c.finding) {
-      fail(`cargo audit reported vulnerabilities (see below):\n${c.text}`);
+  const audit = spawn("cargo", ["audit", ...AUDIT_IGNORES.flatMap((id) => ["--ignore", id])], {
+    timeout: NET_TIMEOUT,
+  });
+  if (audit.status !== 0) {
+    const c = classifyOutcome(audit, "cargo audit");
+    if (!c.ok) {
+      if (c.finding) {
+        fail(`cargo audit reported vulnerabilities (see below):\n${c.text}`);
+      }
+      fail(`cargo audit exited ${audit.status}:\n${c.text}`);
     }
-    fail(`cargo audit exited ${audit.status}:\n${c.text}`);
-  }
-  if (c.offline) {
-    // Fall back to the locally cached DB when the live fetch could not
-    // complete: works offline when ~/.cargo/advisory-db is present.
-    const cached = spawn("cargo", ["audit", "--no-fetch", ...AUDIT_IGNORES.flatMap((id) => ["--ignore", id])], {
-      timeout: 120_000,
-    });
-    if (cached.status !== 0) {
-      offlineSkipped += 1;
-      process.stderr.write(
-        `1.7: offline — cargo audit skipped: advisory DB unavailable (live fetch failed and ` +
-          `\`cargo audit --no-fetch\` exited ${cached.status})` +
-          (c.text ? `:\n${c.text.trim()}` : "") +
-          "\n",
-      );
-    } else if (/0 vulnerabilities|no vulnerabilities/i.test(output(cached))) {
-      process.stderr.write("1.7: cargo audit — no vulnerabilities (cached advisory DB)\n");
+    if (c.offline) {
+      // Fall back to the locally cached DB when the live fetch could not
+      // complete: works offline when ~/.cargo/advisory-db is present.
+      const cached = spawn("cargo", ["audit", "--no-fetch", ...AUDIT_IGNORES.flatMap((id) => ["--ignore", id])], {
+        timeout: 120_000,
+      });
+      if (cached.status !== 0) {
+        offlineSkipped += 1;
+        process.stderr.write(
+          `1.7: offline — cargo audit skipped: advisory DB unavailable (live fetch failed and ` +
+            `\`cargo audit --no-fetch\` exited ${cached.status})` +
+            (c.text ? `:\n${c.text.trim()}` : "") +
+            "\n",
+        );
+      } else if (/0 vulnerabilities|no vulnerabilities/i.test(output(cached))) {
+        process.stderr.write("1.7: cargo audit — no vulnerabilities (cached advisory DB)\n");
+      }
     }
   }
-}
 
-// 4) Frontend production dependency audit. Scope to `dependencies` only via
-//    --prod; --audit-level high makes low/medium findings non-blocking. The
-//    configured npm registry may be a mirror without an audit endpoint (e.g.
-//    npmmirror) — retry against registry.npmjs.org in that case.
-function auditPnpm() {
-  const args = ["audit", "--prod", "--audit-level", "high"];
-  const r = spawn("pnpm", args, { cwd: DESKTOP_DIR, timeout: 120_000 });
-  if (r.status === 0) {
-    return { ok: true };
-  }
-  const text = output(r);
-  const registryProblem =
-    /ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS|registry|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|fetch/i.test(text) &&
-    !FINDING_RE.test(text);
-  if (registryProblem) {
-    // Mirror without an audit endpoint, or a transient network failure.
-    const official = spawn("pnpm", [...args, "--registry", "https://registry.npmjs.org"], {
-      cwd: DESKTOP_DIR,
-      timeout: 120_000,
-    });
-    if (official.status === 0) {
-      return { ok: true, note: "audited against registry.npmjs.org (configured mirror has no audit endpoint)" };
+  // 4) Frontend production dependency audit. Scope to `dependencies` only via
+  //    --prod; --audit-level high makes low/medium findings non-blocking. The
+  //    configured npm registry may be a mirror without an audit endpoint (e.g.
+  //    npmmirror) — retry against registry.npmjs.org in that case.
+  function auditPnpm() {
+    const args = ["audit", "--prod", "--audit-level", "high"];
+    const r = spawn("pnpm", args, { cwd: DESKTOP_DIR, timeout: 120_000 });
+    if (r.status === 0) {
+      return { ok: true };
     }
-    const officialText = output(official);
-    if (FINDING_RE.test(officialText)) {
-      return { ok: false, text: officialText };
+    const text = output(r);
+    const registryProblem =
+      /ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS|registry|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|fetch/i.test(text) &&
+      !FINDING_RE.test(text);
+    if (registryProblem) {
+      // Mirror without an audit endpoint, or a transient network failure.
+      const official = spawn("pnpm", [...args, "--registry", "https://registry.npmjs.org"], {
+        cwd: DESKTOP_DIR,
+        timeout: 120_000,
+      });
+      if (official.status === 0) {
+        return { ok: true, note: "audited against registry.npmjs.org (configured mirror has no audit endpoint)" };
+      }
+      const officialText = output(official);
+      if (FINDING_RE.test(officialText)) {
+        return { ok: false, text: officialText };
+      }
+      return { ok: true, offline: true, text: `${text}\n${officialText}` };
     }
-    return { ok: true, offline: true, text: `${text}\n${officialText}` };
-  }
-  if (FINDING_RE.test(text)) {
+    if (FINDING_RE.test(text)) {
+      return { ok: false, text };
+    }
     return { ok: false, text };
   }
-  return { ok: false, text };
+
+  {
+    const res = auditPnpm();
+    if (res.ok) {
+      if (res.offline) {
+        offlineSkipped += 1;
+        process.stderr.write(`1.7: offline — pnpm production audit skipped: audit endpoint unreachable:\n${res.text.trim()}\n`);
+      } else if (res.note) {
+        process.stderr.write(`1.7: pnpm production audit — no high/critical advisories (${res.note})\n`);
+      }
+    } else {
+      fail(`pnpm audit --prod --audit-level high reported high/critical advisories (see below):\n${res.text}`);
+    }
+  }
 }
 
-{
-  const res = auditPnpm();
-  if (res.ok) {
-    if (res.offline) {
-      offlineSkipped += 1;
-      process.stderr.write(`1.7: offline — pnpm production audit skipped: audit endpoint unreachable:\n${res.text.trim()}\n`);
-    } else if (res.note) {
-      process.stderr.write(`1.7: pnpm production audit — no high/critical advisories (${res.note})\n`);
-    }
-  } else {
-    fail(`pnpm audit --prod --audit-level high reported high/critical advisories (see below):\n${res.text}`);
-  }
+if (OFFLINE_ONLY) {
+  process.stderr.write(
+    "1.7: note — online advisory checks (cargo deny advisories, cargo audit, pnpm audit --prod) " +
+      "skipped on this event; they run for real on pushes to main and in the scheduled Dependency audit workflow\n",
+  );
 }
 
 if (offlineSkipped > 0) {
