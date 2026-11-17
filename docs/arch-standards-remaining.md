@@ -466,8 +466,13 @@ shard 1，因为它需要壳二进制与 dist。每次调用都校验并集等�
 
 **实测确认（run `44032149852`，2026-11-17，冷缓存）**：15 个执行实例全部成功，墙钟 23m55s。
 `Task gates (core)` 794s（`Verify task gates` 419s + `Run performance scenarios` 344s）
-**仍低于** `Release gate` 1387s，差 593s —— perf 归并未把 core 顶成关键路径。`macOS native Gate`
-3m16s 由红转绿（删除 13.2 裸跑 `player_smoke` 的直接效果）。
+**仍低于** `Release gate` 1387s，差 593s —— perf 归并未把 core 顶成关键路径。同日第二次 run
+`44037252640`（同一份代码、同样冷缓存）为 core 670s vs Release gate 1030s，差 360s，结论一致。
+
+`macOS native Gate` **由红转绿**（删除 13.2 裸跑 `player_smoke`）。注意它的**墙钟没有可测量的收益**：
+四次 run 分别为 334s / 264s（旧）、196s / 326s（新），196s 是方差低点。删除的收益是去掉一条既有红，
+不是省时间。**同理，本页任何单次 run 的秒数都不能当作「省了多少」的证据** —— 同一份代码两次冷 run
+的墙钟相差 702s（23m55s vs 17m13s）。
 
 **合并后需复核的悬项**：旧拓扑的热态数据里 core 会逼近 Release gate（`42847291259` 667s vs 684s；
 `42779096853` 681s vs 785s），但旧拓扑的 release-gate 有专属缓存键，本分支改为共享 `linux-workspace`，
