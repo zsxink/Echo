@@ -46,6 +46,9 @@ jobs:
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.cache }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Linux webview dependencies
         if: runner.os == 'Linux'
@@ -144,6 +147,9 @@ jobs:
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.cache }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -244,6 +250,9 @@ jobs:
       - name: Cache Rust build artifacts
         if: matrix.shard == 'core' || matrix.shard == 'desktop'
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-workspace
+          save-if: false
 
       - uses: actions/setup-node@v4
         with:
@@ -265,7 +274,8 @@ jobs:
       #
       # 16.1 runs in the Rust Linux job (it needs the built Tauri shell);
       # 8.12/13.2 run in the macOS native Gate job (staged dylibs); 1.7 runs in
-      # the governance-static job (it installs cargo-deny/cargo-audit).
+      # the governance-static job (it installs cargo-deny, plus cargo-audit on
+      # non-PR events).
       - name: Verify task gates
         env:
           # task-13.1 drives headless Chromium over CDP; the GitHub ubuntu
@@ -298,6 +308,9 @@ jobs:
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: macos-desktop
+          save-if: false
 
       - uses: actions/setup-node@v4
         with:
@@ -343,6 +356,9 @@ jobs:
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: macos-desktop
+          save-if: false
 
       # 8.12/13.2 load the vendored dylibs through DYLD_LIBRARY_PATH at
       # target/Frameworks, which apps/desktop/src-tauri/build.rs stages when the
@@ -383,6 +399,9 @@ jobs:
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-desktop
+          save-if: false
 
       - uses: actions/setup-node@v4
         with:
@@ -424,6 +443,9 @@ jobs:
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: governance-static
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # The fixture gate regenerates fixtures/audio in scratch directories and
       # compares them against the committed bytes; it needs ffmpeg on PATH.
@@ -507,6 +529,9 @@ jobs:
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-workspace
+          save-if: false
 
       - name: Install Linux webview dependencies
         run: >-
@@ -557,6 +582,9 @@ jobs:
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-workspace
+          save-if: false
 
       - name: Install Linux webview dependencies
         run: >-
@@ -595,6 +623,9 @@ jobs:
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-workspace
+          save-if: false
 
       - uses: actions/setup-node@v4
         with:

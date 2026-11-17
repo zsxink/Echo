@@ -101,6 +101,77 @@ try {
   fail(error.message);
 }
 
+// ---------------------------------------------------------------------------
+// Cache governance: every Rust build cache step must name its shared key, and
+// the writer/reader split must be exactly the pinned sets. Wrapped in a block
+// because Task 2's audit-trigger assertions below already declare `auditWorkflow`
+// in module scope.
+// ---------------------------------------------------------------------------
+{
+  const CACHE_STEP = "Cache Rust build artifacts";
+  const MAIN_ONLY = "${{ github.ref == 'refs/heads/main' }}";
+  const CACHE_WRITERS = ["governance-static", "linux-workspace", "macos-core", "macos-desktop", "windows-core", "windows-desktop"];
+  // rust/rust-desktop 的 shared-key 是模板表达式，必须各自展开成该 job 实际写入
+  // 的 key，否则写者集合永远等于 ["${{ matrix.cache }}", "governance-static"]。
+  // 按 job 展开而不是合并两个矩阵：两个 job 都写入时合并会对同一批 key 重复计数。
+  const writerKeys = [];
+  const readerKeys = [];
+  for (const [jobId, job] of Object.entries(workflow.jobs)) {
+    const cacheStep = (job.steps || []).find((s) => s.name === CACHE_STEP);
+    if (!cacheStep) continue;
+    const sharedKey = String(cacheStep.with?.["shared-key"] || "");
+    const saveIf = String(cacheStep.with?.["save-if"] ?? "");
+    if (!sharedKey) fail(`ci.yml job '${jobId}' ${CACHE_STEP} must set shared-key`);
+    if (saveIf !== MAIN_ONLY && saveIf !== "false") {
+      fail(`ci.yml job '${jobId}' ${CACHE_STEP} save-if must be 'false' or '${MAIN_ONLY}', got '${saveIf}'`);
+    }
+    if (saveIf === MAIN_ONLY) {
+      writerKeys.push(...(sharedKey === "${{ matrix.cache }}" ? matrixEntries(workflow, jobId, "ci.yml").map((entry) => entry.cache) : [sharedKey]));
+    } else {
+      readerKeys.push(sharedKey);
+    }
+  }
+  if (JSON.stringify(writerKeys.sort()) !== JSON.stringify(CACHE_WRITERS)) {
+    fail(`ci.yml cache writers must be exactly [${CACHE_WRITERS.join(", ")}], got [${writerKeys.join(", ")}]`);
+  }
+  for (const key of readerKeys) {
+    if (key !== "${{ matrix.cache }}" && !CACHE_WRITERS.includes(key)) {
+      fail(`ci.yml reader cache key '${key}' has no writer`);
+    }
+  }
+  // governance-static's key is job-private: the spec exempts it from the cargo
+  // shape invariant *because* nobody else builds into it. Pin that readership so
+  // the exemption cannot silently become false.
+  const governanceReaders = Object.entries(workflow.jobs)
+    .filter(([, job]) => (job.steps || []).some((s) => s.name === CACHE_STEP && String(s.with?.["shared-key"] || "") === "governance-static"))
+    .map(([jobId]) => jobId);
+  if (JSON.stringify(governanceReaders) !== JSON.stringify(["governance-static"])) {
+    fail(`ci.yml cache key 'governance-static' must be read only by job 'governance-static', got [${governanceReaders.join(", ")}]`);
+  }
+  // ...and the scheduled audit workflow is its only other reader, so it must
+  // restore the same key rather than compiling its own cold tree every night.
+  const auditWorkflow = parseWorkflow(
+    readFileSync(resolve(ROOT, ".github", "workflows", "dependency-audit.yml"), "utf8"),
+    "dependency-audit.yml",
+  );
+  const auditKeys = Object.values(auditWorkflow.jobs).flatMap((job) =>
+    (job.steps || []).filter((s) => s.name === CACHE_STEP).map((s) => String(s.with?.["shared-key"] || "")),
+  );
+  if (auditKeys.length !== 1 || auditKeys[0] !== "governance-static") {
+    fail(`dependency-audit.yml ${CACHE_STEP} must use shared-key 'governance-static', got [${auditKeys.join(", ")}]`);
+  }
+  // The scheduled workflow is the online half's one guaranteed execution point on
+  // a quiet day. Deleting the step that runs 1.7 would otherwise be silent: the
+  // triggers stay right, the cache key stays right, and advisories simply stop
+  // being scanned.
+  const auditRunSteps = Object.values(auditWorkflow.jobs).flatMap((job) =>
+    (job.steps || []).map((s) => String(s.run || "")),
+  );
+  if (!auditRunSteps.some((run) => run.includes("verify:task -- 1.7"))) {
+    fail("dependency-audit.yml must actually run 'pnpm verify:task -- 1.7'");
+  }
+}
+
 // A job-level `if` is evaluated before the matrix expands, so `matrix` is not an
 // available context there: referencing it makes the whole workflow invalid and
 // every job disappears. Match both `matrix.x` and the subscript spelling
