@@ -463,7 +463,12 @@ job / platform Gate）；`run-task --all` 跳过它们，单独点名仍可运�
 
 `task-1.5` 反向锁定本节的结构：给 Rust 矩阵加回 macOS/Windows 分片、把 coverage 改成无条件执行、
 让 `rust-desktop` 丢掉 fmt/clippy、把 `pnpm verify:perf` 挪出 `task-gates`、给 `paths-ignore`
-加一个门禁输入、或把注入套件加回某个 job，都必须让结构门禁失败。归档的 37 条 task 也不再需要
+加一个门禁输入、或把注入套件加回某个 job，都必须让结构门禁失败。
+
+**`paths-ignore` 的真实边界**（2026-11-17 实测）：`paths-ignore` 只在**新建 PR** 时决定是否触发；
+PR 一旦存在，后续每次 push 都按整个 PR 的 diff 重新判定，所以往已开 PR 上推纯文档提交**仍会跑全量**
+（commit `9d597894` 只改 `docs/arch-standards-remaining.md`，照样起了 8 个实例）。它省的是「只改文档的独立
+PR」，不是「PR 里的文档提交」；后者只能靠合并前压提交来省。归档的 37 条 task 也不再需要
 逐条执行，`task-1.5` 会校验每条归档理由指向的承载 gate 真实存在。
 
 `macOS native Gate` **由红转绿**（删除 13.2 裸跑 `player_smoke`）。注意它的**墙钟没有可测量的收益**：
