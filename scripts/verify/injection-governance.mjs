@@ -263,6 +263,66 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       },
     },
     {
+      id: "ci-structure/rust-job-gated-off-pr",
+      guard: "the Rust matrix job (Linux workspace tests, 16.1, 9.7/9.8, rust-static) gated so it stops running entirely",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci\.yml job 'rust' must not be conditionally skipped/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "  rust:\n    name: Rust (${{ matrix.platform }} ${{ matrix.shard }})\n    runs-on: ${{ matrix.os }}\n",
+          "  rust:\n    name: Rust (${{ matrix.platform }} ${{ matrix.shard }})\n    runs-on: ${{ matrix.os }}\n    if: github.event_name != 'pull_request'\n",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/audit-step-if-false",
+      guard: "the dependency audit step switched off with the YAML boolean `if: false`, which an emptiness check folds into 'unset'",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: governance-static audit step must not be conditionally skipped/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "      - name: Verify dependency audit gate\n",
+          "      - name: Verify dependency audit gate\n        if: false\n",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/cargo-shape-drift-after-test",
+      guard: "a cargo call of a different shape added after the cache-shape Test step, which would leave the saved cache mismatched with its readers",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci\.yml job 'rust' step 'Extra lib tests' runs .* after the cache-shape Test step/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "      - name: Rust static gates\n        if: matrix.shard == 'workspace'\n        run: pnpm verify:governance -- --sections=rust-static\n",
+          "      - name: Rust static gates\n        if: matrix.shard == 'workspace'\n        run: pnpm verify:governance -- --sections=rust-static\n\n      - name: Extra lib tests\n        run: cargo test --workspace --lib --all-features\n",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/native-gate-payload-removed",
+      guard: "the macOS native Gate's only real step emptied, leaving a permanently-green job that no longer runs 8.12/13.2",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: macos-native-gate run must be 'pnpm verify:task -- 8\.12 13\.2'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "      - name: Verify libmpv smoke and native e2e gates\n        run: pnpm verify:task -- 8.12 13.2\n",
+          "      - name: Verify libmpv smoke and native e2e gates\n        run: echo skipped\n",
+        );
+        return {};
+      },
+    },
+    {
       id: "release-platform-matrix/corrupt-linux-runner",
       guard: "the release Build matrix mapping Linux to a non-Linux runner",
       check: ["node", ["scripts/verify/checks/task-crp.mjs"]],

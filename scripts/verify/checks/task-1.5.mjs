@@ -249,7 +249,9 @@ if (String(workflow.jobs["rust-desktop"].if || "").trim() !== DESKTOP_JOB_IF) {
   fail(`rust-desktop job if must be '${DESKTOP_JOB_IF}'`);
 }
 const desktopTest = step(workflow, "rust-desktop", "Test");
-if (String(desktopTest.if || "").trim() !== "") fail("rust-desktop Test must not be conditionally skipped");
+// `if: false` parses as the YAML boolean, which `|| ""` would fold into the
+// same empty string as "unset". Test for presence, not emptiness.
+if (desktopTest.if !== undefined) fail("rust-desktop Test must not be conditionally skipped");
 if (desktopTest["continue-on-error"] === true) fail("rust-desktop Test must not set continue-on-error");
 if (desktopTest.run !== "cargo test ${{ matrix.packages }} --all-targets --all-features") {
   fail("rust-desktop Test run must be 'cargo test ${{ matrix.packages }} --all-targets --all-features'");
@@ -277,6 +279,38 @@ if (!desktopPositions.every((v, i) => v >= 0 && (i === 0 || v > desktopPositions
   fail(`rust-desktop step order must be ${DESKTOP_ORDER.join(" < ")}`);
 }
 
+// The cache-shape invariant the spec states ("MUST NOT execute a cargo call of a
+// different feature / target selection / check shape before the cache is
+// saved") is only real if something scans for it. Pinning the Test step's exact
+// `run` proves the shape of *that* step; it says nothing about a cargo call
+// added after it, which is precisely how a later "just one more check" edit
+// would silently poison the cache the readers restore.
+//
+// After the pinned Test step, the only admissible cargo invocations are: the
+// same shape again (a re-run), or a `-- --list` of the same shape (which cargo
+// treats as the same build). Anything else — a different package set, a
+// `--lib`/`--test` target selection, a `check`/`clippy` subcommand — changes
+// what lands in target/, so the readers' restored cache no longer matches what
+// they compile.
+function assertNoShapeDrift(jobId, testStepName, expectedRun) {
+  const steps = workflow.jobs[jobId].steps;
+  const testIndex = steps.findIndex((s) => s.name === testStepName);
+  if (testIndex < 0) fail(`ci.yml job '${jobId}' is missing step '${testStepName}'`);
+  const allowed = [expectedRun, `${expectedRun} -- --list`];
+  for (const s of steps.slice(testIndex + 1)) {
+    const run = String(s.run || "");
+    if (!/\bcargo\b/.test(run)) continue;
+    const normalized = run.trim();
+    if (allowed.includes(normalized)) continue;
+    fail(
+      `ci.yml job '${jobId}' step '${s.name}' runs '${normalized}' after the cache-shape Test step; ` +
+        `only '${expectedRun}' or its '-- --list' may follow, or the saved cache will not match its readers`,
+    );
+  }
+}
+assertNoShapeDrift("rust", "Test", "cargo test ${{ matrix.packages }} --all-targets --all-features");
+assertNoShapeDrift("rust-desktop", "Test", "cargo test ${{ matrix.packages }} --all-targets --all-features");
+
 const governanceStatic = step(workflow, "governance-static", "Run governance static gates");
 // Exact equality: a run that merely *mentions* the flags (`echo "--sections=..."`)
 // would keep the section strings present while executing nothing.
@@ -297,8 +331,9 @@ if (String(auditStep.env?.ECHO_AUDIT_OFFLINE_ONLY) !== AUDIT_ENV) {
 }
 if (workflow.jobs["dependency-audit"]) fail("ci.yml job 'dependency-audit' must not exist (folded into governance-static)");
 // A step-level `if` would keep every string above intact while the scan stops
-// running — exactly the failure this tiering exists to prevent.
-if (String(auditStep.if || "").trim() !== "") fail("governance-static audit step must not be conditionally skipped");
+// running — exactly the failure this tiering exists to prevent. Presence, not
+// emptiness: `if: false` is the YAML boolean and `|| ""` would hide it.
+if (auditStep.if !== undefined) fail("governance-static audit step must not be conditionally skipped");
 // The skip must never be silent: the gate itself carries the note naming what
 // did not run, and this pins its presence so a later edit cannot drop it.
 const auditSource = readFileSync(resolve(ROOT, "scripts", "verify", "checks", "task-1.7.mjs"), "utf8");
@@ -322,6 +357,15 @@ if (release.run !== "node scripts/verify/checks/task-13.9.mjs --skip-static --de
   fail("release-gate run must use --skip-static --delegated=governance,perf");
 }
 
+// macos-native-gate exists only to run these two task gates (8.12/13.2 need the
+// staged dylibs). Asserting merely that the job runs unconditionally would
+// leave a permanently-green empty job if its one real step were deleted.
+const nativeGate = step(workflow, "macos-native-gate", "Verify libmpv smoke and native e2e gates");
+if (nativeGate.run !== "pnpm verify:task -- 8.12 13.2") {
+  fail("macos-native-gate run must be 'pnpm verify:task -- 8.12 13.2'");
+}
+if (String(nativeGate.if || "").trim() !== "") fail("macos-native-gate must not be conditionally skipped");
+
 const perf = step(workflow, "perf", "Run performance scenarios");
 if (perf.run !== "pnpm verify:perf") fail("perf run must be 'pnpm verify:perf'");
 
@@ -340,7 +384,7 @@ if (embeddedStep.run !== "pnpm verify:frontend-fresh") fail("embedded freshness 
 // Every job that carries a required check must run on both PR and main. A
 // job-level `if` or `continue-on-error` would keep the strings above intact
 // while the job itself stops running or stops failing.
-for (const jobId of ["frontend", "governance-static", "injection-proofs", "release-gate", "perf", "task-gates", "macos-platform-gate", "macos-native-gate", "windows-platform-gate"]) {
+for (const jobId of ["rust", "frontend", "governance-static", "injection-proofs", "release-gate", "perf", "task-gates", "macos-platform-gate", "macos-native-gate", "windows-platform-gate"]) {
   assertAlwaysRuns(workflow, jobId);
 }
 
