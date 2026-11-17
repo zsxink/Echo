@@ -463,3 +463,14 @@ shard 1，因为它需要壳二进制与 dist。每次调用都校验并集等�
 `task-13.2`，都必须让结构门禁失败。这五项删除降低配额占用与失败面，但**不在关键路径上**：
 热态关键路径仍是 Release gate（约 11m24s），下一个约 180s 的杠杆是 `task-9.1` 与 `task-13.8`
 在 release gate 内做的按包 cargo 调用。
+
+**实测确认（run `44032149852`，2026-11-17，冷缓存）**：15 个执行实例全部成功，墙钟 23m55s。
+`Task gates (core)` 794s（`Verify task gates` 419s + `Run performance scenarios` 344s）
+**仍低于** `Release gate` 1387s，差 593s —— perf 归并未把 core 顶成关键路径。`macOS native Gate`
+3m16s 由红转绿（删除 13.2 裸跑 `player_smoke` 的直接效果）。
+
+**合并后需复核的悬项**：旧拓扑的热态数据里 core 会逼近 Release gate（`42847291259` 667s vs 684s；
+`42779096853` 681s vs 785s），但旧拓扑的 release-gate 有专属缓存键，本分支改为共享 `linux-workspace`，
+新拓扑的热态数字尚不存在。合并后若观测到 `Task gates (core)` ≥ `Release gate`，应把 perf 拆回独立 job
+（其余四项保留），并另开 perf 段缓存的 issue。
+
