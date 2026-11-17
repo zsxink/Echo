@@ -53,6 +53,10 @@ function runCommand(cmd, taskId) {
     );
     return false;
   }
+  // A passing task may still have something the log must carry — task 1.7's
+  // skip note says which advisory checks did NOT run on this event, and a
+  // silent skip is the failure mode the tiering exists to avoid.
+  if (result.stderr) process.stderr.write(result.stderr);
   return true;
 }
 

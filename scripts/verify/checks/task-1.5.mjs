@@ -226,11 +226,25 @@ if (String(auditStep.env?.ECHO_AUDIT_OFFLINE_ONLY) !== AUDIT_ENV) {
   fail(`governance-static audit step env ECHO_AUDIT_OFFLINE_ONLY must be '${AUDIT_ENV}'`);
 }
 if (workflow.jobs["dependency-audit"]) fail("ci.yml job 'dependency-audit' must not exist (folded into governance-static)");
+// A step-level `if` would keep every string above intact while the scan stops
+// running — exactly the failure this tiering exists to prevent.
+if (String(auditStep.if || "").trim() !== "") fail("governance-static audit step must not be conditionally skipped");
 // The skip must never be silent: the gate itself carries the note naming what
 // did not run, and this pins its presence so a later edit cannot drop it.
 const auditSource = readFileSync(resolve(ROOT, "scripts", "verify", "checks", "task-1.7.mjs"), "utf8");
 for (const needle of ["ECHO_AUDIT_OFFLINE_ONLY", "1.7: note — online advisory checks"]) {
   if (!auditSource.includes(needle)) fail(`task-1.7 must keep '${needle}'`);
+}
+// The scheduled workflow is the only place the online half runs on a quiet day,
+// so it must stay schedule/dispatch-only: a `pull_request` trigger would re-run
+// it on every PR and defeat the point of taking it out of ci.yml.
+const auditWorkflow = parseWorkflow(
+  readFileSync(resolve(ROOT, ".github", "workflows", "dependency-audit.yml"), "utf8"),
+  "dependency-audit.yml",
+);
+const auditTriggers = Object.keys(auditWorkflow.on || {}).sort();
+if (JSON.stringify(auditTriggers) !== JSON.stringify(["schedule", "workflow_dispatch"])) {
+  fail(`dependency-audit.yml must trigger on exactly schedule + workflow_dispatch, got [${auditTriggers.join(", ")}]`);
 }
 
 const release = step(workflow, "release-gate", "Run release gate without external artifacts");

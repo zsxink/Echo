@@ -472,8 +472,13 @@ jobs:
 
       # task-1.7 installs missing tools itself, but naming the install step keeps
       # the multi-minute compile out of the gate's own log and fails early.
+      # cargo-audit is only used by the online half, so PRs skip it entirely.
       - name: Install audit tooling
-        run: cargo install cargo-deny cargo-audit --locked
+        run: |
+          cargo install cargo-deny --locked
+          if [ "$ECHO_AUDIT_OFFLINE_ONLY" != "1" ]; then cargo install cargo-audit --locked; fi
+        env:
+          ECHO_AUDIT_OFFLINE_ONLY: ${{ github.event_name == 'pull_request' && '1' || '0' }}
 
       # The offline-safe half (deny.toml licenses/bans/sources, the
       # advisory-ignore mirror and LICENSES.md) always gates. The online half

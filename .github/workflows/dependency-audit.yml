@@ -40,5 +40,8 @@ jobs:
       - name: Install audit tooling
         run: cargo install cargo-deny cargo-audit --locked
 
+      # No ECHO_AUDIT_OFFLINE_ONLY here on purpose: the scheduled run is the one
+      # place the online half executes on a quiet day, so it must never take the
+      # skip branch.
       - name: Verify dependency audit gate
         run: pnpm verify:task -- 1.7

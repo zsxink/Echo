@@ -218,7 +218,7 @@ process.stderr.write(
 );
 
 ensureTool("cargo-deny");
-ensureTool("cargo-audit");
+if (!OFFLINE_ONLY) ensureTool("cargo-audit");
 
 // 1) Local, offline-safe gates. `cargo deny check licenses|bans|sources` do
 //    not need the advisory DB, so they hard-gate the result even when the
