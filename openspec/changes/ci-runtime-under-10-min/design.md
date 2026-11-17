@@ -27,7 +27,7 @@
 ### D1. 缓存治理：固定 shared-key，写者收敛为 6 个且只写 main
 
 - 所有 `Swatinem/rust-cache` 统一 `shared-key`：`linux-workspace`、`windows-core`、`windows-desktop`、`macos-core`、`macos-desktop`、`governance-static`；矩阵 job 用 `${{ matrix.cache }}`。
-- 写者集合是 6 个 key，由 `rust` 矩阵（经 `${{ matrix.cache }}` 展开为 5 个 key）与 `governance-static` 写入，`save-if: ${{ github.ref == 'refs/heads/main' }}`；其余 job 使用相同 `shared-key` 但 `save-if: false`，只读。
+- 写者集合是 6 个 key，由 `rust` 与 `rust-desktop`（两者均经 `${{ matrix.cache }}` 展开，合计 5 个 key）以及 `governance-static` 写入，`save-if: ${{ github.ref == 'refs/heads/main' }}`；其余 job 使用相同 `shared-key` 但 `save-if: false`，只读。
 - 实施第一步删除现存 14 条旧缓存，避免旧配额继续触发淘汰。
 - 选择按分片而非每平台单 key：分片形态不同，共享一个 key 会让缓存内容偏向某一种形态；6 个 key 的预估总量约 4.8 GB，为配额留一半余量。
 
@@ -41,6 +41,7 @@
 
 - Windows / macOS 分 `core`（`-p echo-core`）与 `desktop`（`-p echo-sync -p echo-desktop -p echo-app`）两片；测试数约 1101 : 804，与实测执行时间比例一致。
 - `desktop` 分片在 `pull_request` 上整体跳过，在 `main` 上必须真实执行；分片并集覆盖全部 workspace 包，MUST NOT 因分片删包。
+- 分片落在两个 job 里：`rust` 承载 Linux `workspace`、macOS `core`、Windows `core`；`rust-desktop` 承载 macOS `desktop`、Windows `desktop`，其 job 级 `if` 只在非 `pull_request` 成立。job 级 `if` 在矩阵展开前求值、看不到 `matrix.*`，所以需要按事件跳过的分片不能与按分片条件执行的步骤共用同一个矩阵。
 - Linux 不分片：它需要保持 `--workspace` 形态供 validator 复用，且热缓存下约 440s。
 - **偏差（已评估）**：`core` 分片仍构建前端并执行 `cargo clippy --workspace`。若改成 `-p echo-core`，macOS/Windows 的 clippy 会被收窄到 core，而这些平台的 `#[cfg]` 代码主要在 shell 与播放器 crate 中，属于覆盖收缩。代价是两个 core 分片各多约 70s setup，仍低于关键路径。
 
@@ -71,8 +72,9 @@
 
 ### D7. 结构门禁按新矩阵重写并自证
 
-- `task-1.5.mjs` 对新的 5 项 `rust` 矩阵做 platform/shard/os/packages/clippy 全量 deep-equal，断言 fmt/clippy 位置、`Test` 的 `if` 与形态、16.1/9.7-9.8 位置、task-gates 3 分片与 42 项并集、injection `[1,2,3]`、section 映射（`purity` → `governance-static`）与 `assertAlwaysRuns` 覆盖新 job id。
-- `injection-governance.mjs` 的 ci-structure 注入证明按新结构重写：删除 matrix 分片、把 clippy 移到 Test 之后、把 `purity` 从 `governance-static` 删除、把 injection 分片数改回 2，都必须让 `task-1.5` 失败。
+- `task-1.5.mjs` 对 `rust`（3 项：Linux `workspace`、macOS `core`、Windows `core`）与 `rust-desktop`（2 项：macOS `desktop`、Windows `desktop`）两个矩阵分别做 platform/shard/os/packages/clippy 全量 deep-equal，断言 fmt/clippy 位置、`Test` 的 `if` 与形态、16.1/9.7-9.8 位置、`rust-desktop` 的 job 级 `if`、task-gates 3 分片与 42 项并集、injection `[1,2,3]`、section 映射（`purity` → `governance-static`）与 `assertAlwaysRuns` 覆盖新 job id。
+- 追加一条永久断言：任何 job 级 `if` MUST NOT 引用 `matrix.`。GitHub 的 job 级 `if` 在矩阵展开之前求值，可用上下文只有 `github` / `needs` / `vars` / `inputs`；引用 `matrix.` 会让整个 workflow 在解析期被拒，所有 job 一起消失。这也是把 `desktop` 分片拆到独立 `rust-desktop` job 的原因——job 级 `if` 看不到矩阵维度，需要按事件跳过的分片必须落在独立 job 里。
+- `injection-governance.mjs` 的 ci-structure 注入证明按新结构重写：删除 matrix 分片、把 clippy 移到 Test 之后、把 `purity` 从 `governance-static` 删除、把 injection 分片数改回 2，都必须让 `task-1.5` 失败；证明总数由 12 条增至 13 条，新增 `ci-structure/job-if-references-matrix`（把 `rust-desktop` 的 job 级 `if` 改为引用 `matrix.shard` 时必须失败）。
 - 选择 deep-equal 而不是逐字段包含断言：失败信息能精确到字段，避免新增/删除矩阵字段时门禁静默放行。
 
 ## Risks / Trade-offs

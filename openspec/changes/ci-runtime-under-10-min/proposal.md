@@ -7,11 +7,11 @@ Issue #156 指出：最近一次 `main` run（`43827801014`）墙钟 23m47s，�
 ## What Changes
 
 - **缓存治理**：所有 `Swatinem/rust-cache` 步骤统一 `shared-key`，写者收敛为 6 个（`linux-workspace`、`windows-core`、`windows-desktop`、`macos-core`、`macos-desktop`、`governance-static`），且 `save-if` 只允许在 `main` 为真；实施第一步删除现存 14 条旧缓存，把总量压到 10 GB 配额的一半左右。
-- **Rust 矩阵分片与步骤重排**：`rust` job 改为 Linux `workspace` + Windows/macOS `core`/`desktop` 共 5 个分片；`desktop` 分片仅在 `main` 执行；`clippy` 移到 `Test` 之前，保证每个 `rust` 分片缓存 key 的最后一次构建型 cargo 调用与缓存形态一致；`purity` 从 `Rust (Linux)` 迁入 `governance-static`；新增 `macos-native-gate` job，承接从 rust job 迁出的 8.12/13.2 libmpv smoke 与 native e2e 门禁。
+- **Rust 矩阵分片与步骤重排**：`rust` job 承载 Linux `workspace` 与 Windows/macOS `core` 三个分片，新增 `rust-desktop` job 承载 Windows/macOS `desktop` 两个分片；`rust-desktop` 仅在非 `pull_request` 执行。拆成两个 job 是因为 GitHub 的 job 级 `if` 在矩阵展开之前求值、看不到 `matrix.*`，需要跳过的分片必须落在独立 job 里。`clippy` 移到 `Test` 之前，保证每个 rust 分片缓存 key 的最后一次构建型 cargo 调用与缓存形态一致；`purity` 从 `Rust (Linux)` 迁入 `governance-static`；新增 `macos-native-gate` job，承接从 rust job 迁出的 8.12/13.2 libmpv smoke 与 native e2e 门禁。
 - **依赖审计分层**：`dependency-audit` job 并入 `governance-static`；在线 RUSTSEC 公告扫描只在 `main` 与新增的每日定时 workflow 真实执行，PR 只跑离线半，并在跳过时打印显式 note。
 - **task 与注入证明分片**：task gates 由 4 片收敛为 3 片（`frontend-a` + `frontend-b` 合并为 `frontend`）；注入证明由 2 片拆为 3 片，并同步 `injection-governance.mjs` 与 `task-1.5.mjs`。
 - **cargo 形态收敛**：场景命令在 runner 层归一化为 `cargo test --workspace --all-targets --all-features`；`task-9.1`、`task-16.1`、`task-13.8`、`task-12.4` 与注入证明 shell 构建对齐到同一 build 形态。
-- **结构门禁同步**：`task-1.5.mjs` 的 CI 结构断言按新矩阵重写，`injection-governance.mjs` 增加“删掉 matrix 分片、移动 clippy、删除 purity、改回 2 片注入”必须失败的注入证明。
+- **结构门禁同步**：`task-1.5.mjs` 的 CI 结构断言按 `rust` 3 项 + `rust-desktop` 2 项两个矩阵重写，并新增「任何 job 级 `if` 不得引用 `matrix.`」的永久断言；`injection-governance.mjs` 增加“删掉 matrix 分片、移动 clippy、删除 purity、改回 2 片注入、job 级 `if` 引用 `matrix.`”必须失败的注入证明（证明总数 13 条）。
 
 非目标：
 

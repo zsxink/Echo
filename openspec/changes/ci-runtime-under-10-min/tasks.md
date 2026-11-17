@@ -1,9 +1,9 @@
 # Tasks
 
-## 1. rust 矩阵 5 分片、步骤重排、purity 迁出
+## 1. rust 双 job 共 5 分片、步骤重排、purity 迁出
 
-- [ ] 1.1 把 `rust` 矩阵改为 5 个 include 条目：Linux `workspace`、macOS `core` / `desktop`、Windows `core` / `desktop`；`desktop` 分片 job 级仅在非 `pull_request` 执行，`core` 分片的 `Test` 按事件与分片设置 `if`；矩阵条目包含 `platform` / `shard` / `os` / `cache` / `packages` / `clippy`。验证：`node scripts/verify/checks/task-1.5.mjs` 退出 0，且 `cargo test ${{ matrix.packages }} --all-targets --all-features` 的包并集等于全部 workspace 包。
-- [ ] 1.2 重排整个 `rust` job（含 Linux `workspace` 分片）的步骤为 Format check → Task 16.1 → Task 9.7/9.8 → Clippy → Test → Rust static gates，保证 `Test` 是该 job 最后一次全量编译；`Task 16.1`、`Task 9.7/9.8`、`Rust static gates` 限定 `matrix.shard == 'workspace'`，`Clippy` 按 `matrix.clippy` 执行；把 `purity` section 从 `Rust (Linux)` 迁到 `governance-static`（`ECHO_PURITY_REQUIRE_BUILD=1`，位于 coverage 之前）。验证：`node scripts/verify/checks/task-1.5.mjs` 退出 0；`node scripts/verify/checks/task-16.1.mjs`、`task-9.1.mjs` 与 `task-9.7`/`task-9.8` 相关检查退出 0。
+- [ ] 1.1 把 rust 分片拆为两个 job：`rust` 承载 3 个 include 条目（Linux `workspace`、macOS `core`、Windows `core`），**无 job 级 `if`**；新增 `rust-desktop` 承载 2 个 include 条目（macOS `desktop`、Windows `desktop`），job 级 `if: github.event_name != 'pull_request'`（只含 `github` 上下文，合法）。两个 job 的矩阵条目均包含 `platform` / `shard` / `os` / `cache` / `packages` / `clippy`，并都用 `shared-key: ${{ matrix.cache }}`。验证：`node scripts/verify/checks/task-1.5.mjs` 退出 0，且两个 job 的 `cargo test ${{ matrix.packages }} --all-targets --all-features` 包并集等于全部 workspace 包。
+- [ ] 1.2 重排整个 `rust` job（含 Linux `workspace` 分片）的步骤为 Format check → Task 16.1 → Task 9.7/9.8 → Clippy → Test → Rust static gates，保证 `Test` 是该 job 最后一次全量编译；`Task 16.1`、`Task 9.7/9.8`、`Rust static gates` 限定 `matrix.shard == 'workspace'`，`Clippy` 按 `matrix.clippy` 执行；`rust-desktop` 只复制 `Test` 及其前置 setup 步骤（`Test` 无 `if`，`run` 与 `rust` 完全一致），不复制 `Task 16.1` / `Task 9.7/9.8` / `Rust static gates` / `Clippy`；把 `purity` section 从 `Rust (Linux)` 迁到 `governance-static`（`ECHO_PURITY_REQUIRE_BUILD=1`，位于 coverage 之前）。验证：`node scripts/verify/checks/task-1.5.mjs` 退出 0；`node scripts/verify/checks/task-16.1.mjs`、`task-9.1.mjs` 与 `task-9.7`/`task-9.8` 相关检查退出 0。
 - [ ] 1.3 新增 `macos-native-gate` job（插在 `macos-platform-gate` 之后），承接从 `rust` job 迁出的 8.12/13.2 libmpv smoke 与 native e2e 门禁；该 job 自行 stage vendored libmpv dylibs 到 `target/Frameworks`，只运行 `pnpm verify:task -- 8.12 13.2`，不执行 `pnpm install`；同时更新 `ci.yml` 的 `task-gates` 注释中关于 8.12/13.2 执行位置的过时说明。验证：`node scripts/verify/checks/task-1.5.mjs` 的 `assertAlwaysRuns` 覆盖 `macos-native-gate` 且退出 0；`rg -n '8.12 13.2' .github/workflows/ci.yml` 只命中新 job。
 
 ## 2. 依赖审计分层、删除 dependency-audit job、新增定时 workflow
@@ -15,7 +15,7 @@
 ## 3. 缓存治理（shared-key + save-if）
 
 - [ ] 3.1 删除现存 14 条 Actions 缓存（`gh api -X DELETE`），避免旧配额继续触发淘汰。验证：`gh api repos/zsxink/Echo/actions/cache/usage` 的 `active_caches_count` 归零或仅剩本次实施后的新缓存。
-- [ ] 3.2 为所有 `Swatinem/rust-cache` 步骤统一 `shared-key`（`rust` job 用 `${{ matrix.cache }}` 展开为 5 个 key，`governance-static` 用 `governance-static`），写者集合恰好 6 个 key（`linux-workspace`、`windows-core`、`windows-desktop`、`macos-core`、`macos-desktop`、`governance-static`）；`save-if: ${{ github.ref == 'refs/heads/main' }}` 只出现在 `rust` 与 `governance-static` 两个 job，其余 job 全部 `save-if: false`。验证：`node scripts/verify/checks/task-1.5.mjs` 的缓存写者集合断言退出 0；`rg -n 'save-if' .github/workflows/ci.yml` 的 main 条件只命中这两个 job。
+- [ ] 3.2 为所有 `Swatinem/rust-cache` 步骤统一 `shared-key`（`rust` 与 `rust-desktop` 两个 job 各自用 `${{ matrix.cache }}` 展开，合计 5 个 key；`governance-static` 用 `governance-static`），写者集合恰好 6 个 key（`linux-workspace`、`windows-core`、`windows-desktop`、`macos-core`、`macos-desktop`、`governance-static`）；`save-if: ${{ github.ref == 'refs/heads/main' }}` 只出现在 `rust`、`rust-desktop`、`governance-static` 三个 job，其余 job 全部 `save-if: false`。验证：`node scripts/verify/checks/task-1.5.mjs` 的缓存写者集合断言退出 0；`rg -n 'save-if' .github/workflows/ci.yml` 的 main 条件只命中这三个 job。
 - [ ] 3.3 在 `task-1.5.mjs` 增加 `governance-static` key 的读写者断言：(a) 遍历 `ci.yml` 各 job 的缓存步骤，`shared-key === "governance-static"` 的 job 集合必须恰为 `["governance-static"]`，任何其他 job（例如 `task-gates`）指向该 key 都必须失败；(b) 解析 `.github/workflows/dependency-audit.yml`，其缓存步骤的 `shared-key` 必须恰为 `governance-static`。这两条断言与 3.2 的写者集合共同支撑「`governance-static` 的 job 私有缓存不受形态约束」场景。验证：`node scripts/verify/checks/task-1.5.mjs` 退出 0；临时把 `task-gates` 的 `shared-key` 改为 `governance-static` 后检查以非零退出，临时改掉 `dependency-audit.yml` 的 `shared-key` 后同样失败。
 
 ## 4. task-gates 4 → 3 分片
@@ -34,8 +34,8 @@
 
 ## 7. 重写 ci-structure 注入证明
 
-- [ ] 7.1 在 `injection-governance.mjs` 按新结构重写 ci-structure 注入证明：删除 matrix 分片、把 clippy 移到 `Test` 之后、把 `purity` 从 `governance-static` 删除、把 injection 分片数改回 2，四类注入都必须让 `task-1.5` 失败。验证：`node scripts/verify/injection-governance.mjs` 退出 0，且四类注入各自产生预期的失败信息。
-- [ ] 7.2 同步 `task-1.5.mjs` 的 `assertAlwaysRuns` 覆盖新 job id 与 `purity` section 映射。验证：`node scripts/verify/checks/task-1.5.mjs` 退出 0；`rg -n 'purity|alwaysRuns' scripts/verify/checks/task-1.5.mjs` 命中新映射。
+- [ ] 7.1 在 `injection-governance.mjs` 按新结构重写 ci-structure 注入证明：删除 matrix 分片、把 clippy 移到 `Test` 之后、把 `purity` 从 `governance-static` 删除、把 injection 分片数改回 2，四类注入都必须让 `task-1.5` 失败；证明总数由 12 条增至 13 条，新增 `ci-structure/job-if-references-matrix`（把 `rust-desktop` 的 job 级 `if` 改为引用 `matrix.shard` 时必须失败），并把新 id 登记进注入分片计划。验证：`node scripts/verify/injection-governance.mjs` 退出 0，且各注入产生预期的失败信息；`node scripts/verify/injection-suite.mjs --only ci-` 全部通过。
+- [ ] 7.2 同步 `task-1.5.mjs` 的 `assertAlwaysRuns` 覆盖新 job id、`purity` section 映射，以及「任何 job 级 `if` MUST NOT 引用 `matrix.`」的永久断言。验证：`node scripts/verify/checks/task-1.5.mjs` 退出 0；`rg -n 'purity|alwaysRuns|must not reference matrix' scripts/verify/checks/task-1.5.mjs` 命中新映射与新断言。
 
 ## 8. 本地全量验证与耗时测量
 
