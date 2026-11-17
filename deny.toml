@@ -92,6 +92,16 @@ ignore = [
   "RUSTSEC-2026-0370",
   "RUSTSEC-2026-0371",
   "RUSTSEC-2026-0372",
+  # `chrono` (echo-desktop's local-date log rotation and the local-timezone
+  # tracing timer, issue #38) carries an unmaintained advisory dated 2026-09-14
+  # that entered the RustSec DB on 2026-11-17. It is not a vulnerability: the
+  # crate is feature-complete and the advisory only recommends `jiff`/`time` as
+  # future alternatives. Neither works here — `time` cannot read the local UTC
+  # offset in multi-threaded Unix processes, which is exactly what the log timer
+  # needs, and moving to `jiff` is a migration, not a version bump. Unmaintained,
+  # not a vulnerability; revisit when `jiff` lands a `tracing-subscriber`-
+  # compatible timer path.
+  "RUSTSEC-2026-0543",
 ]
 # Advisory DB fetching needs network on the first run; scripts/verify/checks/
 # task-1.7.mjs reports "offline" gracefully if the fetch cannot complete, and
