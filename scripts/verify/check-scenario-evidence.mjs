@@ -24,11 +24,11 @@
 // editing this floor in the same change and explaining why that scenario's
 // acceptance no longer needs the target — that edit is the reviewable record.
 
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { scenarioCommands } from "./scenario-commands.mjs";
+import { workspaceTestLists } from "./cargo-test-lists.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
 // The registry is the source of truth; the generated manifest is drift-locked
@@ -55,26 +55,15 @@ for (const [gate, present] of CI_GATES) {
 let delegatedCount = 0;
 
 const testLists = new Map();
+// Same reason as validate-scenario-commands.mjs: one workspace-shaped build
+// serves every package's inventory, so no per-package `--list` re-unifies
+// features (echo-desktop enables echo-core/testkit) and recompiles minutes'
+// worth of work on each run.
+const inventories = workspaceTestLists({ cwd: ROOT });
+if (inventories.error) fail(`could not list workspace tests: ${inventories.error}`);
 function cargoTestList(packageName) {
-  if (testLists.has(packageName)) return testLists.get(packageName);
-  // `--all-targets` keeps this listing in the same build shape as the workspace
-  // test job; without it Cargo also builds the doc-test harness, which no
-  // scenario evidence can come from.
-  const result = spawnSync("cargo", ["test", "-p", packageName, "--all-targets", "--all-features", "--", "--list"], {
-    cwd: ROOT,
-    encoding: "utf8",
-  });
-  const tests = result.status === 0
-    ? `${result.stdout || ""}\n${result.stderr || ""}`
-      .split("\n")
-      .filter((line) => /: test$/.test(line))
-      .map((line) => line.replace(/: test$/, "").trim())
-    : [];
-  if (result.status !== 0) {
-    fail(`could not list ${packageName} tests (cargo exited ${result.status})`);
-  }
-  testLists.set(packageName, tests);
-  return tests;
+  if (!testLists.has(packageName)) testLists.set(packageName, inventories.tests.get(packageName) || []);
+  return testLists.get(packageName);
 }
 
 let evidenceCount = 0;
