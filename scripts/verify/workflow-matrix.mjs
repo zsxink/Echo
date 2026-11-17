@@ -47,6 +47,29 @@ export function assertPlatformMatrix(entries, expected, label) {
   }
 }
 
+export function assertShardMatrix(entries, expected, label) {
+  const idOf = (entry) => `${entry.platform}/${entry.shard}`;
+  const actual = new Map(entries.map((entry) => [idOf(entry), entry]));
+  if (actual.size !== entries.length) {
+    throw new Error(`${label} matrix contains duplicate platform/shard entries`);
+  }
+  for (const [id, mapping] of Object.entries(expected)) {
+    const entry = actual.get(id);
+    if (!entry) throw new Error(`${label} matrix is missing entry '${id}'`);
+    for (const [field, value] of Object.entries(mapping)) {
+      if (entry[field] !== value) {
+        throw new Error(`${label} matrix entry '${id}' maps ${field} to '${entry[field]}', expected '${value}'`);
+      }
+    }
+    const extra = Object.keys(entry).filter((field) => field !== "platform" && field !== "shard" && !(field in mapping));
+    if (extra.length) throw new Error(`${label} matrix entry '${id}' has unexpected field(s): ${extra.join(", ")}`);
+  }
+  if (actual.size !== Object.keys(expected).length) {
+    const unexpected = [...actual.keys()].filter((id) => !(id in expected));
+    throw new Error(`${label} matrix contains unexpected entries: ${unexpected.join(", ")}`);
+  }
+}
+
 export function assertPlatformName(name, expected, label) {
   if (name !== expected) {
     throw new Error(`${label} must use '${expected}', got '${name}'`);

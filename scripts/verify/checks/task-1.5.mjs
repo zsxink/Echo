@@ -13,7 +13,7 @@
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { assertPlatformMatrix, assertPlatformName, matrixEntries, parseWorkflow } from "../workflow-matrix.mjs";
+import { assertPlatformMatrix, assertPlatformName, assertShardMatrix, matrixEntries, parseWorkflow } from "../workflow-matrix.mjs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -77,17 +77,20 @@ try {
 let workflow;
 try {
   workflow = parseWorkflow(ci, "ci.yml");
-  assertPlatformMatrix(
-    matrixEntries(workflow, "rust", "ci.yml"),
-    { Linux: { os: "ubuntu-latest" }, macOS: { os: "xcode-27" }, Windows: { os: "windows-latest" } },
-    "ci.yml rust",
-  );
+  const RUST_MATRIX = {
+    "Linux/workspace":   { os: "ubuntu-latest",  cache: "linux-workspace",  packages: "--workspace",                               clippy: true },
+    "macOS/core":        { os: "xcode-27",       cache: "macos-core",       packages: "-p echo-core",                              clippy: true },
+    "macOS/desktop":     { os: "xcode-27",       cache: "macos-desktop",    packages: "-p echo-sync -p echo-desktop -p echo-app", clippy: false },
+    "Windows/core":      { os: "windows-latest", cache: "windows-core",     packages: "-p echo-core",                              clippy: true },
+    "Windows/desktop":   { os: "windows-latest", cache: "windows-desktop",  packages: "-p echo-sync -p echo-desktop -p echo-app", clippy: false },
+  };
+  assertShardMatrix(matrixEntries(workflow, "rust", "ci.yml"), RUST_MATRIX, "ci.yml rust");
   assertPlatformMatrix(
     matrixEntries(workflow, "frontend", "ci.yml"),
     { Linux: { os: "ubuntu-latest" }, macOS: { os: "xcode-27" }, Windows: { os: "windows-latest" } },
     "ci.yml frontend",
   );
-  assertPlatformName(workflow.jobs.rust.name, "Rust (${{ matrix.platform }})", "ci.yml rust name");
+  assertPlatformName(workflow.jobs.rust.name, "Rust (${{ matrix.platform }} ${{ matrix.shard }})", "ci.yml rust name");
   assertPlatformName(workflow.jobs.frontend.name, "Frontend (${{ matrix.platform }})", "ci.yml frontend name");
 } catch (error) {
   fail(error.message);
@@ -96,7 +99,6 @@ try {
 const REQUIRED = [
   "cargo fmt --all -- --check",
   "cargo clippy --workspace --all-targets --all-features -- -D warnings",
-  "cargo test --workspace --all-targets --all-features",
   "pnpm install --frozen-lockfile",
   "pnpm --filter @echo/desktop format:check",
   "pnpm --filter @echo/desktop lint",
@@ -113,44 +115,55 @@ for (const needle of REQUIRED) {
 
 // ---------------------------------------------------------------------------
 // Step-level structure: the exact commands and conditions that carry the PR/main
-// tiering and the Linux-only static gates. A rename or move must fail here.
+// tiering and the workspace-shard static gates. A rename or move must fail here.
 // ---------------------------------------------------------------------------
-const test = step(workflow, "rust", "Test");
-assertIfIncludes(test, "github.event_name != 'pull_request'", "rust Test");
-assertIfIncludes(test, "matrix.platform == 'Linux'", "rust Test");
-// The two substring assertions above cannot tell `||` from `&&`; with `&&`
-// every PR skips the full workspace test and so does main. Pin the whole
-// expression, and pin that the step cannot be made advisory.
-const TEST_IF = "github.event_name != 'pull_request' || matrix.platform == 'Linux'";
-if (String(test.if || "").trim() !== TEST_IF) {
-  fail(`rust Test if must be '${TEST_IF}'`);
-}
-if (test["continue-on-error"] === true) fail("rust Test must not set continue-on-error");
-if (test.run !== "cargo test --workspace --all-targets --all-features") {
-  fail("rust Test run must be 'cargo test --workspace --all-targets --all-features'");
-}
-
 const format = step(workflow, "rust", "Format check");
 if (format.run !== "cargo fmt --all -- --check") fail("rust Format check run must be 'cargo fmt --all -- --check'");
+
+const test = step(workflow, "rust", "Test");
 const clippy = step(workflow, "rust", "Clippy");
+const rustStatic = step(workflow, "rust", "Rust static gates");
+const RUST_JOB_IF = "github.event_name != 'pull_request' || matrix.shard != 'desktop'";
+if (String(workflow.jobs.rust.if || "").trim() !== RUST_JOB_IF) {
+  fail(`rust job if must be '${RUST_JOB_IF}'`);
+}
+const TEST_IF = "github.event_name != 'pull_request' || matrix.shard == 'workspace'";
+if (String(test.if || "").trim() !== TEST_IF) fail(`rust Test if must be '${TEST_IF}'`);
+if (test["continue-on-error"] === true) fail("rust Test must not set continue-on-error");
+if (test.run !== "cargo test ${{ matrix.packages }} --all-targets --all-features") {
+  fail("rust Test run must be 'cargo test ${{ matrix.packages }} --all-targets --all-features'");
+}
+if (String(clippy.if || "").trim() !== "matrix.clippy") fail("rust Clippy if must be 'matrix.clippy'");
 if (clippy.run !== "cargo clippy --workspace --all-targets --all-features -- -D warnings") {
   fail("rust Clippy run must be 'cargo clippy --workspace --all-targets --all-features -- -D warnings'");
 }
-
-const rustStatic = step(workflow, "rust", "Rust static gates");
-assertIfIncludes(rustStatic, "matrix.platform == 'Linux'", "Rust static gates");
-if (rustStatic.run !== "pnpm verify:governance -- --sections=rust-static,purity") {
-  fail("Rust static gates run must be 'pnpm verify:governance -- --sections=rust-static,purity'");
+for (const stepName of ["Task 16.1", "Task 9.7 9.8", "Rust static gates"]) {
+  const s = step(workflow, "rust", stepName);
+  if (String(s.if || "").trim() !== "matrix.shard == 'workspace'") {
+    fail(`rust ${stepName} if must be "matrix.shard == 'workspace'"`);
+  }
 }
-assertEnv(rustStatic, "ECHO_PURITY_REQUIRE_BUILD", "1", "Rust static gates");
+// The step-level `if` above cannot tell which command runs. Pin both commands
+// so relocating a task gate cannot silently change what it executes.
+if (step(workflow, "rust", "Task 16.1").run !== "pnpm verify:task -- 16.1") {
+  fail("Task 16.1 run must be 'pnpm verify:task -- 16.1'");
+}
+if (step(workflow, "rust", "Task 9.7 9.8").run !== "pnpm verify:task -- 9.7 9.8") {
+  fail("Task 9.7 9.8 run must be 'pnpm verify:task -- 9.7 9.8'");
+}
+if (rustStatic.run !== "pnpm verify:governance -- --sections=rust-static") {
+  fail("Rust static gates run must be 'pnpm verify:governance -- --sections=rust-static'");
+}
+if (rustStatic.env?.ECHO_PURITY_REQUIRE_BUILD !== undefined) {
+  fail("Rust static gates must not set ECHO_PURITY_REQUIRE_BUILD (purity moved to governance-static)");
+}
 
-const task161 = step(workflow, "rust", "Task 16.1");
-assertIfIncludes(task161, "matrix.platform == 'Linux'", "Task 16.1");
-if (task161.run !== "pnpm verify:task -- 16.1") fail("Task 16.1 run must be 'pnpm verify:task -- 16.1'");
-
-const task978 = step(workflow, "rust", "Task 9.7 9.8");
-assertIfIncludes(task978, "matrix.platform == 'Linux'", "Task 9.7 9.8");
-if (task978.run !== "pnpm verify:task -- 9.7 9.8") fail("Task 9.7 9.8 run must be 'pnpm verify:task -- 9.7 9.8'");
+const RUST_ORDER = ["Format check", "Task 16.1", "Task 9.7 9.8", "Clippy", "Test", "Rust static gates"];
+const rustSteps = workflow.jobs.rust.steps.map((s) => s.name).filter(Boolean);
+const positions = RUST_ORDER.map((name) => rustSteps.indexOf(name));
+if (!positions.every((v, i) => v >= 0 && (i === 0 || v > positions[i - 1]))) {
+  fail(`rust step order must be ${RUST_ORDER.join(" < ")}`);
+}
 
 const governanceStatic = step(workflow, "governance-static", "Run governance static gates");
 // Exact equality: a run that merely *mentions* the flags (`echo "--sections=..."`)
@@ -158,6 +171,11 @@ const governanceStatic = step(workflow, "governance-static", "Run governance sta
 if (governanceStatic.run !== "pnpm verify:governance -- --sections=registry,static,coverage") {
   fail("governance-static run must be 'pnpm verify:governance -- --sections=registry,static,coverage'");
 }
+const purityStep = step(workflow, "governance-static", "Run build purity gate");
+if (purityStep.run !== "pnpm verify:governance -- --sections=purity") {
+  fail("governance-static purity step run must be 'pnpm verify:governance -- --sections=purity'");
+}
+assertEnv(purityStep, "ECHO_PURITY_REQUIRE_BUILD", "1", "governance-static purity step");
 
 const release = step(workflow, "release-gate", "Run release gate without external artifacts");
 if (release.run !== "node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf") {
@@ -182,7 +200,7 @@ if (embeddedStep.run !== "pnpm verify:frontend-fresh") fail("embedded freshness 
 // Every job that carries a required check must run on both PR and main. A
 // job-level `if` or `continue-on-error` would keep the strings above intact
 // while the job itself stops running or stops failing.
-for (const jobId of ["rust", "governance-static", "injection-proofs", "release-gate", "perf", "task-gates"]) {
+for (const jobId of ["frontend", "governance-static", "injection-proofs", "release-gate", "perf", "task-gates", "macos-platform-gate", "macos-native-gate", "windows-platform-gate"]) {
   assertAlwaysRuns(workflow, jobId);
 }
 
@@ -217,7 +235,7 @@ const SECTION_SELECTOR_STEP = {
   static: ["governance-static", "Run governance static gates"],
   coverage: ["governance-static", "Run governance static gates"],
   "rust-static": ["rust", "Rust static gates"],
-  purity: ["rust", "Rust static gates"],
+  purity: ["governance-static", "Run build purity gate"],
 };
 const SECTION_DEDICATED_STEP = {
   quality: ["rust", "Test"],

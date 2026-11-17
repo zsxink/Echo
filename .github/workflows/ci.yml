@@ -11,18 +11,21 @@ concurrency:
 
 jobs:
   rust:
-    name: Rust (${{ matrix.platform }})
+    name: Rust (${{ matrix.platform }} ${{ matrix.shard }})
     runs-on: ${{ matrix.os }}
+    # PR runs keep the full workspace test on Linux only. The macOS/Windows
+    # `desktop` shards carry the rest of their workspace tests and do not exist
+    # on pull requests; their `core` shards still run fmt and clippy on every PR.
+    if: github.event_name != 'pull_request' || matrix.shard != 'desktop'
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: Linux
-            os: ubuntu-latest
-          - platform: macOS
-            os: xcode-27
-          - platform: Windows
-            os: windows-latest
+          - { platform: Linux,   os: ubuntu-latest,  shard: workspace, cache: linux-workspace,  packages: "--workspace",                               clippy: true }
+          - { platform: macOS,   os: xcode-27,       shard: core,      cache: macos-core,       packages: "-p echo-core",                             clippy: true }
+          - { platform: macOS,   os: xcode-27,       shard: desktop,   cache: macos-desktop,    packages: "-p echo-sync -p echo-desktop -p echo-app", clippy: false }
+          - { platform: Windows, os: windows-latest, shard: core,      cache: windows-core,     packages: "-p echo-core",                             clippy: true }
+          - { platform: Windows, os: windows-latest, shard: desktop,   cache: windows-desktop,  packages: "-p echo-sync -p echo-desktop -p echo-app", clippy: false }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -79,42 +82,32 @@ jobs:
       - name: Build frontend for Tauri context
         run: pnpm --dir apps/desktop build
 
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-
-      # PR runs keep the full workspace test on Linux only; Windows/macOS still
-      # run fmt, clippy and their platform Gates on every PR, and their full
-      # workspace tests execute on main.
-      - name: Test
-        if: github.event_name != 'pull_request' || matrix.platform == 'Linux'
-        run: cargo test --workspace --all-targets --all-features
-
-      # These gates used to live in a separate Linux-only job. They share the
-      # Linux leg's already-built workspace, so running them here removes a
-      # cold job without dropping any check from PR or main.
-      - name: Rust static gates
-        if: matrix.platform == 'Linux'
-        env:
-          ECHO_PURITY_REQUIRE_BUILD: "1"
-        run: pnpm verify:governance -- --sections=rust-static,purity
-
       - name: Task 16.1
-        if: matrix.platform == 'Linux'
+        if: matrix.shard == 'workspace'
         run: pnpm verify:task -- 16.1
 
       - name: Task 9.7 9.8
-        if: matrix.platform == 'Linux'
+        if: matrix.shard == 'workspace'
         run: pnpm verify:task -- 9.7 9.8
 
-      # 8.12 (real libmpv smoke over the fixture matrix) and 13.2 (native
-      # temp-library e2e + restart consistency) load the vendored macOS dylib
-      # set that build.rs stages at target/Frameworks during the builds above.
-      # They are macOS-only: the Linux vendor tree is not committed, and 8.12
-      # fails rather than skipping when libmpv is unreachable. Both were
-      # registered but wired into no CI job (issue #110 P1-6).
-      - name: Verify libmpv smoke and native e2e gates
-        if: runner.os == 'macOS'
-        run: pnpm verify:task -- 8.12 13.2
+      - name: Clippy
+        if: matrix.clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      # PR runs keep the full workspace test on the Linux shard only; the
+      # macOS/Windows `core` shards still run fmt and clippy on every PR, and
+      # their full per-package tests execute on main.
+      - name: Test
+        if: github.event_name != 'pull_request' || matrix.shard == 'workspace'
+        run: cargo test ${{ matrix.packages }} --all-targets --all-features
+
+      # These gates used to live in a separate Linux-only job. They share the
+      # Linux leg's already-built workspace, so running them here removes a
+      # cold job without dropping any check from PR or main. purity moved to
+      # governance-static so the last cargo call here keeps the test shape.
+      - name: Rust static gates
+        if: matrix.shard == 'workspace'
+        run: pnpm verify:governance -- --sections=rust-static
 
   frontend:
     name: Frontend (${{ matrix.platform }})
@@ -209,7 +202,7 @@ jobs:
       # `archived: true` in the manifest (and then skipped by `--all`).
       #
       # 16.1 runs in the Rust Linux job (it needs the built Tauri shell);
-      # 8.12/13.2 run in the Rust job's macOS leg (staged dylibs); 1.7 runs in
+      # 8.12/13.2 run in the macOS native Gate job (staged dylibs); 1.7 runs in
       # the dependency-audit job (it installs cargo-deny/cargo-audit).
       - name: Verify task gates
         env:
@@ -310,6 +303,42 @@ jobs:
           path: target/aarch64-apple-darwin/release/bundle/macos/echo-libmpv-report.md
           if-no-files-found: error
 
+  macos-native-gate:
+    name: macOS native Gate
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (pinned)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      # 8.12/13.2 load the vendored dylibs through DYLD_LIBRARY_PATH at
+      # target/Frameworks, which apps/desktop/src-tauri/build.rs stages when the
+      # shell is built. This job never builds the shell, so it stages the same
+      # vendored set itself (build.rs selects by the `.dylib` extension, and the
+      # vendor dir holds only regular files); 8.12 fails loudly if it is empty.
+      - name: Stage vendored libmpv dylibs
+        run: |
+          mkdir -p target/Frameworks
+          cp apps/desktop/src-tauri/vendor/libmpv/macos/*.dylib target/Frameworks/
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+
+      - name: Verify libmpv smoke and native e2e gates
+        run: pnpm verify:task -- 8.12 13.2
+
   windows-platform-gate:
     name: Windows platform Gate
     runs-on: windows-latest
@@ -397,6 +426,15 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # purity used to run at the end of the Rust Linux leg, which left a
+      # default-feature `cargo check` as that job's last cargo call and broke
+      # the cache-shape invariant. It needs only cargo and this job's target
+      # dir, so it lives here, before coverage.
+      - name: Run build purity gate
+        env:
+          ECHO_PURITY_REQUIRE_BUILD: "1"
+        run: pnpm verify:governance -- --sections=purity
 
       # No webkit or frontend build: these sections do not compile the Tauri
       # shell or read apps/desktop/dist. The Rust-heavy sections live in the
