@@ -251,9 +251,12 @@ function run(command, args, cwd) {
 // immersive test asserts current-line + playing-state markers survive; the
 // player bar test asserts the playing indicator stays visible.
 run("pnpm", ["--filter", "@echo/desktop", "typecheck"], APP);
-run("pnpm", ["--filter", "@echo/desktop", "test", "--", "--run", "src/app/accessibility.test.tsx"], APP);
-run("pnpm", ["--filter", "@echo/desktop", "test", "--", "--run", "src/features/player/ImmersivePlayer.test.tsx"], APP);
-run("pnpm", ["--filter", "@echo/desktop", "test", "--", "--run", "src/features/player/PlayerBar.test.tsx"], APP);
+run("pnpm", [
+  "--filter", "@echo/desktop", "test", "--", "--run",
+  "src/app/accessibility.test.tsx",
+  "src/features/player/ImmersivePlayer.test.tsx",
+  "src/features/player/PlayerBar.test.tsx",
+], APP);
 process.stdout.write(
   "ok 12.4: three-theme WCAG 2.2 AA contrast verified; reduced-motion and playing-vinyl exception verified\n",
 );

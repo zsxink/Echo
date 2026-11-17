@@ -237,7 +237,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Only the two Rust shards need a toolchain and cargo cache; the frontend
-      # shard runs typecheck/vitest/node checks and never invoke cargo.
+      # shard runs typecheck/vitest/node checks and never invokes cargo.
       - name: Install Rust toolchain (pinned, rustfmt + clippy)
         if: matrix.shard == 'core' || matrix.shard == 'desktop'
         uses: dtolnay/rust-toolchain@master
@@ -556,7 +556,7 @@ jobs:
       # shell binary and the freshly built dist; no other shard needs either.
       - name: Build the shell binary checked by embedded-frontend proof
         if: matrix.shard == 1
-        run: cargo build -p echo-app
+        run: cargo build -p echo-app --all-features
 
       - name: Verify embedded frontend freshness
         if: matrix.shard == 1

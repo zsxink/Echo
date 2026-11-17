@@ -36,11 +36,11 @@ function run(cmd, args, what) {
 }
 
 // 1. The shell must compile and stay clippy-clean.
-run("cargo", ["check", "-p", "echo-app", "--locked"], "echo-app compiles");
+run("cargo", ["check", "-p", "echo-app", "--locked", "--all-features"], "echo-app compiles");
 // 2. Behavior: the conversion semantics of the single owner.
 const testOut = run(
   "cargo",
-  ["test", "-p", "echo-app", "--locked", "open_targets"],
+  ["test", "-p", "echo-app", "--locked", "--all-features", "open_targets"],
   "echo-app open_targets tests",
 );
 for (const name of [

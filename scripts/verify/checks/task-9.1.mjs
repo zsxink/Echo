@@ -48,11 +48,11 @@ function run(cmd, args, what) {
 
 // 1. The thin binary stays thin but now wires the runtime FIFO: it must
 //    compile and be clippy-clean.
-run("cargo", ["check", "-p", "echo-app", "--locked"], "echo-app compiles");
+run("cargo", ["check", "-p", "echo-app", "--locked", "--all-features"], "echo-app compiles");
 // 2. The FIFO semantics backing task 9.1 are proven by the runtime tests.
 const testOut = run(
   "cargo",
-  ["test", "-p", "echo-desktop", "--lib", "--locked", "runtime::"],
+  ["test", "-p", "echo-desktop", "--lib", "--locked", "--all-features", "runtime::"],
   "echo-desktop runtime tests",
 );
 for (const name of [
@@ -120,7 +120,7 @@ if (directEmits > 2) {
 //    which run on every host even though the only caller is macOS-only.
 const appTestOut = run(
   "cargo",
-  ["test", "-p", "echo-app", "--locked", "open_targets"],
+  ["test", "-p", "echo-app", "--locked", "--all-features", "open_targets"],
   "echo-app open_targets tests",
 );
 for (const name of [
