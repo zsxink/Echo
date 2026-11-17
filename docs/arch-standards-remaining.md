@@ -476,6 +476,49 @@ PR」，不是「PR 里的文档提交」；后者只能靠合并前压提交来
 不是省时间。**同理，本页任何单次 run 的秒数都不能当作「省了多少」的证据** —— 同一份代码三次冷 run
 的墙钟极差 402s（38%），总 runner-秒极差 1226s（17%）。
 
+### 11.1 新拓扑的第一次实测（2026-11-17，run `44056150689`）
+
+8 个实例全部 success，**3440 runner-秒 / 15m58s 墙钟**，缓存库为空（`active_caches_count: 0`，
+8 个 job 全部 `No cache found`），与旧 run 同条件。
+
+| job | 旧 `44041257877` | 新 `44056150689` | Δ |
+|---|---|---|---|
+| `Rust (Linux workspace)` | 533s | 670s | +137s |
+| `Frontend (Linux)` | 57s | 96s | +39s（+`13.1` 27s） |
+| `Task gates (core)` | 683s | 466s | −217s |
+| `macOS platform Gate` | 463s | 511s | +48s |
+| `macOS native Gate` | 257s | 285s | +28s |
+| `Windows platform Gate` | 381s | 305s | −76s |
+| `Governance static gates` | 463s | 170s | −293s（coverage 移出） |
+| `Release gate` | 1033s | **937s** | −96s |
+| 三个 injection 分片 | 1338s | — | −1338s |
+| `Task gates (desktop)` + `(frontend)` | 790s | — | −790s |
+| `Rust (macOS core)` + `(Windows core)` | 466s | — | −466s |
+| **合计** | **6464s / 15 实例** | **3440s / 8 实例** | **−3024s（−46.8%）** |
+
+相对本 change 引用的 7233s 基线是 −52.4%；相对最低的冷 run 6464s 是 −46.8%。两次旧 run 相差 769s，
+「精确 50%」不可证，能确定的是实例数 15→8 与上表逐 job 实测。
+
+**删掉的墙钟不等于省下的墙钟：被删的编译型步骤本身也在预热 `target/`。**
+
+| 删除项 | 名义墙钟 | 实际净省 | 机制 |
+|---|---|---|---|
+| `Task 16.1`（Rust Linux） | 203s | **77s** | 它是该 job 第一个 `cargo check`；删后 Clippy+Test 从 265s 涨到 594s（+126s） |
+| workspace test + 完整 Vitest（Release gate） | 432s | **137s** | 同样暖机；保留的按包 cargo 从约 500s 涨到约 795s（+295s） |
+| Injection proofs ×3 | 1338s | 1338s | 元测试，无下游编译依赖 |
+| Task gates desktop + frontend 分片 | 790s | 790s | 纯重复执行，整实例移除 |
+| Rust macOS/Windows core 分片 | 466s | 466s | PR 不再启动这两个实例 |
+| coverage（governance） | 290s | 290s | 移到 main-only |
+
+所以「删重复执行 / 删元测试」是一比一收益；「删编译步骤」只有整实例移除时才算全额，留在同一 job 内
+只是把编译搬到了后面第一个真正编译的命令里。**改 CI 前先判断要删的步骤是不是该 job 的第一个编译动作。**
+
+**关键路径 937s（`Release gate`），未达 design.md 的 ≤600s 目标。** 下一步杠杆（design.md 迁移步骤 4
+已预先授权，不改 spec）：`Release gate` 内 `task-9.1`（307s）、`task-12.7`（194s）、`task-13.8`（161s）、
+`task-11.7`/`11.8`/`12.4`（120s）合计约 782s 是按包 `cargo test` 子集，与 Rust Linux 的 workspace test
+重复；把这些检查的子进程半委托给 `workspace-test` / `frontend-test`、只保留静态断言，可把 `Release gate`
+压到约 100s。届时关键路径变成 `Rust (Linux workspace)`（670s，其中 `Test` 469s），10 分钟墙钟目标仍达不到。
+
 **合并后需复核的悬项**：旧拓扑的热态数据里 core 会逼近 Release gate（`42847291259` 667s vs 684s；
 `42779096853` 681s vs 785s），但旧拓扑的 release-gate 有专属缓存键，本分支改为共享 `linux-workspace`，
 新拓扑的热态数字尚不存在。合并后若观测到 `Task gates (core)` ≥ `Release gate`，应把 perf 拆回独立 job
