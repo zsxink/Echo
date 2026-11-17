@@ -380,6 +380,8 @@ CI 中按 8 个 section 分散到 `governance-static` 与 Rust(Linux) 的 `Rust 
 
 ## 10. CI 拓扑、分片与委托（2026-11-02，issue #124）
 
+> 本节记录 2026-11-02 的拓扑。2026-11-17 起的拓扑见 §11。
+
 PR CI 从约 21 分钟压到 10 分钟以内的改造后，`ci.yml` 共有 **18 个 job 实例**：
 
 | job（实例数） | 职责 | 关键点 |
@@ -440,3 +442,16 @@ shard 1，因为它需要壳二进制与 dist。每次调用都校验并集等�
   `pnpm verify:governance` 与 `pnpm verify:perf`。
 - `--skip-static` 只跳过 reconcile / validate-scenario-commands / gen-scenario-manifests 的静态预检
   （已在 `governance-static` 执行）；自动化场景与 PRD A1–A14 矩阵照跑。不要把它当成「跳过场景」。
+
+## 11. CI 拓扑（2026-11-17，issue #156）
+
+| job（实例数） | 职责 | 关键点 |
+|---|---|---|
+| `Rust (<platform> <shard>)`（5） | fmt / clippy / 分片测试 | Linux `workspace`；macOS/Windows 各 `core` + `desktop`；PR 只跳过两个 `desktop` 分片 |
+| `macOS native Gate`（1） | 8.12 / 13.2 | 自行 stage `target/Frameworks` 的 vendored dylib |
+| `Task gates (core/desktop/frontend)`（3） | 42 个 task gate 分片 | 16.1 在 Rust Linux；1.7 在 governance-static |
+| `Governance static gates`（1） | purity / registry / static / coverage / 依赖审计 | 依赖审计在线半仅在 main 与定时任务执行 |
+| `Dependency audit`（独立 workflow，定时） | 1.7 在线半 | 每日 03:00 UTC + 手动触发 |
+| `Injection proof 1/3`–`3/3`（3） | 注入证明分片 | 显式分片计划；shard 1 额外构建壳 |
+
+缓存只有 6 个写者 key，且只在 main 写入；其余 job 只恢复不写入。
