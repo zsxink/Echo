@@ -103,10 +103,13 @@ try {
 
 // A job-level `if` is evaluated before the matrix expands, so `matrix` is not an
 // available context there: referencing it makes the whole workflow invalid and
-// every job disappears. Pin that class of defect, not just today's spelling.
+// every job disappears. Match both `matrix.x` and the subscript spelling
+// `matrix['x']` (GitHub rejects both), and require a non-identifier character
+// before `matrix` so a hypothetical job id or word containing it does not trip.
+const MATRIX_CONTEXT = /(^|[^A-Za-z0-9_-])matrix\s*[.[]/;
 for (const [jobId, job] of Object.entries(workflow.jobs)) {
-  if (String(job.if || "").includes("matrix.")) {
-    fail(`ci.yml job '${jobId}' if must not reference matrix.* (job-level if is evaluated before the matrix expands)`);
+  if (MATRIX_CONTEXT.test(String(job.if || ""))) {
+    fail(`ci.yml job '${jobId}' if must not reference the matrix context (job-level if is evaluated before the matrix expands)`);
   }
 }
 
@@ -180,6 +183,15 @@ if (String(desktopTest.if || "").trim() !== "") fail("rust-desktop Test must not
 if (desktopTest["continue-on-error"] === true) fail("rust-desktop Test must not set continue-on-error");
 if (desktopTest.run !== "cargo test ${{ matrix.packages }} --all-targets --all-features") {
   fail("rust-desktop Test run must be 'cargo test ${{ matrix.packages }} --all-targets --all-features'");
+}
+// These gates only make sense on the Linux workspace shard. The step inventory
+// above is not pinned (harmless additions stay green), but these four must not
+// drift in: Clippy already runs workspace-wide in the core shards, and the
+// task/static gates would duplicate the workspace shard's work.
+for (const forbidden of ["Clippy", "Task 16.1", "Task 9.7 9.8", "Rust static gates"]) {
+  if (workflow.jobs["rust-desktop"].steps.some((s) => s.name === forbidden)) {
+    fail(`rust-desktop must not carry step '${forbidden}' (it only exists for the workspace shard)`);
+  }
 }
 
 const RUST_ORDER = ["Format check", "Task 16.1", "Task 9.7 9.8", "Clippy", "Test", "Rust static gates"];
