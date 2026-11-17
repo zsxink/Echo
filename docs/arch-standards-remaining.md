@@ -461,8 +461,8 @@ shard 1，因为它需要壳二进制与 dist。每次调用都校验并集等�
 `task-1.5` 反向锁定本节的结构：把 `cargo fmt` 加回 `rust-desktop`、给前端矩阵补回 macOS/Windows 腿、
 让注入 shard 3 构建前端、把 `pnpm verify:perf` 挪出 `task-gates`、或把裸跑 `player_smoke` 加回
 `task-13.2`，都必须让结构门禁失败。这五项删除降低配额占用与失败面，但**不在关键路径上**：
-热态关键路径仍是 Release gate（约 11m24s），下一个约 180s 的杠杆是 `task-9.1` 与 `task-13.8`
-在 release gate 内做的按包 cargo 调用。
+关键路径仍是 Release gate（冷态实测 1030–1387s；旧拓扑热态 684–785s），下一个约 180s 的杠杆是
+`task-9.1` 与 `task-13.8` 在 release gate 内做的按包 cargo 调用。
 
 **实测确认（run `44032149852`，2026-11-17，冷缓存）**：15 个执行实例全部成功，墙钟 23m55s。
 `Task gates (core)` 794s（`Verify task gates` 419s + `Run performance scenarios` 344s）
