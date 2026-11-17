@@ -326,11 +326,11 @@ const perf = step(workflow, "perf", "Run performance scenarios");
 if (perf.run !== "pnpm verify:perf") fail("perf run must be 'pnpm verify:perf'");
 
 const injection = workflow.jobs["injection-proofs"];
-if (JSON.stringify(injection?.strategy?.matrix?.shard) !== JSON.stringify([1, 2])) {
-  fail("injection-proofs matrix.shard must be [1, 2]");
+if (JSON.stringify(injection?.strategy?.matrix?.shard) !== JSON.stringify([1, 2, 3])) {
+  fail("injection-proofs matrix.shard must be [1, 2, 3]");
 }
 const shardStep = step(workflow, "injection-proofs", "Prove each governance gate");
-assertRunIncludes(shardStep, "--shard=${{ matrix.shard }}/2", "injection shard step");
+assertRunIncludes(shardStep, "--shard=${{ matrix.shard }}/3", "injection shard step");
 const shellStep = step(workflow, "injection-proofs", "Build the shell binary checked by embedded-frontend proof");
 assertIfIncludes(shellStep, "matrix.shard == 1", "shell build step");
 const embeddedStep = step(workflow, "injection-proofs", "Verify embedded frontend freshness");

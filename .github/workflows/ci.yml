@@ -237,7 +237,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Only the two Rust shards need a toolchain and cargo cache; the frontend
-      # shards run typecheck/vitest/node checks and never invoke cargo.
+      # shard runs typecheck/vitest/node checks and never invoke cargo.
       - name: Install Rust toolchain (pinned, rustfmt + clippy)
         if: matrix.shard == 'core' || matrix.shard == 'desktop'
         uses: dtolnay/rust-toolchain@master
@@ -511,12 +511,12 @@ jobs:
         run: pnpm verify:task -- 1.7
 
   injection-proofs:
-    name: Injection proof ${{ matrix.shard }}/2
+    name: Injection proof ${{ matrix.shard }}/3
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
 
@@ -565,7 +565,7 @@ jobs:
       - name: Prove each governance gate
         env:
           ECHO_INJECTION_REQUIRE_ALL: "1"
-        run: node scripts/verify/injection-suite.mjs --shard=${{ matrix.shard }}/2
+        run: node scripts/verify/injection-suite.mjs --shard=${{ matrix.shard }}/3
 
   release-gate:
     name: Release gate

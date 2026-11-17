@@ -1,3 +1,5 @@
+import { ENTRY_SHARDS } from "./injection-shard-plan.mjs";
+
 export function selectEntries(entries, { only = null, shard = null } = {}) {
   const filtered = only ? entries.filter((entry) => entry.id.includes(only)) : entries;
   if (shard === null) return filtered;
@@ -11,8 +13,11 @@ export function selectEntries(entries, { only = null, shard = null } = {}) {
   }
 
   const buckets = Array.from({ length: total }, () => []);
-  filtered.forEach((entry, position) => {
-    const assigned = entry.shard ?? (position % total) + 1;
+  filtered.forEach((entry) => {
+    const assigned = ENTRY_SHARDS[entry.id] ?? entry.shard;
+    if (assigned === undefined) {
+      throw new Error(`entry '${entry.id}' has no shard in injection-shard-plan.mjs`);
+    }
     if (assigned < 1 || assigned > total) {
       throw new Error(`entry '${entry.id}' declares shard ${assigned}, outside 1..${total}`);
     }
