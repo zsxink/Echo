@@ -20,9 +20,9 @@
 | 前端 lint | **0 error / 0 warning** | `pnpm --dir apps/desktop lint` |
 | 前端 format / typecheck | 全过 | `pnpm --dir apps/desktop format:check` / `typecheck` |
 | 规模豁免 | **7 文件 / 4 trait**（棘轮，只能减） | `node scripts/verify/check-scale.mjs` |
-| 场景对账 | **spec 523 = trace 523 = manifest 523** | `node scripts/verify/reconcile-scenarios.mjs` |
-| 场景证据覆盖 | **523 场景 / 541 证据条**（下限只增） | `node scripts/verify/check-scenario-evidence.mjs` |
-| 已登记检查数 | **97** | `node scripts/verify/check-verification-validity.mjs` |
+| 场景对账 | **spec 621 = trace 621 = manifest 621** | `node scripts/verify/reconcile-scenarios.mjs` |
+| 场景证据覆盖 | **621 场景 / 662 证据条**（下限 523/541，只增） | `node scripts/verify/check-scenario-evidence.mjs` |
+| 已登记检查数 | **96** | `node scripts/verify/check-verification-validity.mjs` |
 | 注入证明 | **64/64 通过，工作树逐字节还原**（本地命令，不在 PR 上跑） | `ECHO_INJECTION_REQUIRE_ALL=1 node scripts/verify/injection-suite.mjs` |
 | 验证器自检 | **10 条断言全过** | `pnpm verify:self-test` |
 | manifest 任务数 | **140**（其中 46 条 `archived`）/ 621（场景） | `node -e '…manifest.json…'` |
@@ -181,7 +181,7 @@ node scripts/verify/checks/task-5.mjs 5.2 \
 少数无法在任意机器上为绿的门禁（dev 构建的二进制、本就"尚无举证"的真机行）显式标注 `baseline: false`
 并附一个明确的通过用例。
 
-**完整性是机械的，不是文档承诺**：套件自己读 manifest，把 **97** 个已登记检查分两类——
+**完整性是机械的，不是文档承诺**：套件自己读 manifest，把 **96** 个已登记检查分两类——
 **自包含类**（断言在检查内部）：**全部有注入证明**（21 个已登记路径命中 `ENTRIES`），
 新增一个没有证明的会让套件退出 1；
 **委托类**（断言在它调用的子命令里）**76 个**，由结构规则覆盖：`check-verification-validity.mjs` 要求
@@ -213,14 +213,19 @@ node scripts/verify/checks/task-5.mjs 5.2 \
 默认模式即此漂移门）。**改任何场景命令或证据之前先改 registry 再 `--write`。**
 
 **release-gate 的 delegation**：`ci.yml` 的 `release-gate` 以
-`node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf` 运行；`task-13.9.mjs`
-把 `--delegated` 透传给 `run-scenario.mjs`，后者只跳过注册表里**显式声明**了对应 gate 的场景：
-`delegatedTo: "governance"`（`LD-R10-S01`、`PHA-R01-S02`，由 governance 的 section 执行）与
-`delegatedTo: "perf"`（`SFI-R05-S03`、`LE-R21-S02`、`PM-R13-S05`，由 `pnpm verify:perf` 执行）。
+`node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf,workspace-test,frontend-test`
+运行；`task-13.9.mjs` 把 `--delegated` 透传给 `run-scenario.mjs`，后者只跳过注册表里**显式声明**了对应
+gate 的场景：`delegatedTo: "governance"`（`LD-R10-S01`、`PHA-R01-S02`，由 governance 的 section 执行）、
+`delegatedTo: "perf"`（`SFI-R05-S03`、`LE-R21-S02`、`PM-R13-S05`，由 `pnpm verify:perf` 执行），以及
+`delegatedTo: "workspace-test"` / `"frontend-test"`（由 `scenario-commands.mjs` 给 `CORE_ALL` /
+`DESK_ALL` / `APP_ALL` / `VITEST_ALL` 命令批量声明，分别由 Linux `rust` 的 workspace 测试与
+`frontend` 的完整 Vitest 套件执行）。
 没有该声明的一律照常执行；本地不带参数时整门照跑，严格度不变。`--skip-static` 只跳过
 reconcile / validate-scenario-commands / gen-scenario-manifests 三步静态预检（已在 `governance-static`
 执行），自动化场景与 PRD 矩阵照跑。`check-scenario-evidence.mjs` 校验每个被委托的 gate 在 `ci.yml`
-中确有 `pnpm verify:<gate>` 的执行位置。
+中确有对应执行命令：`governance` / `perf` 匹配 `pnpm verify:<gate>`，`workspace-test` 与
+`frontend-test` 则结构解析 `ci.yml`（workspace 命令写作 `cargo test ${{ matrix.packages }} …`，
+`--workspace` 在矩阵里，字面量正则会恒假）。
 
 ---
 
@@ -228,7 +233,7 @@ reconcile / validate-scenario-commands / gen-scenario-manifests 三步静态预�
 
 **8.3 已完成的部分**（阶段 1 分支上实测）：
 - `pnpm verify:self-test` → 10 条断言全过，退出码 0；
-- 三方对账 `spec 523 = trace 523 = manifest 523`，退出码 0；
+- 三方对账 `spec 621 = trace 621 = manifest 621`，退出码 0；
 - `cargo test -p echo-desktop --test player_smoke` 4 条真实 libmpv 冒烟全过（单条复跑亦为绿）。
 
 **8.3 未完成的部分**：`node scripts/verify/run-scenario.mjs --all` 仍非全绿，红的两类性质完全不同：
