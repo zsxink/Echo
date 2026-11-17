@@ -78,22 +78,36 @@ let workflow;
 try {
   workflow = parseWorkflow(ci, "ci.yml");
   const RUST_MATRIX = {
-    "Linux/workspace":   { os: "ubuntu-latest",  cache: "linux-workspace",  packages: "--workspace",                               clippy: true },
-    "macOS/core":        { os: "xcode-27",       cache: "macos-core",       packages: "-p echo-core",                              clippy: true },
-    "macOS/desktop":     { os: "xcode-27",       cache: "macos-desktop",    packages: "-p echo-sync -p echo-desktop -p echo-app", clippy: false },
-    "Windows/core":      { os: "windows-latest", cache: "windows-core",     packages: "-p echo-core",                              clippy: true },
-    "Windows/desktop":   { os: "windows-latest", cache: "windows-desktop",  packages: "-p echo-sync -p echo-desktop -p echo-app", clippy: false },
+    "Linux/workspace":   { os: "ubuntu-latest",  cache: "linux-workspace",  packages: "--workspace",    clippy: true },
+    "macOS/core":        { os: "xcode-27",       cache: "macos-core",       packages: "-p echo-core",   clippy: true },
+    "Windows/core":      { os: "windows-latest", cache: "windows-core",     packages: "-p echo-core",   clippy: true },
   };
   assertShardMatrix(matrixEntries(workflow, "rust", "ci.yml"), RUST_MATRIX, "ci.yml rust");
+  assertPlatformName(workflow.jobs.rust.name, "Rust (${{ matrix.platform }} ${{ matrix.shard }})", "ci.yml rust name");
+
+  const RUST_DESKTOP_MATRIX = {
+    "macOS/desktop":     { os: "xcode-27",       cache: "macos-desktop",    packages: "-p echo-sync -p echo-desktop -p echo-app", clippy: false },
+    "Windows/desktop":   { os: "windows-latest", cache: "windows-desktop",  packages: "-p echo-sync -p echo-desktop -p echo-app", clippy: false },
+  };
+  assertShardMatrix(matrixEntries(workflow, "rust-desktop", "ci.yml"), RUST_DESKTOP_MATRIX, "ci.yml rust-desktop");
+  assertPlatformName(workflow.jobs["rust-desktop"].name, "Rust desktop (${{ matrix.platform }})", "ci.yml rust-desktop name");
   assertPlatformMatrix(
     matrixEntries(workflow, "frontend", "ci.yml"),
     { Linux: { os: "ubuntu-latest" }, macOS: { os: "xcode-27" }, Windows: { os: "windows-latest" } },
     "ci.yml frontend",
   );
-  assertPlatformName(workflow.jobs.rust.name, "Rust (${{ matrix.platform }} ${{ matrix.shard }})", "ci.yml rust name");
   assertPlatformName(workflow.jobs.frontend.name, "Frontend (${{ matrix.platform }})", "ci.yml frontend name");
 } catch (error) {
   fail(error.message);
+}
+
+// A job-level `if` is evaluated before the matrix expands, so `matrix` is not an
+// available context there: referencing it makes the whole workflow invalid and
+// every job disappears. Pin that class of defect, not just today's spelling.
+for (const [jobId, job] of Object.entries(workflow.jobs)) {
+  if (String(job.if || "").includes("matrix.")) {
+    fail(`ci.yml job '${jobId}' if must not reference matrix.* (job-level if is evaluated before the matrix expands)`);
+  }
 }
 
 const REQUIRED = [
@@ -123,10 +137,6 @@ if (format.run !== "cargo fmt --all -- --check") fail("rust Format check run mus
 const test = step(workflow, "rust", "Test");
 const clippy = step(workflow, "rust", "Clippy");
 const rustStatic = step(workflow, "rust", "Rust static gates");
-const RUST_JOB_IF = "github.event_name != 'pull_request' || matrix.shard != 'desktop'";
-if (String(workflow.jobs.rust.if || "").trim() !== RUST_JOB_IF) {
-  fail(`rust job if must be '${RUST_JOB_IF}'`);
-}
 const TEST_IF = "github.event_name != 'pull_request' || matrix.shard == 'workspace'";
 if (String(test.if || "").trim() !== TEST_IF) fail(`rust Test if must be '${TEST_IF}'`);
 if (test["continue-on-error"] === true) fail("rust Test must not set continue-on-error");
@@ -158,11 +168,31 @@ if (rustStatic.env?.ECHO_PURITY_REQUIRE_BUILD !== undefined) {
   fail("Rust static gates must not set ECHO_PURITY_REQUIRE_BUILD (purity moved to governance-static)");
 }
 
+// rust-desktop: the shards that carry the rest of the workspace tests. They are
+// a separate job because a job-level `if` cannot see matrix.*, and this job must
+// be absent on pull requests while running in full on main.
+const DESKTOP_JOB_IF = "github.event_name != 'pull_request'";
+if (String(workflow.jobs["rust-desktop"].if || "").trim() !== DESKTOP_JOB_IF) {
+  fail(`rust-desktop job if must be '${DESKTOP_JOB_IF}'`);
+}
+const desktopTest = step(workflow, "rust-desktop", "Test");
+if (String(desktopTest.if || "").trim() !== "") fail("rust-desktop Test must not be conditionally skipped");
+if (desktopTest["continue-on-error"] === true) fail("rust-desktop Test must not set continue-on-error");
+if (desktopTest.run !== "cargo test ${{ matrix.packages }} --all-targets --all-features") {
+  fail("rust-desktop Test run must be 'cargo test ${{ matrix.packages }} --all-targets --all-features'");
+}
+
 const RUST_ORDER = ["Format check", "Task 16.1", "Task 9.7 9.8", "Clippy", "Test", "Rust static gates"];
 const rustSteps = workflow.jobs.rust.steps.map((s) => s.name).filter(Boolean);
 const positions = RUST_ORDER.map((name) => rustSteps.indexOf(name));
 if (!positions.every((v, i) => v >= 0 && (i === 0 || v > positions[i - 1]))) {
   fail(`rust step order must be ${RUST_ORDER.join(" < ")}`);
+}
+const DESKTOP_ORDER = ["Format check", "Test"];
+const desktopSteps = workflow.jobs["rust-desktop"].steps.map((s) => s.name).filter(Boolean);
+const desktopPositions = DESKTOP_ORDER.map((name) => desktopSteps.indexOf(name));
+if (!desktopPositions.every((v, i) => v >= 0 && (i === 0 || v > desktopPositions[i - 1]))) {
+  fail(`rust-desktop step order must be ${DESKTOP_ORDER.join(" < ")}`);
 }
 
 const governanceStatic = step(workflow, "governance-static", "Run governance static gates");

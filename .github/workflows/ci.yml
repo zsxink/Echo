@@ -13,19 +13,13 @@ jobs:
   rust:
     name: Rust (${{ matrix.platform }} ${{ matrix.shard }})
     runs-on: ${{ matrix.os }}
-    # PR runs keep the full workspace test on Linux only. The macOS/Windows
-    # `desktop` shards carry the rest of their workspace tests and do not exist
-    # on pull requests; their `core` shards still run fmt and clippy on every PR.
-    if: github.event_name != 'pull_request' || matrix.shard != 'desktop'
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { platform: Linux,   os: ubuntu-latest,  shard: workspace, cache: linux-workspace,  packages: "--workspace",                               clippy: true }
-          - { platform: macOS,   os: xcode-27,       shard: core,      cache: macos-core,       packages: "-p echo-core",                             clippy: true }
-          - { platform: macOS,   os: xcode-27,       shard: desktop,   cache: macos-desktop,    packages: "-p echo-sync -p echo-desktop -p echo-app", clippy: false }
-          - { platform: Windows, os: windows-latest, shard: core,      cache: windows-core,     packages: "-p echo-core",                             clippy: true }
-          - { platform: Windows, os: windows-latest, shard: desktop,   cache: windows-desktop,  packages: "-p echo-sync -p echo-desktop -p echo-app", clippy: false }
+          - { platform: Linux,   os: ubuntu-latest,  shard: workspace, cache: linux-workspace,  packages: "--workspace",   clippy: true }
+          - { platform: macOS,   os: xcode-27,       shard: core,      cache: macos-core,       packages: "-p echo-core",  clippy: true }
+          - { platform: Windows, os: windows-latest, shard: core,      cache: windows-core,     packages: "-p echo-core",  clippy: true }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -108,6 +102,74 @@ jobs:
       - name: Rust static gates
         if: matrix.shard == 'workspace'
         run: pnpm verify:governance -- --sections=rust-static
+
+  # The macOS/Windows `desktop` shards carry the rest of the workspace tests.
+  # They must be absent on pull requests and fully present on main, which a
+  # job-level `if` can express only because it no longer needs matrix.* (GitHub
+  # evaluates a job-level `if` before the matrix expands, where `matrix` is not
+  # an available context).
+  rust-desktop:
+    name: Rust desktop (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: macOS,   os: xcode-27,       shard: desktop, cache: macos-desktop,   packages: "-p echo-sync -p echo-desktop -p echo-app", clippy: false }
+          - { platform: Windows, os: windows-latest, shard: desktop, cache: windows-desktop, packages: "-p echo-sync -p echo-desktop -p echo-app", clippy: false }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The vendored Windows libmpv-2.dll is a Git-LFS object (114 MB >
+          # GitHub's 100 MB blob limit); only the Windows leg needs the real
+          # file so build.rs can stage it. macOS never reads it, so it skips
+          # the LFS download.
+          lfs: ${{ runner.os == 'Windows' }}
+
+      # The filesystem gate tests create real symlinks (walker / staging never
+      # follow an escaping or externally-owned link). Windows runners only allow
+      # `mklink` with Developer Mode enabled; flip the registry switch so the
+      # tests exercise the real code rather than skipping.
+      - name: Enable Windows Developer Mode for symlinks
+        if: runner.os == 'Windows'
+        run: |
+          reg add "HKLM\Software\Microsoft\Windows\CurrentVersion\AppModelUnlock" /v AllowDevelopmentWithoutDevLicense /t REG_DWORD /d 1 /f
+
+      - name: Install Rust toolchain (pinned, rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      # `cargo test` compiles the echo-app Tauri shell, whose
+      # `generate_context!` macro requires the built frontend at
+      # apps/desktop/dist (frontendDist). Build it here so this job is not
+      # coupled to the frontend job's output.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend for Tauri context
+        run: pnpm --dir apps/desktop build
+
+      # This job only exists on main, so no step-level tiering is needed.
+      - name: Test
+        run: cargo test ${{ matrix.packages }} --all-targets --all-features
 
   frontend:
     name: Frontend (${{ matrix.platform }})
