@@ -39,5 +39,5 @@
 
 ## 6. 提交与 PR
 
-- [ ] 6.1 以显式路径提交（**禁止** `git add -A` / `git add .`；用户未提交的 `artifacts/fault-injection-13.3.md` 与 `artifacts/native-e2e-13.2.txt` 不得进入提交），推送到 `feat/ci-runtime-under-10-min`。验证：`git show --stat HEAD` 不含 `artifacts/` 下这两个文件；`git status --porcelain` 仍显示它们为 ` M`。
-- [ ] 6.2 更新 PR #157 正文：引用 Issue #158，写明四项删除**降低配额与失败面但不缩短关键路径**（热态 Release gate 仍约 11m24s），并把 `task-9.1`（82s）+ `task-13.8`（101s）列为下一个约 180s 的杠杆。验证：`gh pr view 157 --json body` 含 `#158` 与「关键路径」段落。
+- [x] 6.1 以显式路径提交（**禁止** `git add -A` / `git add .`；用户未提交的 `artifacts/fault-injection-13.3.md` 与 `artifacts/native-e2e-13.2.txt` 不得进入提交），推送到 `feat/ci-runtime-under-10-min`。验证：`git show --stat HEAD` 不含 `artifacts/` 下这两个文件；`git status --porcelain` 仍显示它们为 ` M`。
+- [x] 6.2 更新 PR #157 正文：引用 Issue #158，写明四项删除**降低配额与失败面但不缩短关键路径**（热态 Release gate 仍约 11m24s），并把 `task-9.1`（82s）+ `task-13.8`（101s）列为下一个约 180s 的杠杆。验证：`gh pr view 157 --json body` 含 `#158` 与「关键路径」段落。
