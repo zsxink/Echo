@@ -35,7 +35,7 @@
 ## 7. 重写 ci-structure 注入证明
 
 - [ ] 7.1 在 `injection-governance.mjs` 按新结构重写 ci-structure 注入证明：删除 matrix 分片、把 clippy 移到 `Test` 之后、把 `purity` 从 `governance-static` 删除、把 injection 分片数改回 2，四类注入都必须让 `task-1.5` 失败；证明总数由 12 条增至 13 条，新增 `ci-structure/job-if-references-matrix`（把 `rust-desktop` 的 job 级 `if` 改为引用 `matrix.shard` 时必须失败），并把新 id 登记进注入分片计划。验证：`node scripts/verify/injection-governance.mjs` 退出 0，且各注入产生预期的失败信息；`node scripts/verify/injection-suite.mjs --only ci-` 全部通过。
-- [ ] 7.2 同步 `task-1.5.mjs` 的 `assertAlwaysRuns` 覆盖新 job id、`purity` section 映射，以及「任何 job 级 `if` MUST NOT 引用 `matrix.`」的永久断言。验证：`node scripts/verify/checks/task-1.5.mjs` 退出 0；`rg -n 'purity|alwaysRuns|must not reference matrix' scripts/verify/checks/task-1.5.mjs` 命中新映射与新断言。
+- [ ] 7.2 同步 `task-1.5.mjs` 的 `assertAlwaysRuns` 覆盖新 job id、`purity` section 映射，以及「任何 job 级 `if` MUST NOT 引用矩阵上下文」的永久断言（同时匹配 `matrix.x` 与 `matrix['x']` 两种写法）。验证：`node scripts/verify/checks/task-1.5.mjs` 退出 0；`rg -n 'purity|alwaysRuns|must not reference the matrix context' scripts/verify/checks/task-1.5.mjs` 命中新映射与新断言。
 
 ## 8. 本地全量验证与耗时测量
 
