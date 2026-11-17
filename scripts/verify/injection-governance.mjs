@@ -19,12 +19,12 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       id: "ci-platform-matrix/missing-linux-entry",
       guard: "the CI Rust platform matrix losing its Linux platform-to-runner mapping",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: ci\.yml rust matrix is missing platform 'Linux'/,
+      expect: /FAIL 1\.5: ci\.yml rust matrix is missing entry 'Linux\/workspace'/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "          - platform: Linux\n            os: ubuntu-latest\n",
+          "          - { platform: Linux,   os: ubuntu-latest,  shard: workspace, cache: linux-workspace,  packages: \"--workspace\",   clippy: true }\n",
           "",
         );
         return {};
@@ -34,13 +34,13 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       id: "ci-structure/test-condition-windows",
       guard: "the Rust Test step being gated to Windows instead of Linux on pull requests",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: rust Test if must include 'matrix\.platform == 'Linux''/,
+      expect: /FAIL 1\.5: rust Test if must be 'github\.event_name != 'pull_request' \|\| matrix\.shard == 'workspace'/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "if: github.event_name != 'pull_request' || matrix.platform == 'Linux'",
-          "if: github.event_name != 'pull_request' || matrix.platform == 'Windows'",
+          "if: github.event_name != 'pull_request' || matrix.shard == 'workspace'",
+          "if: github.event_name != 'pull_request' || matrix.shard == 'core'",
         );
         return {};
       },
@@ -54,7 +54,7 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "      - name: Rust static gates\n        if: matrix.platform == 'Linux'\n        env:\n          ECHO_PURITY_REQUIRE_BUILD: \"1\"\n        run: pnpm verify:governance -- --sections=rust-static,purity\n\n",
+          "      - name: Rust static gates\n        if: matrix.shard == 'workspace'\n        run: pnpm verify:governance -- --sections=rust-static\n\n",
           "",
         );
         return {};
@@ -64,13 +64,13 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       id: "ci-structure/test-condition-and-inverted",
       guard: "the Rust Test tiering condition using && so PRs and main both lose the full workspace test",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: rust Test if must be 'github\.event_name != 'pull_request' \|\| matrix\.platform == 'Linux'/,
+      expect: /FAIL 1\.5: rust Test if must be 'github\.event_name != 'pull_request' \|\| matrix\.shard == 'workspace'/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "if: github.event_name != 'pull_request' || matrix.platform == 'Linux'",
-          "if: github.event_name != 'pull_request' && matrix.platform == 'Linux'",
+          "if: github.event_name != 'pull_request' || matrix.shard == 'workspace'",
+          "if: github.event_name != 'pull_request' && matrix.shard == 'workspace'",
         );
         return {};
       },
@@ -84,8 +84,8 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "      - name: Test\n        if: github.event_name != 'pull_request' || matrix.platform == 'Linux'\n",
-          "      - name: Test\n        if: github.event_name != 'pull_request' || matrix.platform == 'Linux'\n        continue-on-error: true\n",
+          "      - name: Test\n        if: github.event_name != 'pull_request' || matrix.shard == 'workspace'\n",
+          "      - name: Test\n        if: github.event_name != 'pull_request' || matrix.shard == 'workspace'\n        continue-on-error: true\n",
         );
         return {};
       },
@@ -146,6 +146,118 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
           join(ROOT, "scripts", "verify", "ci-governance.mjs"),
           '"static", "coverage", "purity"',
           '"static", "purity"',
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/shard-packages-drift",
+      guard: "a rust shard's package selection drifting so the two shards no longer cover the workspace",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci\.yml rust matrix entry 'macOS\/core' maps packages to '-p echo-desktop', expected '-p echo-core'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "shard: core,      cache: macos-core,       packages: \"-p echo-core\"",
+          "shard: core,      cache: macos-core,       packages: \"-p echo-desktop\"",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/clippy-moved-after-test",
+      guard: "Clippy running after Test, which would leave a check-shape build as the cached artifact",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: rust step order must be Format check < Task 16\.1 < Task 9\.7 9\.8 < Clippy < Test < Rust static gates/,
+      baseline: true,
+      inject() {
+        const clippyBlock = "      - name: Clippy\n        if: matrix.clippy\n        run: cargo clippy --workspace --all-targets --all-features -- -D warnings\n\n";
+        replaceIn(join(ROOT, ".github", "workflows", "ci.yml"), clippyBlock, "");
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "        run: cargo test ${{ matrix.packages }} --all-targets --all-features\n",
+          `        run: cargo test \${{ matrix.packages }} --all-targets --all-features\n\n${clippyBlock}`,
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/purity-section-removed",
+      guard: "governance-static keeping the purity step name while dropping the purity section",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: governance-static purity step run must be 'pnpm verify:governance -- --sections=purity'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "        run: pnpm verify:governance -- --sections=purity",
+          "        run: pnpm verify:governance -- --sections=static",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/injection-shard-count-regressed",
+      guard: "the injection proof matrix shrinking back to two shards",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: injection-proofs matrix\.shard must be \[1, 2, 3\]/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "        shard: [1, 2, 3]",
+          "        shard: [1, 2]",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/audit-offline-tiering-frozen",
+      guard: "the dependency audit's PR tiering pinned to a constant, which would silently disable the online scan on every event",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: governance-static audit step env ECHO_AUDIT_OFFLINE_ONLY must be/,
+      baseline: true,
+      inject() {
+        // ```replaceIn``` is first-occurrence-only, and the same env line appears
+        // twice in ci.yml — once under Install audit tooling, once under Verify
+        // dependency audit gate. A bare env needle would rewrite the installer and
+        // leave the step task-1.5 actually asserts on untouched, so the proof would
+        // pass for the wrong reason. Carry the step name to make it unique.
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "      - name: Verify dependency audit gate\n        env:\n          ECHO_AUDIT_OFFLINE_ONLY: ${{ github.event_name == 'pull_request' && '1' || '0' }}\n",
+          '      - name: Verify dependency audit gate\n        env:\n          ECHO_AUDIT_OFFLINE_ONLY: "1"\n',
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/desktop-shard-gated-to-main",
+      guard: "the macOS/Windows desktop shards gated so their workspace tests never run on main either",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: rust-desktop job if must be 'github\.event_name != 'pull_request'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "  rust-desktop:\n    name: Rust desktop (${{ matrix.platform }})\n    runs-on: ${{ matrix.os }}\n    if: github.event_name != 'pull_request'\n",
+          "  rust-desktop:\n    name: Rust desktop (${{ matrix.platform }})\n    runs-on: ${{ matrix.os }}\n    if: github.event_name == 'push'\n",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/job-if-references-matrix",
+      guard: "a job-level if reaching for the matrix context, which GitHub evaluates before the matrix exists and rejects the whole workflow for",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci\.yml job 'rust-desktop' if must not reference the matrix context/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "    if: github.event_name != 'pull_request'\n",
+          "    if: github.event_name != 'pull_request' || matrix.shard != 'desktop'\n",
         );
         return {};
       },

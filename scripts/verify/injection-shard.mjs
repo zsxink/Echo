@@ -14,7 +14,7 @@ export function selectEntries(entries, { only = null, shard = null } = {}) {
 
   const buckets = Array.from({ length: total }, () => []);
   filtered.forEach((entry) => {
-    const assigned = ENTRY_SHARDS[entry.id] ?? entry.shard;
+    const assigned = ENTRY_SHARDS[entry.id];
     if (assigned === undefined) {
       throw new Error(`entry '${entry.id}' has no shard in injection-shard-plan.mjs`);
     }

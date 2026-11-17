@@ -1,6 +1,6 @@
 // Explicit shard assignment for the injection proofs.
 //
-// `injection-suite.mjs` sits at 997 lines against the 1000-line scale ceiling,
+// `injection-suite.mjs` sits at 996 lines against the 1000-line scale ceiling,
 // so the plan lives here instead of as a `shard:` field on every entry.
 // Assignment is by measured cost, never by position: shard 1 also builds the
 // shell binary for the embedded-frontend proof (~200s), so it carries only the
@@ -17,6 +17,13 @@ export const ENTRY_SHARDS = {
   "ci-structure/perf-job-gated-off-pr": 1,
   "ci-structure/section-coverage-missing": 1,
   "ci-structure/section-list-authority": 1,
+  "ci-structure/shard-packages-drift": 1,
+  "ci-structure/clippy-moved-after-test": 1,
+  "ci-structure/purity-section-removed": 1,
+  "ci-structure/injection-shard-count-regressed": 1,
+  "ci-structure/audit-offline-tiering-frozen": 1,
+  "ci-structure/desktop-shard-gated-to-main": 1,
+  "ci-structure/job-if-references-matrix": 1,
   "release-platform-matrix/corrupt-linux-runner": 1,
   "licensing/spdx-regressed-to-busl": 1,
   "licensing/stale-dependency-inventory": 1,
