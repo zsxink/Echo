@@ -196,6 +196,36 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       },
     },
     {
+      id: "ci-structure/release-gate-cargo-readded",
+      guard: "the release gate re-adding a cargo test step, re-spending the workspace suite's compile time on a duplicate execution",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: release-gate must not run cargo\/pnpm test commands \(delegated\), found \[Re-run the desktop tests\]/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "      - name: Run release gate without external artifacts\n",
+          "      - name: Re-run the desktop tests\n        run: cargo test -p echo-desktop --all-features\n\n      - name: Run release gate without external artifacts\n",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/benchmark-carrier-dropped",
+      guard: "the 50k benchmark leaving task-12.5 in `task-gates`, leaving the `benchmark` delegation pointing at a gate nothing executes",
+      check: ["node", ["scripts/verify/check-scenario-evidence.mjs"]],
+      expect: /FAIL scenario evidence[\s\S]*delegated gate 'benchmark' has no matching command/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          'tasks: "1.1 1.3 12.5 13.3"',
+          'tasks: "1.1 1.3 13.3"',
+        );
+        return {};
+      },
+    },
+    {
       id: "ci-structure/duplicate-player-smoke",
       guard: "task-13.2 re-adding the bare player_smoke run that silently skips without the staged dylibs",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
@@ -399,15 +429,15 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
     },
     {
       id: "ci-structure/native-gate-payload-removed",
-      guard: "the macOS native Gate's only real step emptied, leaving a permanently-green job that no longer runs 8.12/13.2",
+      guard: "the macOS native Gate's only real step emptied, leaving a permanently-green job that no longer runs 8.12",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: macos-native-gate run must be 'pnpm verify:task -- 8\.12 13\.2'/,
+      expect: /FAIL 1\.5: macos-native-gate run must be 'pnpm verify:task -- 8\.12'/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "      - name: Verify libmpv smoke and native e2e gates\n        run: pnpm verify:task -- 8.12 13.2\n",
-          "      - name: Verify libmpv smoke and native e2e gates\n        run: echo skipped\n",
+          "      - name: Verify libmpv smoke gate\n        run: pnpm verify:task -- 8.12\n",
+          "      - name: Verify libmpv smoke gate\n        run: echo skipped\n",
         );
         return {};
       },

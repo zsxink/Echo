@@ -300,8 +300,8 @@
       "title": "Sync-foundation data shape (3.10–3.13): 0005 migration (tombstones/sync_state/sync_outbox + revision columns), outbox prewrite on the five local logic-change classes, Echo-delete tombstone, and the sync-foundation spec shape (no absolute path in outbox payloads, schema_base present)",
       "commands": [
         {
-          "desc": "0005 shape + registration + core shape tests; song/playlist/override prewrite with monotone revision in one tx; durable tombstone on finalize (external missing does not); shape probing for outbox payload privacy and schema_base",
-          "cmd": "node scripts/verify/checks/task-3.10.mjs"
+          "desc": "0005 shape + registration 静态断言；sync-foundation shape 测试由 workspace-test 承载",
+          "cmd": "node scripts/verify/checks/task-3.10.mjs --static-only"
         }
       ]
     },
@@ -310,8 +310,8 @@
       "title": "Sync-foundation adds no operable sync (offline boundary intact)",
       "commands": [
         {
-          "desc": "no sync command/entry/network despite schema tables",
-          "cmd": "node scripts/verify/checks/task-3.14.mjs"
+          "desc": "sync IPC 契约静态断言（bridge 用生成类型、生成文件含四条命令）；sync runtime/privacy 测试由 workspace-test 承载",
+          "cmd": "node scripts/verify/checks/task-3.14.mjs --static-only"
         }
       ]
     },
@@ -852,8 +852,8 @@
       "title": "保证格式文件关联与 open-file/argv 统一，活动根/非活动旧根/库外文件的临时项语义由播放层解析",
       "commands": [
         {
-          "desc": "tauri.conf 文件关联等于保证格式集合的 drift 测试通过，macOS Opened 与单实例 argv 都以一次批量经 deliver_file_opens 入 FIFO；SongId/临时项解析归属播放层",
-          "cmd": "node scripts/verify/checks/task-9.2.mjs"
+          "desc": "tauri.conf 文件关联等于保证格式集合（静态断言保留），macOS Opened 与单实例 argv 都以一次批量经 deliver_file_opens 入 FIFO；drift 测试由 workspace-test 承载",
+          "cmd": "node scripts/verify/checks/task-9.2.mjs --static-only"
         }
       ]
     },
@@ -862,8 +862,8 @@
       "title": "生产化 macOS 菜单栏/Windows-Linux 托盘：摘要、播放/暂停、上一首、下一首、显示窗口、退出；后台状态与主窗口 snapshot 一致",
       "commands": [
         {
-          "desc": "status_menu 决策逻辑单测通过（摘要/标签/命令映射/sink），echo-app clippy 干净，main.rs 构建六项托盘菜单并经 sink 派发；协调器接线归属 composition root",
-          "cmd": "node scripts/verify/checks/task-9.3.mjs"
+          "desc": "status_menu 六项菜单/标签/命令映射/sink 静态契约，main.rs 经 sink 派发；status_menu 单测由 workspace-test 承载",
+          "cmd": "node scripts/verify/checks/task-9.3.mjs --static-only"
         }
       ]
     },
@@ -872,8 +872,8 @@
       "title": "macOS Now Playing / Windows SMTC / Linux MPRIS 媒体控制 Adapter；媒体键只触发一次协调器 command，能力不可用时降级到窗口控制",
       "commands": [
         {
-          "desc": "media_control seam 单测通过（键名解码、一命令映射、降级 noop sink），echo-app clippy 干净；OS 专属 adapter 与协调器接线归属 composition root/平台 Gate",
-          "cmd": "node scripts/verify/checks/task-9.4.mjs"
+          "desc": "media_control seam 静态契约（键名解码、一命令映射、降级 noop sink）；单测由 workspace-test 承载，OS 专属 adapter 归属 composition root/平台 Gate",
+          "cmd": "node scripts/verify/checks/task-9.4.mjs --static-only"
         }
       ]
     },
@@ -882,8 +882,8 @@
       "title": "系统回收站与 reveal Adapter：回收站不可逆点、Windows 文件锁重试、Linux 无法定位时打开父目录、入口只接收 SongId/OperationId",
       "commands": [
         {
-          "desc": "trash 重试/不可逆策略与 reveal 父目录回退策略单测通过，reveal 入口只收 SongId 且只返回相对路径，echo-app clippy 干净；真实 OS 后端接线归属 composition root",
-          "cmd": "node scripts/verify/checks/task-9.5.mjs"
+          "desc": "trash 重试/不可逆与 reveal 父目录回退静态契约，reveal 入口只收 SongId 且只返回相对路径；策略单测由 workspace-test 承载",
+          "cmd": "node scripts/verify/checks/task-9.5.mjs --static-only"
         }
       ]
     },
@@ -892,8 +892,8 @@
       "title": "窗口 close/hide/explicit quit 与 window-state 可见区域校验：macOS 默认后台、Windows/Linux 默认退出、用户覆盖、断显示器后回可见区域",
       "commands": [
         {
-          "desc": "local_state 关闭行为默认值与 WindowState::clamp_to_visible 可见区域策略单测通过，echo-app clippy 干净；close-handler 接线归属 shell/composition root",
-          "cmd": "node scripts/verify/checks/task-9.6.mjs"
+          "desc": "local_state 关闭行为默认值与 WindowState::clamp_to_visible 静态契约；可见区域策略单测由 workspace-test 承载，close-handler 接线归属 shell/composition root",
+          "cmd": "node scripts/verify/checks/task-9.6.mjs --static-only"
         }
       ]
     },
@@ -1210,8 +1210,8 @@
       "title": "扫描/hash/标签/封面 worker CPU/内存/取消压力测试",
       "commands": [
         {
-          "desc": "默认并发 min(CPU,4)、压力下边界不破、取消不落 missing、输入上限(4KiB/2MiB/20MiB)与封面缓存容量生效",
-          "cmd": "node scripts/verify/checks/task-12.6.mjs"
+          "desc": "输入上限(4KiB/2MiB/20MiB)、min(CPU,4) 默认与封面缓存容量在源码中固定；worker 压力测试由 workspace-test 承载",
+          "cmd": "node scripts/verify/checks/task-12.6.mjs --static-only"
         }
       ]
     },
@@ -1248,6 +1248,8 @@
     {
       "id": "13.2",
       "title": "macOS native e2e（真实壳 + Gate dialogs）",
+      "archived": true,
+      "archivedReason": "与 workspace test 重复：native_e2e 的 driver 是 host-agnostic（无 cfg(target_os) 分支，DesktopTrash::default() 直接返回 Unavailable 不触达 OS），其 native_loop_and_restart_preserve_relationships 与 player::coordinator::tests:: 的 45 个用例都由 Linux 的 cargo test --workspace --all-targets --all-features 执行（实测 run 44074127969 日志逐条 ... ok）。删掉这一步省 42s（几乎全是 macOS 上编译 native_e2e 测试目标的时间）。",
       "commands": [
         {
           "desc": "macOS native e2e（真实壳 + Gate dialogs）",
@@ -2035,7 +2037,7 @@
     {
       "id": "DAS-R05-S01",
       "title": "选择退出应用",
-      "command": "node scripts/verify/checks/task-9.6.mjs",
+      "command": "node scripts/verify/checks/task-9.6.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -2046,7 +2048,7 @@
     {
       "id": "DAS-R05-S02",
       "title": "选择后台运行",
-      "command": "node scripts/verify/checks/task-9.6.mjs",
+      "command": "node scripts/verify/checks/task-9.6.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -2057,7 +2059,7 @@
     {
       "id": "DAS-R05-S03",
       "title": "关闭期间存在未完成初始化",
-      "command": "node scripts/verify/checks/task-9.6.mjs",
+      "command": "node scripts/verify/checks/task-9.6.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -2068,7 +2070,7 @@
     {
       "id": "DAS-R06-S01",
       "title": "从平台入口显示主窗口",
-      "command": "node scripts/verify/checks/task-9.3.mjs",
+      "command": "node scripts/verify/checks/task-9.3.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -2079,7 +2081,7 @@
     {
       "id": "DAS-R06-S02",
       "title": "从平台入口控制播放",
-      "command": "node scripts/verify/checks/task-9.3.mjs",
+      "command": "node scripts/verify/checks/task-9.3.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -2090,7 +2092,7 @@
     {
       "id": "DAS-R06-S03",
       "title": "托盘或菜单栏初始化失败",
-      "command": "node scripts/verify/checks/task-9.3.mjs",
+      "command": "node scripts/verify/checks/task-9.3.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -3272,7 +3274,8 @@
           "kind": "rust",
           "target": "runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R28-S01",
@@ -3312,7 +3315,8 @@
           "kind": "rust",
           "target": "file_drop::tests::hover_overlay_follows_drag_lifecycle"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DAS-R29-S01",
@@ -3737,7 +3741,7 @@
     {
       "id": "DP-R05-S01",
       "title": "单曲加载失败",
-      "command": "node scripts/verify/checks/task-9.2.mjs",
+      "command": "node scripts/verify/checks/task-9.2.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -3925,12 +3929,13 @@
           "kind": "rust",
           "target": "player::coordinator::tests_opened_files::single_temporary_open_is_still_a_one_item_batch"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "DP-R08-S01",
       "title": "达到播放阈值",
-      "command": "node scripts/verify/checks/task-9.4.mjs",
+      "command": "node scripts/verify/checks/task-9.4.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -3953,7 +3958,7 @@
     {
       "id": "DP-R09-S01",
       "title": "正常恢复",
-      "command": "node scripts/verify/checks/task-9.3.mjs",
+      "command": "node scripts/verify/checks/task-9.3.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -3964,7 +3969,7 @@
     {
       "id": "DP-R09-S02",
       "title": "部分歌曲不可用",
-      "command": "node scripts/verify/checks/task-9.3.mjs",
+      "command": "node scripts/verify/checks/task-9.3.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -3975,7 +3980,7 @@
     {
       "id": "DP-R09-S03",
       "title": "文件关联覆盖普通恢复",
-      "command": "node scripts/verify/checks/task-9.6.mjs",
+      "command": "node scripts/verify/checks/task-9.6.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -3986,7 +3991,7 @@
     {
       "id": "DP-R10-S01",
       "title": "使用媒体键",
-      "command": "node scripts/verify/checks/task-9.4.mjs",
+      "command": "node scripts/verify/checks/task-9.4.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -5638,7 +5643,7 @@
     {
       "id": "LE-R06-S05",
       "title": "打开本地目录",
-      "command": "node scripts/verify/checks/task-9.5.mjs",
+      "command": "node scripts/verify/checks/task-9.5.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -5752,7 +5757,8 @@
           "kind": "rust",
           "target": "bench_50k_search_and_first_screen_p95_meet_prd_budgets"
         }
-      ]
+      ],
+      "delegatedTo": "benchmark"
     },
     {
       "id": "LE-R07-S02",
@@ -7134,7 +7140,7 @@
     {
       "id": "LL-R08-S02",
       "title": "扫描期间继续使用界面",
-      "command": "node scripts/verify/checks/task-12.6.mjs",
+      "command": "node scripts/verify/checks/task-12.6.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -8654,7 +8660,8 @@
           "kind": "rust",
           "target": "runtime::services::tests::open_path"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R07-S02",
@@ -8669,7 +8676,8 @@
           "kind": "rust",
           "target": "runtime::services::tests::open_path"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R07-S03",
@@ -8684,7 +8692,8 @@
           "kind": "rust",
           "target": "runtime::services::tests::open_path"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R07-S04",
@@ -8723,7 +8732,8 @@
           "kind": "rust",
           "target": "runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid"
         }
-      ]
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R07-S07",
@@ -8971,7 +8981,7 @@
     {
       "id": "SYN-R01-S01",
       "title": "数据形状已就绪且离线边界不变",
-      "command": "node scripts/verify/checks/task-3.10.mjs",
+      "command": "node scripts/verify/checks/task-3.10.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -9006,7 +9016,7 @@
     {
       "id": "SYN-R02-S02",
       "title": "预写不产生可操作同步",
-      "command": "node scripts/verify/checks/task-3.14.mjs",
+      "command": "node scripts/verify/checks/task-3.14.mjs --static-only",
       "evidence": [
         {
           "kind": "node",
@@ -9077,7 +9087,7 @@
     {
       "id": "SYN-R05-S03",
       "title": "迁移与架构验证",
-      "command": "node scripts/verify/checks/task-3.10.mjs",
+      "command": "node scripts/verify/checks/task-3.10.mjs --static-only",
       "evidence": [
         {
           "kind": "node",

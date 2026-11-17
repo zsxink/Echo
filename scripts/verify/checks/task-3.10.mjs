@@ -12,7 +12,8 @@
 //  2. Migration runner registers 0005 (connection.rs includes SYNC_FOUNDATION
 //     in the apply_migrations list).
 //  3. core tests prove outbox prewrite + tombstone writes (the sqlite tests
-//     assert the transaction-atomic facts directly).
+//     assert the transaction-atomic facts directly). `--static-only` skips that
+//     run — the Linux workspace Test step covers it — and keeps 1–2 above.
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -60,9 +61,15 @@ if (!connection.includes("SYNC_FOUNDATION") || !connection.includes("(5, migrati
 }
 process.stdout.write("  ok: connection.rs registers 0005 as migration 5\n");
 
+const staticOnly = process.argv.includes("--static-only");
+
 // 3. Core tests assert the shape: outbox prewrite + tombstone write, without
 //    implying any network/upload behavior.
-run("cargo", ["test", "-p", "echo-core", "--all-features", "--", "sync_foundation"]);
-process.stdout.write("  ok: sync-foundation core tests pass (schema ready + outbox/tombstone shape)\n");
+if (!staticOnly) {
+  run("cargo", ["test", "-p", "echo-core", "--all-features", "--", "sync_foundation"]);
+  process.stdout.write("  ok: sync-foundation core tests pass (schema ready + outbox/tombstone shape)\n");
+} else {
+  process.stdout.write("  skip: sync_foundation cargo tests (covered by the workspace-test job)\n");
+}
 
-process.stdout.write("ok 3.10: sync-foundation data shape is ready (schema + prewrite + tombstone)\n");
+process.stdout.write(`ok 3.10: sync-foundation data shape is ready (schema + prewrite + tombstone)${staticOnly ? " (static-only)" : ""}\n`);

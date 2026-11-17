@@ -3,6 +3,9 @@
 // entry. The LAN sync change supersedes that boundary. Keep this archived
 // scenario useful by checking that the now-operable IPC surface stays typed,
 // generated from Rust, and covered by the sync runtime tests.
+//
+// `--static-only` skips the three cargo runs (the Linux workspace Test step
+// covers them) and keeps the committed-contract assertions above.
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -40,14 +43,22 @@ for (const command of ["sync_status", "host_start", "sync_now", "request_sync_pa
   }
 }
 
-run([
-  "test",
-  "-p",
-  "echo-desktop",
-  "--all-features",
-  "ipc::generate::tests::committed_generated_file_is_in_sync_with_the_generator",
-], "committed_generated_file_is_in_sync_with_the_generator");
-run(["test", "-p", "echo-desktop", "--all-features", "sync_runtime::"]);
-run(["test", "-p", "echo-core", "--all-features", "sync_payloads_carry_no_absolute_paths"]);
+const staticOnly = process.argv.includes("--static-only");
 
-process.stdout.write("ok 3.14: LAN sync IPC stays generated, typed, and covered by runtime/privacy tests\n");
+if (!staticOnly) {
+  run([
+    "test",
+    "-p",
+    "echo-desktop",
+    "--all-features",
+    "ipc::generate::tests::committed_generated_file_is_in_sync_with_the_generator",
+  ], "committed_generated_file_is_in_sync_with_the_generator");
+  run(["test", "-p", "echo-desktop", "--all-features", "sync_runtime::"]);
+  run(["test", "-p", "echo-core", "--all-features", "sync_payloads_carry_no_absolute_paths"]);
+} else {
+  process.stdout.write("  skip: sync IPC cargo tests (covered by the workspace-test job)\n");
+}
+
+process.stdout.write(
+  `ok 3.14: LAN sync IPC stays generated, typed, and covered by runtime/privacy tests${staticOnly ? " (static-only)" : ""}\n`,
+);

@@ -415,16 +415,37 @@ if (JSON.stringify(auditTriggers) !== JSON.stringify(["schedule", "workflow_disp
 }
 
 const release = step(workflow, "release-gate", "Run release gate without external artifacts");
-if (release.run !== "node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf,workspace-test,frontend-test") {
-  fail("release-gate run must use --skip-static --delegated=governance,perf,workspace-test,frontend-test");
+if (release.run !== "node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf,benchmark,workspace-test,frontend-test") {
+  fail("release-gate run must use --skip-static --delegated=governance,perf,benchmark,workspace-test,frontend-test");
 }
 
-// macos-native-gate exists only to run these two task gates (8.12/13.2 need the
-// staged dylibs). Asserting merely that the job runs unconditionally would
-// leave a permanently-green empty job if its one real step were deleted.
-const nativeGate = step(workflow, "macos-native-gate", "Verify libmpv smoke and native e2e gates");
-if (nativeGate.run !== "pnpm verify:task -- 8.12 13.2") {
-  fail("macos-native-gate run must be 'pnpm verify:task -- 8.12 13.2'");
+// The release gate carries no cargo and no pnpm test command any more: every
+// scenario it would run is a subset of the workspace/frontend suites or the
+// 50k bench task-12.5 measures in `task-gates`. Pinning the absence keeps a
+// "just re-run it here" edit from silently re-spending the compile time this
+// job was trimmed of.
+{
+  const forbidden = (workflow.jobs["release-gate"].steps || []).filter((s) => {
+    const run = String(s.run || "");
+    return /\bcargo\s+test\b/.test(run) || /\bpnpm\b.*\btest\b/.test(run);
+  });
+  if (forbidden.length) {
+    fail(`release-gate must not run cargo/pnpm test commands (delegated), found [${forbidden.map((s) => s.name).join(", ")}]`);
+  }
+  const rustSteps = (workflow.jobs["release-gate"].steps || []).filter((s) =>
+    String(s.name || "").startsWith("Install Rust toolchain") || String(s.name || "") === "Cache Rust build artifacts",
+  );
+  if (rustSteps.length) {
+    fail(`release-gate must not install/cache a Rust toolchain (it runs no cargo), found [${rustSteps.map((s) => s.name).join(", ")}]`);
+  }
+}
+
+// macos-native-gate exists only to run task-8.12 (it needs the staged dylibs).
+// Asserting merely that the job runs unconditionally would leave a
+// permanently-green empty job if its one real step were deleted.
+const nativeGate = step(workflow, "macos-native-gate", "Verify libmpv smoke gate");
+if (nativeGate.run !== "pnpm verify:task -- 8.12") {
+  fail("macos-native-gate run must be 'pnpm verify:task -- 8.12'");
 }
 if (String(nativeGate.if || "").trim() !== "") fail("macos-native-gate must not be conditionally skipped");
 

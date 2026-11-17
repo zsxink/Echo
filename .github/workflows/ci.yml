@@ -393,8 +393,8 @@ jobs:
         with:
           version: 11.18.0
 
-      - name: Verify libmpv smoke and native e2e gates
-        run: pnpm verify:task -- 8.12 13.2
+      - name: Verify libmpv smoke gate
+        run: pnpm verify:task -- 8.12
 
   windows-platform-gate:
     name: Windows platform Gate
@@ -547,28 +547,18 @@ jobs:
   # runner instances per PR. The static proof registry stays enforced by
   # `check-scenario-command-proof.mjs` inside `pnpm verify:governance`.
 
+  # The release gate is scenario reconciliation + PRD matrix + static
+  # contract checks only. Every scenario command it would run is either a
+  # subprocess subset of the Linux workspace suite / Frontend Vitest (delegated
+  # via `delegatedTo`), or the 50k bench that task-12.5 already measures and
+  # uploads from `task-gates`. Re-running them here spent ~560s per PR on a
+  # second identical execution, so this job no longer needs a Rust toolchain,
+  # the webview system packages, or the frontend build.
   release-gate:
     name: Release gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain (pinned)
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.98.1
-
-      - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: linux-workspace
-          save-if: false
-
-      - name: Install Linux webview dependencies
-        run: >-
-          sudo apt-get update && sudo apt-get install -y
-          libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
-          librsvg2-dev patchelf
 
       - uses: actions/setup-node@v4
         with:
@@ -582,8 +572,5 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build frontend for Tauri context
-        run: pnpm --dir apps/desktop build
-
       - name: Run release gate without external artifacts
-        run: node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf,workspace-test,frontend-test
+        run: node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf,benchmark,workspace-test,frontend-test

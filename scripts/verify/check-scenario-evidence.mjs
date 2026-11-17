@@ -40,7 +40,7 @@ const scenarios = scenarioCommands();
 /** Measured when the evidence registry replaced the churn ratchet. */
 const FLOORS = { scenarios: 523, evidence: 541 };
 const KINDS = new Set(["rust", "vitest", "node", "attestation"]);
-const DELEGATED_GATES = new Set(["governance", "perf", "workspace-test", "frontend-test"]);
+const DELEGATED_GATES = new Set(["governance", "perf", "benchmark", "workspace-test", "frontend-test"]);
 
 const errors = [];
 const fail = (m) => errors.push(m);
@@ -62,6 +62,16 @@ try {
   CI_GATES = new Map([
     ["governance", /\bpnpm\s+verify:governance\b/.test(ciWorkflow)],
     ["perf", /\bpnpm\s+verify:perf\b/.test(ciWorkflow)],
+    // The 50k benchmark is carried by task-12.5 in `task-gates`, which runs the
+    // same `--ignored` bench and uploads its measured artifact. Matching the
+    // task id (not a bare "cargo test") keeps a comment or an unrelated cargo
+    // step from satisfying the delegation.
+    [
+      "benchmark",
+      (workflow?.jobs?.["task-gates"]?.strategy?.matrix?.include || []).some((entry) =>
+        String(entry.tasks || "").split(/\s+/).includes("12.5"),
+      ),
+    ],
     [
       "workspace-test",
       linux?.packages === "--workspace" &&

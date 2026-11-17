@@ -10,6 +10,10 @@
 //
 // Fails (nonzero) unless the file-association drift test is green and both OS
 // open paths in the shell go through `deliver_file_opens`.
+//
+// `--static-only` skips the cargo drift test, which the Linux workspace Test
+// step already runs. The static half stays: the shell wiring below is not
+// exercised by any cargo test.
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -31,14 +35,20 @@ function run(cmd, args, what) {
   return result.stdout;
 }
 
+const staticOnly = process.argv.includes("--static-only");
+
 // 1. File-association registration covers exactly the guaranteed formats.
-const testOut = run(
-  "cargo",
-  ["test", "-p", "echo-desktop", "--lib", "--locked", "tauri_conf_file_associations_cover_the_guaranteed_formats"],
-  "file-association drift test",
-);
-if (!testOut.includes("tauri_conf_file_associations_cover_the_guaranteed_formats ... ok")) {
-  fail("file-association drift test not green");
+if (!staticOnly) {
+  const testOut = run(
+    "cargo",
+    ["test", "-p", "echo-desktop", "--lib", "--locked", "tauri_conf_file_associations_cover_the_guaranteed_formats"],
+    "file-association drift test",
+  );
+  if (!testOut.includes("tauri_conf_file_associations_cover_the_guaranteed_formats ... ok")) {
+    fail("file-association drift test not green");
+  }
+} else {
+  process.stdout.write("  skip: cargo drift test (covered by the workspace-test job)\n");
 }
 
 // 2. Both OS open paths deliver ONE batch through the FIFO router. Delivering
@@ -60,4 +70,4 @@ if (!bootstrap.includes("RunEvent::Opened") || !fileOpenGate.includes("FILE_OPEN
 }
 void main;
 
-process.stdout.write("ok 9.2: guaranteed-format file association + open-path unification\n");
+process.stdout.write(`ok 9.2: guaranteed-format file association + open-path unification${staticOnly ? " (static-only)" : ""}\n`);

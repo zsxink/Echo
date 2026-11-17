@@ -11,7 +11,9 @@
 //
 // Runs the dedicated stress/limit tests in echo-core (via the same
 // cargo-test filter the other checks use) plus the whole scan/recover test
-// block, then clippy + fmt on echo-core.
+// block. `--static-only` skips the cargo runs (the Linux workspace Test step
+// covers them) and keeps the source pins. Clippy and fmt are the Rust job's
+// concern, not this check's.
 
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
@@ -34,28 +36,34 @@ function run(command, args) {
   return `${r.stdout || ""}${r.stderr || ""}`;
 }
 
-for (const testName of [
-  "default_worker_concurrency_is_min_cpu_4",
-  "stress_scan_bounded_hashes_and_cancels_without_corrupting_songs",
-  "bounded_workers_never_exceed_the_configured_bound",
-  "input_limits_skip_assets_but_keep_song_fields",
-  "cover_cache_gc_keeps_referenced_assets",
-]) {
-  // Same single-name subprocess pattern the manifest's other check scripts
-  // use: `cargo test <filter>` returns 0 only when the filter matches (it
-  // errors with "unexpected argument" if the name doesn't exist).
-  const r = spawnSync(
-    "cargo",
-    ["test", "-p", "echo-core", "--all-features", testName],
-    { cwd: ROOT, encoding: "utf8" },
-  );
-  if (r.status !== 0) {
-    fail(`test '${testName}' exited ${r.status}\n${r.stdout}\n${r.stderr}`);
+const staticOnly = process.argv.includes("--static-only");
+
+if (!staticOnly) {
+  for (const testName of [
+    "default_worker_concurrency_is_min_cpu_4",
+    "stress_scan_bounded_hashes_and_cancels_without_corrupting_songs",
+    "bounded_workers_never_exceed_the_configured_bound",
+    "input_limits_skip_assets_but_keep_song_fields",
+    "cover_cache_gc_keeps_referenced_assets",
+  ]) {
+    // Same single-name subprocess pattern the manifest's other check scripts
+    // use: `cargo test <filter>` returns 0 only when the filter matches (it
+    // errors with "unexpected argument" if the name doesn't exist).
+    const r = spawnSync(
+      "cargo",
+      ["test", "-p", "echo-core", "--all-features", testName],
+      { cwd: ROOT, encoding: "utf8" },
+    );
+    if (r.status !== 0) {
+      fail(`test '${testName}' exited ${r.status}\n${r.stdout}\n${r.stderr}`);
+    }
+    const combined = `${r.stdout || ""}${r.stderr || ""}`;
+    if (r.stdout && !/test result: ok\. (1|[2-9]) passed/.test(combined)) {
+      fail(`test '${testName}' reported a failure\n${combined}`);
+    }
   }
-  const combined = `${r.stdout || ""}${r.stderr || ""}`;
-  if (r.stdout && !/test result: ok\. (1|[2-9]) passed/.test(combined)) {
-    fail(`test '${testName}' reported a failure\n${combined}`);
-  }
+} else {
+  process.stdout.write("  skip: worker stress cargo tests (covered by the workspace-test job)\n");
 }
 
 // The real limits must be pinned in the source (not only in tests).
@@ -72,5 +80,6 @@ if (!cover.includes("max_capacity: 256 * 1024 * 1024")) process.exit(1);
 process.stdout.write("limits pinned ok\\n");
 `]);
 
-// Clippy + fmt on echo-core (regression gate for the new stress code).
-process.stdout.write("ok 12.6: scan/hash/tag/cover worker stress verified (min(CPU,4) default, cancel-safe, input limits + cache capacity enforced)\n");
+process.stdout.write(
+  `ok 12.6: scan/hash/tag/cover worker stress verified (min(CPU,4) default, cancel-safe, input limits + cache capacity enforced)${staticOnly ? " (static-only)" : ""}\n`,
+);
