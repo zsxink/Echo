@@ -51,15 +51,14 @@ function sectionsOf(run) {
   return match ? match[1].split(",") : [];
 }
 
-// The executable task inventory is partitioned across four shards; 16.1 runs
+// The executable task inventory is partitioned across three shards; 16.1 runs
 // in the Rust Linux job because it needs the built Tauri shell. Keeping the
 // expected lists here (rather than deriving them from ci.yml) is what makes a
 // deleted or duplicated task fail instead of silently shrinking coverage.
 const EXPECTED_SHARDS = {
   core: "1.1 1.3 1.8 3.1 4.1 5.1 6.1 11.5 12.5 13.3".split(" "),
   desktop: "7.1 8.1 8.2 8.3 8.4 8.5 8.6 8.7 8.8 8.9 8.10 8.11 10.6 11.1 11.2 11.4 16.2".split(" "),
-  "frontend-a": "10.1 10.2 10.3 10.4 10.5 11.3 11.6 13.1".split(" "),
-  "frontend-b": "10.7 10.8 10.9 10.10 12.1 12.2 12.3".split(" "),
+  frontend: "10.1 10.2 10.3 10.4 10.5 11.3 11.6 13.1 10.7 10.8 10.9 10.10 12.1 12.2 12.3".split(" "),
 };
 
 // ---------------------------------------------------------------------------
@@ -354,7 +353,7 @@ if (!matrix || Object.keys(matrix).some((key) => key !== "include")) {
   fail("task-gates must use an include-only matrix");
 }
 const shards = matrix.include || [];
-if (shards.length !== 4) fail(`task-gates must have 4 shards, got ${shards.length}`);
+if (shards.length !== 3) fail(`task-gates must have 3 shards, got ${shards.length}`);
 const byShard = new Map(shards.map((entry) => [entry.shard, String(entry.tasks || "").split(/\s+/).filter(Boolean)]));
 for (const [name, expected] of Object.entries(EXPECTED_SHARDS)) {
   const actual = byShard.get(name);
