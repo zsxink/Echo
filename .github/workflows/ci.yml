@@ -276,7 +276,10 @@ jobs:
       # workspace or frontend suites. The rest of the old 42-id list was a
       # subset of one of those suites and is marked `archived: true` in the
       # manifest (with the carrying gate named in its `archivedReason`), so
-      # `run-task --all` skips it while an explicit id still runs.
+      # `run-task --all` skips them. Their scripts were removed by
+      # trim-archived-gates-and-local-artifacts; naming one of those ids now
+      # reports "no verification command registered". Task 13.2 is the
+      # exception: its script is kept as an injection-governance guard target.
       #
       # 13.1 runs in the Frontend job (built bundle + Chrome); 16.1 runs in
       # governance-static (static-only); 8.12/13.2 in the macOS native Gate
