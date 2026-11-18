@@ -35,13 +35,7 @@
       "id": "1.4",
       "title": "Module visibility rules and architecture tests",
       "archived": true,
-      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：task-1.4 只跑 echo-core 的 arch 测试二进制，无额外断言。",
-      "commands": [
-        {
-          "desc": "echo-core arch tests (layering, forbidden deps, platform cfg)",
-          "cmd": "node scripts/verify/checks/task-1.4.mjs"
-        }
-      ]
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：task-1.4 只跑 echo-core 的 arch 测试二进制，无额外断言。"
     },
     {
       "id": "1.5",
@@ -76,12 +70,6 @@
     {
       "id": "1.8",
       "title": "Unified error logging + local diagnostics directory convention with privacy tests",
-      "commands": [
-        {
-          "desc": "LOGGING.md policy, Rust + frontend privacy tests, clippy + fmt",
-          "cmd": "node scripts/verify/checks/task-1.8.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 workspace test 或 Frontend job 重复：命令中的 cargo test 是工作区测试的包子集，Vitest/typecheck 是 Frontend job 的子集，二者均已逐条覆盖。"
     },
@@ -123,85 +111,43 @@
       "id": "2.2",
       "title": "Domain entities and value objects",
       "archived": true,
-      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。",
-      "commands": [
-        {
-          "desc": "entities/media tests + clippy + fmt",
-          "cmd": "node scripts/verify/checks/task-2.2.mjs"
-        }
-      ]
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。"
     },
     {
       "id": "2.3",
       "title": "Unicode normalization and platform-safe name rules",
       "archived": true,
-      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。",
-      "commands": [
-        {
-          "desc": "text unit + property tests + clippy + fmt",
-          "cmd": "node scripts/verify/checks/task-2.3.mjs"
-        }
-      ]
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。"
     },
     {
       "id": "2.4",
       "title": "State machines (scan/root/operation/playback)",
       "archived": true,
-      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。",
-      "commands": [
-        {
-          "desc": "state unit + property tests + clippy + fmt",
-          "cmd": "node scripts/verify/checks/task-2.4.mjs"
-        }
-      ]
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。"
     },
     {
       "id": "2.5",
       "title": "Core error classification",
       "archived": true,
-      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。",
-      "commands": [
-        {
-          "desc": "error classification + path-privacy tests + clippy + fmt",
-          "cmd": "node scripts/verify/checks/task-2.5.mjs"
-        }
-      ]
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。"
     },
     {
       "id": "2.6",
       "title": "Ports (no SQLite/Tauri/mpv types)",
       "archived": true,
-      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。",
-      "commands": [
-        {
-          "desc": "ports boundary compile + clippy + fmt",
-          "cmd": "node scripts/verify/checks/task-2.6.mjs"
-        }
-      ]
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。"
     },
     {
       "id": "2.7",
       "title": "Test doubles for all ports",
       "archived": true,
-      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。",
-      "commands": [
-        {
-          "desc": "fakes (fault/trash/watcher/temp-dir) + clippy + fmt",
-          "cmd": "node scripts/verify/checks/task-2.7.mjs"
-        }
-      ]
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。"
     },
     {
       "id": "2.8",
       "title": "Stable sort, server-side cursor, playback context types",
       "archived": true,
-      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。",
-      "commands": [
-        {
-          "desc": "catalog tests (tie-break/cursor/50k IPC) + clippy + fmt",
-          "cmd": "node scripts/verify/checks/task-2.8.mjs"
-        }
-      ]
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。"
     },
     {
       "id": "3.1",
@@ -698,132 +644,66 @@
     {
       "id": "8.1",
       "title": "桌面 PlayerPort / PlayerCommand / PlayerSnapshot / PlayMode / PlayerError 与 FakePlayer",
-      "commands": [
-        {
-          "desc": "PlayerPort 契约测试在无 libmpv 下通过（player::fake 覆盖命令/快照），fmt/clippy 干净",
-          "cmd": "node scripts/verify/checks/task-8.1.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.2",
       "title": "最小 unsafe libmpv Adapter 与专用 OS 线程 actor",
-      "commands": [
-        {
-          "desc": "actor/ffi 测试（唯一句柄、有界 channel、有序销毁、generation）在无 libmpv 下通过；unsafe 隔离到 player 子树；fmt/clippy 干净",
-          "cmd": "node scripts/verify/checks/task-8.2.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.3",
       "title": "audio-only mpv 配置并禁用用户脚本、ytdl、非必要网络协议和用户配置",
-      "commands": [
-        {
-          "desc": "加固选项集（config/load-scripts/ytdl/video/vo/audio-display/osc/protocol-whitelist=file）与仅本地路径可加载测试通过",
-          "cmd": "node scripts/verify/checks/task-8.3.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.4",
       "title": "归一化 load/file-loaded/end/property/error 事件及前台 10 Hz/后台 1 Hz snapshot 节流",
-      "commands": [
-        {
-          "desc": "节流区间测试（100ms fg / 1000ms bg）、立即 discrete 事件、归一化 BackendEvent 词汇；fmt/clippy 干净",
-          "cmd": "node scripts/verify/checks/task-8.4.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.5",
       "title": "PlaybackCoordinator 视图上下文、current/history、加入队列、下一首、清空待播、错误跳过",
-      "commands": [
-        {
-          "desc": "coordinator 6 测试 + queue 9 测试：重复 SongId 独立 queueEntryId、next/clear/error skip；fmt/clippy 干净",
-          "cmd": "node scripts/verify/checks/task-8.5.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.6",
       "title": "queueEntryId 持久化 current/history/shuffle bag、三模式、>5 秒上一首回到开头",
-      "commands": [
-        {
-          "desc": "coordinator 模式/shuffle/previous 测试 + queue bag/advance 测试：不折叠、一轮不重复、切模式不丢当前项；fmt/clippy 干净",
-          "cmd": "node scripts/verify/checks/task-8.6.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.7",
       "title": "按 queueEntryId 的本轮错误集合，错误推进绕过 repeat-one、随机只选未失败项、不重试不自旋",
-      "commands": [
-        {
-          "desc": "coordinator error-skip 测试：绕过 repeat-one、每项至多一次、全部损坏停止；fmt/clippy 干净",
-          "cmd": "node scripts/verify/checks/task-8.7.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.8",
       "title": "seek/volume/mute 最近非零值与命令失败权威回滚，FakePlayer 与 actor 路径保持 UI snapshot 一致",
-      "commands": [
-        {
-          "desc": "coordinator seek/set_volume/toggle_mute 表面、actor 回滚与最近非零值、FakePlayer 镜像；fmt/clippy 干净",
-          "cmd": "node scripts/verify/checks/task-8.8.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.9",
       "title": "播放会话原子持久化与启动 paused 恢复（落盘线程 + restore/prime 命令接线）",
-      "commands": [
-        {
-          "desc": "播放会话原子持久化与启动 paused 恢复（落盘线程 + restore/prime 命令接线）",
-          "cmd": "node scripts/verify/checks/task-8.9.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.10",
       "title": "真实单调时钟累计听歌时长并幂等 RecordPlayback（生产 watcher 接线到 Core sink）",
-      "commands": [
-        {
-          "desc": "真实单调时钟累计听歌时长并幂等 RecordPlayback（生产 watcher 接线到 Core sink）",
-          "cmd": "node scripts/verify/checks/task-8.10.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
     {
       "id": "8.11",
       "title": "桌面删除协调器：快照/unload 屏障/提交/回滚接入命令层与 actor Stop 真静音",
-      "commands": [
-        {
-          "desc": "桌面删除协调器：快照/unload 屏障/提交/回滚接入命令层与 actor Stop 真静音",
-          "cmd": "node scripts/verify/checks/task-8.11.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
@@ -940,192 +820,96 @@
     {
       "id": "10.1",
       "title": "设计 token 三主题与语义收藏红不被主题覆盖",
-      "commands": [
-        {
-          "desc": "设计 token 三主题与语义收藏红不被主题覆盖",
-          "cmd": "node scripts/verify/checks/task-10.1.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "10.2",
       "title": "bridge 唯一封装与三分状态回归",
-      "commands": [
-        {
-          "desc": "bridge 唯一封装与三分状态回归",
-          "cmd": "node scripts/verify/checks/task-10.2.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "10.3",
       "title": "资料库工作区状态机（未配置/候选/只读/不可用）",
-      "commands": [
-        {
-          "desc": "资料库工作区状态机（未配置/候选/只读/不可用）",
-          "cmd": "node scripts/verify/checks/task-10.3.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "10.4",
       "title": "壳层布局与一期范围守卫（同步/全选/手动排序/编辑入口不渲染）",
-      "commands": [
-        {
-          "desc": "壳层布局与一期范围守卫（同步/全选/手动排序/编辑入口不渲染）",
-          "cmd": "node scripts/verify/checks/task-10.4.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "10.5",
       "title": "曲库视图/搜索/四排序双方向/服务端 cursor",
-      "commands": [
-        {
-          "desc": "曲库视图/搜索/四排序双方向/服务端 cursor",
-          "cmd": "node scripts/verify/checks/task-10.5.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "10.6",
       "title": "窗口化列表歌曲行、播放标识、收藏、下一首、加入播放队列和更多菜单；50,000 条只渲染视口、菜单绑定 SongId",
-      "commands": [
-        {
-          "desc": "SongMenu 组件测试通过（下一首播放→onPlayNext、加入播放队列→onEnqueue、未接线时禁用）；echo-app clippy 干净；actor SongId→path 解析并加载测试通过",
-          "cmd": "node scripts/verify/checks/task-10.6.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 workspace test 或 Frontend job 重复：命令中的 cargo test 是工作区测试的包子集，Vitest/typecheck 是 Frontend job 的子集，二者均已逐条覆盖。"
     },
     {
       "id": "10.7",
       "title": "曲库状态：加载、空曲库（含导入入口）、搜索空、部分扫描失败保留可用内容并提供重试、资料库不可用、文件 missing",
-      "commands": [
-        {
-          "desc": "SongList 状态测试（loading/empty/search-empty/failure-retry/错误不伪造空库）通过，typecheck 干净；unavailable/read-only/missing 命中 LibraryStatusView 与 SongRow",
-          "cmd": "node scripts/verify/checks/task-10.7.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "10.8",
       "title": "只读歌曲详情 + reveal + 删除确认/10 秒 undo/前滚错误状态；只展示相对路径且取消/失败不伪造删除成功",
-      "commands": [
-        {
-          "desc": "SongMenu 组件测试通过：详情仅相对路径、确认/失败/取消不伪造成功、仅成功删除出现 undo；delete_song/undo_delete/reveal_song service-layer 已实现，Tauri 注册归属 composition root",
-          "cmd": "node scripts/verify/checks/task-10.8.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "10.9",
       "title": "歌单创建/重命名/删除、选择器、多歌单成员、移除和 blocked 成员 UI；40 grapheme 校验、重复幂等、追加顺序、删除歌单不删文件",
-      "commands": [
-        {
-          "desc": "PlaylistsView + AddToPlaylistDialog 组件测试通过：40 grapheme 拒绝、rename/delete 经确认、多选 target 单命令提交；重复幂等/追加顺序/删除不删文件由 echo-core 6.6/6.7 保证",
-          "cmd": "node scripts/verify/checks/task-10.9.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "10.10",
       "title": "多选导入批次进度、逐文件结果、重复/编号/歌词部分成功和失败重试；混合批次无需重做成功项",
-      "commands": [
-        {
-          "desc": "ImportBatchDialog 组件测试通过：逐文件结果渲染（imported/duplicate/unsupported/failed/libraryUnavailable）、汇总计数、取消为真 no-op、重试不重做已导入项；核心 5.x 输出驱动",
-          "cmd": "node scripts/verify/checks/task-10.10.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "11.1",
       "title": "常驻播放栏：封面/信息/收藏、传输控制、进度、音量、模式、队列和空态；所有状态以 PlayerSnapshot 为权威",
-      "commands": [
-        {
-          "desc": "playerStore 由 player://snapshot 事件驱动（startPlayerEvents 订阅→publish，不伪造）测试通过；runtime::player::map_snapshot 映射（含 currentSongId/currentTitle）测试通过；echo-app clippy 干净",
-          "cmd": "node scripts/verify/checks/task-11.1.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 workspace test 或 Frontend job 重复：命令中的 cargo test 是工作区测试的包子集，Vitest/typecheck 是 Frontend job 的子集，二者均已逐条覆盖。"
     },
     {
       "id": "11.2",
       "title": "播放队列面板：blocked/错误项、下一首/追加/清空待播和浏览曲库空态；清空不停止当前歌曲且不改变歌单/资料库",
-      "commands": [
-        {
-          "desc": "UI snapshot 携带完整队列（UiQueueEntry 含 entryId/songId/title/isCurrent/failed），map_snapshot 映射测试通过；QueuePanel 渲染当前+待播/失败项、清空待播仅发 clearPending、空态浏览曲库；echo-app typecheck + QueuePanel 测试 + echo-desktop runtime::player 测试 + clippy 通过",
-          "cmd": "node scripts/verify/checks/task-11.2.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 workspace test 或 Frontend job 重复：命令中的 cargo test 是工作区测试的包子集，Vitest/typecheck 是 Frontend job 的子集，二者均已逐条覆盖。"
     },
     {
       "id": "11.3",
       "title": "沉浸式播放器：黑胶封面、歌曲元信息、展开/收起和曲目切换不退出的沉浸式播放器；宽屏/窄屏和无封面占位",
-      "commands": [
-        {
-          "desc": "ImmersivePlayer 组件：黑胶视觉（无封面占位）、从 song_detail 权威取元信息（不伪造）、展开/收起仅切 UI 态不停止播放、切歌保持沉浸不闪回；playerStore 增 immersiveOpen；echo-app typecheck + ImmersivePlayer 测试 + clippy 通过",
-          "cmd": "node scripts/verify/checks/task-11.3.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 workspace test 或 Frontend job 重复：命令中的 cargo test 是工作区测试的包子集，Vitest/typecheck 是 Frontend job 的子集，二者均已逐条覆盖。"
     },
     {
       "id": "11.4",
       "title": "同步歌词当前行、seek 后定位、点击行 seek、乱序/越界处理和 UI 进度插值；真实 mpv 快照与歌词行一致",
-      "commands": [
-        {
-          "desc": "GetSongLyrics 用例（source 沿用领域 select_effective_lyrics，乱序/越界由 4.5 LRC parser 预排序/过滤）测试通过；get_lyrics command + IPC DTO 漂移锁通过；ImmersivePlayer 按权威 snapshot position 高亮当前行（二分查找 + 插值）、点击行发 seek（tests 验证 12s→{position:12}）；typecheck + clippy 通过",
-          "cmd": "node scripts/verify/checks/task-11.4.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 workspace test 或 Frontend job 重复：命令中的 cargo test 是工作区测试的包子集，Vitest/typecheck 是 Frontend job 的子集，二者均已逐条覆盖。"
     },
     {
       "id": "11.5",
       "title": "纯文本歌词、无歌词和来源错误/回退状态；验证切歌立即清除上一首残留且不伪造纯文本当前行",
-      "commands": [
-        {
-          "desc": "ImmersivePlayer：纯文本歌词以静态列表展示（无当前行指示、不自动 seek）；无歌词显示“暂无歌词”空态；来源标签（内嵌歌词/LRC 侧车文件/覆盖层）展示；切歌经 key remount 立即清残留；损坏高优先级回退由 Core select_effective_lyrics（4.5）保证。verify:task 11.5 通过",
-          "cmd": "node scripts/verify/checks/task-11.5.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 workspace test 或 Frontend job 重复：命令中的 cargo test 是工作区测试的包子集，Vitest/typecheck 是 Frontend job 的子集，二者均已逐条覆盖。"
     },
     {
       "id": "11.6",
       "title": "歌词专注模式、手动滚动暂停 5 秒、“回到当前行”和队列覆盖；验证播放控制不中断且 Escape 只关闭最上层",
-      "commands": [
-        {
-          "desc": "LyricsFocus 专注覆盖层（隐藏黑胶/元信息、歌词为主阅读区、保留进度+最小播放控制）；Escape 仅关专注不关沉浸播放器；专注内播放/下一首不退出；“回到当前行”恢复自动跟随（手动滚动暂停 5s 计时 + 按钮）。playerStore 增 focusOpen；verify:task 11.6 通过（ImmersivePlayer 专注测试 + typecheck + clippy）",
-          "cmd": "node scripts/verify/checks/task-11.6.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 workspace test 或 Frontend job 重复：命令中的 cargo test 是工作区测试的包子集，Vitest/typecheck 是 Frontend job 的子集，二者均已逐条覆盖。"
     },
@@ -1152,36 +936,18 @@
     {
       "id": "12.1",
       "title": "单一 Overlay Manager、焦点陷阱/恢复、roving menu 和既定 Escape 栈；覆盖对话框→设置/歌单→菜单/队列→歌词专注→沉浸→侧栏",
-      "commands": [
-        {
-          "desc": "单个浮层栈按优先级一次只关闭最上层（阻断确认→选择器→菜单/队列→歌词专注→沉浸→窄屏侧边栏）；打开移焦入内容、关闭回触发控件；Tab 困在浮层内；role=menu 走 roving 焦点。verify:task 12.1 通过（overlays.test.tsx + typecheck + echo-app clippy）",
-          "cmd": "node scripts/verify/checks/task-12.1.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "12.2",
       "title": "Tab/Shift+Tab/Enter/Space/方向键/Home/End 全键盘路径和 screen reader 名称/状态；Testing Library + axe 无阻断可访问性问题",
-      "commands": [
-        {
-          "desc": "Testing Library 键盘路径测试（导航/搜索/设置可达、Enter 激活、歌曲菜单 roving 焦点可达）+ axe 全壳扫描无 critical/serious 阻断（修正歌曲行 role=option→listitem 以消除 option 含可聚焦后代的违反）；typecheck + lint + echo-app clippy。verify:task 12.2 通过",
-          "cmd": "node scripts/verify/checks/task-12.2.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
     {
       "id": "12.3",
       "title": "760px 窄屏侧边栏/遮罩、次要列收敛和沉浸布局；resize 不丢视图、搜索、焦点或播放状态",
-      "commands": [
-        {
-          "desc": "窄屏侧边栏菜单按钮开合 + 遮罩、关闭回焦点到触发控件；次要列（艺人/专辑/时长）760px 收敛、触发按钮避让工具栏、搜索换行保留；resize/开合不丢当前视图、搜索文本或播放快照。verify:task 12.3 通过（narrow.test.tsx + typecheck + echo-app clippy）",
-          "cmd": "node scripts/verify/checks/task-12.3.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 Frontend job 的完整 Vitest/typecheck/lint 重复：命令是同一套件的文件子集，Frontend job 已逐条覆盖。"
     },
@@ -1249,7 +1015,7 @@
       "id": "13.2",
       "title": "macOS native e2e（真实壳 + Gate dialogs）",
       "archived": true,
-      "archivedReason": "与 workspace test 重复：native_e2e 的 driver 是 host-agnostic（无 cfg(target_os) 分支，DesktopTrash::default() 直接返回 Unavailable 不触达 OS），其 native_loop_and_restart_preserve_relationships 与 player::coordinator::tests:: 的 45 个用例都由 Linux 的 cargo test --workspace --all-targets --all-features 执行（实测 run 44074127969 日志逐条 ... ok）。删掉这一步省 42s（几乎全是 macOS 上编译 native_e2e 测试目标的时间）。",
+      "archivedReason": "与 workspace test 重复：native_e2e 的 driver 是 host-agnostic（无 cfg(target_os) 分支，DesktopTrash::default() 直接返回 Unavailable 不触达 OS），其 native_loop_and_restart_preserve_relationships 与 player::coordinator::tests:: 的 45 个用例都由 Linux 的 cargo test --workspace --all-targets --all-features 执行（实测 run 44074127969 日志逐条 ... ok）。删掉这一步省 42s（几乎全是 macOS 上编译 native_e2e 测试目标的时间）。（例外：该脚本仍被 scripts/verify/injection-governance.mjs:230-236 作为防回归 guard 引用，故随其他 archived 门禁清理保留，不删除。）",
       "commands": [
         {
           "desc": "macOS native e2e（真实壳 + Gate dialogs）",
@@ -1271,13 +1037,7 @@
       "id": "13.6",
       "title": "完整质量门：cargo fmt/clippy/test 与 pnpm format/lint/typecheck/test/build 全通过后才进入候选打包",
       "archived": true,
-      "archivedReason": "逐条等于 ci.yml 的 Rust job（fmt/clippy/test）与 Frontend job（format:check/lint/typecheck/test/build），无任何额外断言；发布路径由 release.yml 的构建步骤承担。",
-      "commands": [
-        {
-          "desc": "cargo fmt --all --check && clippy --workspace --all-targets --all-features -D warnings && cargo test --workspace --all-features；以及 pnpm format:check/lint/typecheck/test/build",
-          "cmd": "node scripts/verify/checks/task-13.6.mjs"
-        }
-      ]
+      "archivedReason": "逐条等于 ci.yml 的 Rust job（fmt/clippy/test）与 Frontend job（format:check/lint/typecheck/test/build），无任何额外断言；发布路径由 release.yml 的构建步骤承担。"
     },
     {
       "id": "13.8",
@@ -1454,12 +1214,6 @@
     {
       "id": "16.2",
       "title": "每次加载尝试先重置进度事实（normalize-os-file-open-paths）",
-      "commands": [
-        {
-          "desc": "begin_load is the single reset entry point; three Failed entry points and the Loading snapshot carry no stale progress",
-          "cmd": "node scripts/verify/checks/task-16.2.mjs"
-        }
-      ],
       "archived": true,
       "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-desktop 的模块子集，工作区门已逐条覆盖。"
     },
