@@ -46,6 +46,14 @@ struct Store {
     remote_delete_isolations: BTreeMap<(LibraryRootId, OperationId), RemoteDeleteIsolation>,
     finished_isolations: BTreeSet<(LibraryRootId, OperationId)>,
     fail_root_isolation: bool,
+    /// Fail song-projection reads (crash-injection point for a projection
+    /// read that is not "no rows"). `Some(n)` fails the n-th read onward, so
+    /// a caller that already reads songs earlier in its own path can be
+    /// exercised at the *later* read.
+    fail_song_reads: Option<usize>,
+    /// Number of `all_in_root` calls so far (lets a test find the read it
+    /// wants to break without hard-coding the caller's read count).
+    song_reads: usize,
     outbox_revisions: BTreeMap<(String, String), i64>,
     object_hlcs: BTreeMap<(String, String), HybridLogicalClock>,
     device_id: DeviceId,
@@ -97,6 +105,20 @@ impl MemoryDatabase {
     /// the trash unknown-outcome atomicity boundary).
     pub fn set_fail_root_isolation(&self, fail: bool) {
         self.lock().fail_root_isolation = fail;
+    }
+
+    /// Fail song-projection reads (`all_in_root`) from the `from`-th read
+    /// onward (0-based, counted across the whole store lifetime). A caller
+    /// that treats a read failure as "no rows" can be told apart from one that
+    /// propagates it, and a caller that reads songs earlier in its own path can
+    /// be exercised at the *later* read.
+    pub fn set_fail_song_reads_from(&self, from: usize) {
+        self.lock().fail_song_reads = Some(from);
+    }
+
+    /// How many `all_in_root` reads have been served so far.
+    pub fn song_reads(&self) -> usize {
+        self.lock().song_reads
     }
 
     /// All songs (assertion helper).

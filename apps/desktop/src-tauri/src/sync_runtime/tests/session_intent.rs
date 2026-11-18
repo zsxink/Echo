@@ -54,7 +54,7 @@ impl SyncProvisioner for IntentProvisioner {
     fn complete_peer_pairing(
         &self,
         _: LibraryRootId,
-        _: &PairingInvitation,
+        _: &PairingHostDescriptor,
         _: &str,
         _: &PairingGrantDto,
     ) -> Result<(), SyncRuntimeError> {

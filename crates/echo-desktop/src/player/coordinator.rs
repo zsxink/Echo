@@ -17,6 +17,7 @@
 //! platform layer and just answers "what is current / what is next".
 
 use echo_core::domain::ids::{PlaybackSessionId, QueueEntryId, SongId};
+use echo_core::error::Error;
 
 use super::port::{PlayMode, PlayerCommand, PlayerPort, PlayerSnapshot};
 use super::queue::{Queue, QueueEntry, QueueItem, QueueRevision, TemporaryItem, ViewContext};
@@ -180,27 +181,35 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
 
     /// Start playback of a view context: build the queue, set the selected
     /// song current, and load it immediately.
-    /// # Panics
     ///
-    /// Panics only if queue construction violates the `ViewContext` invariant
-    /// that the chosen song becomes the current queue entry.
-    pub fn play_context(&mut self, ctx: &ViewContext) {
+    /// # Errors
+    ///
+    /// Returns [`Error::Conflict`] when the view context has no songs (the UI
+    /// asked to play an empty view) and [`Error::InvariantViolation`] if the
+    /// built queue does not make the selected song current. Neither is a
+    /// reason to index into the song list or panic: the context comes from a
+    /// live view, which can be empty.
+    pub fn play_context(&mut self, ctx: &ViewContext) -> Result<(), Error> {
         // The coordinator derives the queue from the server-resolved songs; the
         // selected song becomes current.
-        let selected = ctx.selected_index.min(ctx.songs.len().saturating_sub(1));
-        let song = ctx.songs[selected];
-        self.replace_queue(ctx.build_queue());
+        let Some(song) = ctx.selected_song() else {
+            return Err(Error::conflict("view context has no songs to play"));
+        };
+        let queue = ctx.build_queue();
+        let Some(current_id) = queue.current_id() else {
+            return Err(Error::invariant(
+                "view context did not yield a current queue entry",
+            ));
+        };
+        self.replace_queue(queue);
         self.failed_round.clear(); // fresh session: retry previously-failed files
                                    // The cleared failed round changes the per-entry "failed" flags, which
                                    // are part of the projection the UI renders.
         self.queue.bump_revision();
-        let current_id = self
-            .queue
-            .current_id()
-            .expect("view context always yields a current entry");
         self.load_entry(current_id, song);
         // The user's mode persists across context switches (设计: 记忆播放模式) —
         // a new context never resets it.
+        Ok(())
     }
 
     /// Cold-start priming (设计: 有歌时默认入栏，不发声): build the queue from
@@ -208,40 +217,54 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
     /// selected song **paused** — the file is decoded so the player bar shows
     /// real metadata/duration, and no sound is ever produced until the user
     /// presses play.
-    pub fn play_context_paused(&mut self, ctx: &ViewContext) {
-        let selected = ctx.selected_index.min(ctx.songs.len().saturating_sub(1));
-        let song = ctx.songs[selected];
-        self.replace_queue(ctx.build_queue());
+    ///
+    /// # Errors
+    ///
+    /// Same categories as [`Self::play_context`].
+    pub fn play_context_paused(&mut self, ctx: &ViewContext) -> Result<(), Error> {
+        let Some(song) = ctx.selected_song() else {
+            return Err(Error::conflict("view context has no songs to prime"));
+        };
+        let queue = ctx.build_queue();
+        let Some(current_id) = queue.current_id() else {
+            return Err(Error::invariant(
+                "view context did not yield a current queue entry",
+            ));
+        };
+        self.replace_queue(queue);
         self.failed_round.clear();
         self.queue.bump_revision();
-        if let Some(current_id) = self.queue.current_id() {
-            let session = self.new_load_session(current_id);
-            self.player
-                .send(PlayerCommand::LoadLibrarySongPaused {
-                    song_id: song,
-                    session_id: session,
-                })
-                .ok();
-        }
+        let session = self.new_load_session(current_id);
+        self.player
+            .send(PlayerCommand::LoadLibrarySongPaused {
+                song_id: song,
+                session_id: session,
+            })
+            .ok();
+        Ok(())
     }
 
     /// Prime a new context while preserving restored playback settings. This
     /// is used when a persisted current entry is gone or after the first
     /// successful library import; it must remain paused and must not be
     /// treated as a user-initiated play action.
+    ///
+    /// # Errors
+    ///
+    /// Propagates [`Self::play_context_paused`]'s errors.
     pub fn prime_context_paused(
         &mut self,
         ctx: &ViewContext,
         mode: PlayMode,
         volume: f64,
         muted: bool,
-    ) {
+    ) -> Result<(), Error> {
         self.mode = mode;
         self.queue.bump_revision();
         self.player.send(PlayerCommand::SetMode(mode)).ok();
         self.player.send(PlayerCommand::SetVolume(volume)).ok();
         self.player.send(PlayerCommand::SetMute(muted)).ok();
-        self.play_context_paused(ctx);
+        self.play_context_paused(ctx)
     }
 
     /// Apply a restored playback session (task 8.9, 冷启动恢复): adopt the
@@ -861,6 +884,10 @@ pub struct TemporaryPlay {
 #[cfg(test)]
 #[path = "coordinator/tests_opened_files.rs"]
 mod tests_opened_files;
+
+#[cfg(test)]
+#[path = "coordinator/tests_view_context.rs"]
+mod tests_view_context;
 
 #[cfg(test)]
 mod tests;

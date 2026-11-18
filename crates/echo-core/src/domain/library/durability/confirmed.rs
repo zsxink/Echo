@@ -1,7 +1,7 @@
 //! Complete confirmation evidence; validating it does not authorize a session.
 use super::{state::encode, valid_digest, StateKey, StateNamespace, StateTarget};
 use crate::domain::sync::ObjectKey;
-use crate::domain::sync::{DeviceId, MutationCandidate, MutationId, SyncBinding};
+use crate::domain::sync::{DeviceId, MutationCandidate, MutationId, SyncBinding, PROTOCOL_VERSION};
 use crate::error::Error;
 use serde::Deserialize;
 use serde_json::Value;
@@ -151,7 +151,7 @@ pub(super) fn validate(key: &StateKey, payload: &Value) -> Result<(), Error> {
         .map_err(|_| Error::conflict("confirmation body is too large"))?;
     let mut hash = blake3::Hasher::new();
     hash.update(b"echo.lan.commit.v1\0");
-    hash.update(&1u16.to_be_bytes());
+    hash.update(&PROTOCOL_VERSION.to_be_bytes());
     hash.update(&fact.sequence.to_be_bytes());
     hash.update(&body.previous_digest);
     hash.update(&length.to_be_bytes());
@@ -160,12 +160,12 @@ pub(super) fn validate(key: &StateKey, payload: &Value) -> Result<(), Error> {
         != (StateTarget::Confirmed {
             object: mutation.object,
         })
-        || body.protocol_version != 1
+        || body.protocol_version != PROTOCOL_VERSION
         || body.binding != binding
         || raw
             .pointer("/mutation/protocol_version")
             .and_then(Value::as_u64)
-            != Some(1)
+            != Some(u64::from(PROTOCOL_VERSION))
         || raw.pointer("/mutation/binding") != Some(&serde_json::to_value(binding).map_err(encode)?)
         || fact.sequence == 0
         || body.commit_seq != fact.sequence

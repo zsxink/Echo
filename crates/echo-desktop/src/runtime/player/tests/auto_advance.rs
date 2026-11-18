@@ -17,10 +17,12 @@ fn auto_advance_loads_the_next_track_when_a_song_naturally_ends() {
     let s2 = SongId::new();
     {
         let mut coord = coordinator.lock().expect("coordinator lock");
-        coord.play_context(&ViewContext {
-            songs: vec![s1, s2],
-            selected_index: 0,
-        });
+        coord
+            .play_context(&ViewContext {
+                songs: vec![s1, s2],
+                selected_index: 0,
+            })
+            .unwrap();
     }
     assert_eq!(fake.last_loaded_song(), Some(s1));
 
@@ -52,10 +54,12 @@ fn auto_advance_does_not_double_advance_on_a_duplicate_ended_publish() {
     let s2 = SongId::new();
     {
         let mut coord = coordinator.lock().expect("coordinator lock");
-        coord.play_context(&ViewContext {
-            songs: vec![s1, s2],
-            selected_index: 0,
-        });
+        coord
+            .play_context(&ViewContext {
+                songs: vec![s1, s2],
+                selected_index: 0,
+            })
+            .unwrap();
     }
     fake.set_state(PlaybackState::Ended);
     fake.set_state(PlaybackState::Ended); // duplicate publish of the same end

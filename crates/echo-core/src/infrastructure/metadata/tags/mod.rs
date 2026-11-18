@@ -261,13 +261,21 @@ fn enrich_mp4_metadata(content: &[u8], limits: &InputLimits, parsed: &mut Parsed
     }
 }
 
+/// How deep the `udta` walk descends. Real files nest `udta` → `meta` →
+/// `ilst` (1–3 levels); a crafted file can nest thousands of atoms, and an
+/// unbounded recursion turns that into stack exhaustion — a process abort
+/// instead of a diagnosable read. Past this depth the walk simply stops: the
+/// content is not decodable as more tags anyway, which matches the existing
+/// "unparsable content never interrupts the scan" rule.
+const MAX_UDTA_DEPTH: u8 = 8;
+
 fn read_quicktime_udta_tags(content: &[u8], limits: &InputLimits, parsed: &mut ParsedMetadata) {
     let mut offset = 0;
     while let Some((atom_type, payload_start, payload_end, next)) =
         quicktime_atom(content, offset, content.len())
     {
         if atom_type == *b"moov" {
-            walk_quicktime_udta(content, payload_start, payload_end, limits, parsed);
+            walk_quicktime_udta(content, payload_start, payload_end, limits, parsed, 0);
         }
         offset = next;
     }
@@ -279,13 +287,24 @@ fn walk_quicktime_udta(
     end: usize,
     limits: &InputLimits,
     parsed: &mut ParsedMetadata,
+    depth: u8,
 ) {
+    if depth >= MAX_UDTA_DEPTH {
+        return;
+    }
     let mut offset = start;
     while let Some((atom_type, payload_start, payload_end, next)) =
         quicktime_atom(content, offset, end)
     {
         if atom_type == *b"udta" {
-            walk_quicktime_udta(content, payload_start, payload_end, limits, parsed);
+            walk_quicktime_udta(
+                content,
+                payload_start,
+                payload_end,
+                limits,
+                parsed,
+                depth + 1,
+            );
         } else if let Some(value) = quicktime_text(content, payload_start, payload_end) {
             match atom_type {
                 [0xA9, b'n', b'a', b'm'] if parsed.title.is_none() => {

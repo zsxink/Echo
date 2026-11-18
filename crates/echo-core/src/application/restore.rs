@@ -100,7 +100,9 @@ impl<'a> RestoreLibrary<'a> {
             None => continuation,
         };
         let projection = continuation.run(root)?.projection;
-        let snapshot = self.deps.songs.all_in_root(root).unwrap_or_default();
+        // A failed projection read is not "no records": degrading to an empty
+        // snapshot would reject every record and report a successful restore.
+        let snapshot = self.deps.songs.all_in_root(root)?;
         let mut planner = RelinkPlanner::new(snapshot);
         let projected = projection.songs;
 
@@ -409,5 +411,58 @@ mod tests {
         );
         let error = restore.run(fixture.root).expect_err("conflicting id");
         assert_eq!(error.code(), "conflict");
+    }
+
+    /// `LD-R06-S03` / LD-06: a storage failure while reading the existing
+    /// projection is not "no records". The restore must fail with a
+    /// diagnosable error instead of continuing with an empty snapshot — which
+    /// would report every record as rejected.
+    #[test]
+    fn restore_propagates_a_projection_read_failure() {
+        // Learn which read is the snapshot read: the continuation reads songs
+        // a few times before it, so a plain "fail every read" injection would
+        // be satisfied by the continuation's own propagation and never reach
+        // the snapshot at `RestoreLibrary::run`.
+        let clean = fixture_with_one_record();
+        RestoreLibrary::new(clean.deps.as_ref(), None)
+            .run(clean.root)
+            .expect("clean restore");
+        let reads = clean.database.song_reads();
+        assert!(
+            reads >= 2,
+            "expected a projection read plus the snapshot read"
+        );
+
+        let fixture = fixture_with_one_record();
+        // Break only the last read of the run — the snapshot read.
+        fixture.database.set_fail_song_reads_from(reads - 1);
+
+        let restore = RestoreLibrary::new(fixture.deps.as_ref(), None);
+        let error = restore
+            .run(fixture.root)
+            .expect_err("read failure propagates");
+
+        assert_eq!(
+            error.code(),
+            "storage",
+            "a projection read failure is a storage error, not an empty library: {error}"
+        );
+    }
+
+    /// A fixture with one seeded portable song record and a compatible manifest.
+    fn fixture_with_one_record() -> ScanFixture {
+        let fixture = ScanFixture::new();
+        seed_song_record(&fixture, uuid::Uuid::new_v4());
+        fixture
+            .control
+            .write_manifest(
+                fixture.root,
+                &LibraryManifest::new(
+                    LibraryId::from_uuid(uuid::Uuid::new_v4()),
+                    "0.1.0".to_owned(),
+                ),
+            )
+            .expect("write manifest");
+        fixture
     }
 }

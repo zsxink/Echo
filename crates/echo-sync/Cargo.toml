@@ -17,8 +17,14 @@ discovery = ["dep:mdns-sd", "dep:tracing"]
 [dependencies]
 echo-core = { path = "../echo-core" }
 blake3 = { workspace = true }
+getrandom = { workspace = true }
+pakery-core = { workspace = true }
+pakery-crypto = { workspace = true }
+pakery-spake2 = { workspace = true }
+rand_core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+subtle = { workspace = true }
 axum = { workspace = true, optional = true }
 hyper = { workspace = true, optional = true }
 hyper-util = { workspace = true, optional = true }

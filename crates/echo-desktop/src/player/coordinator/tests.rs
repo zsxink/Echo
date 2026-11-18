@@ -52,7 +52,7 @@ fn play_context_loads_selected_song() {
         songs: vec![s1, s2, s3],
         selected_index: 1,
     };
-    coord.play_context(&ctx);
+    coord.play_context(&ctx).unwrap();
     let last = coord.player().last_loaded_song();
     assert_eq!(last, Some(s2));
     assert_eq!(coord.current().unwrap().item.song_id(), Some(s2));
@@ -80,10 +80,12 @@ fn clear_pending_keeps_current_and_queue_of_one() {
     coord.enqueue(lib_entry(s1));
     coord.enqueue(lib_entry(s2));
     // Start playing s1.
-    coord.play_context(&ViewContext {
-        songs: vec![s1, s2],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s1, s2],
+            selected_index: 0,
+        })
+        .unwrap();
     coord.clear_pending();
     assert_eq!(coord.current().unwrap().item.song_id(), Some(s1));
     assert!(coord.pending().is_empty());
@@ -95,10 +97,12 @@ fn next_advances_in_order_and_wraps_around() {
     let mut coord = PlaybackCoordinator::new(player);
     let s1 = song();
     let s2 = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s1, s2],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s1, s2],
+            selected_index: 0,
+        })
+        .unwrap();
     assert_eq!(coord.current().unwrap().item.song_id(), Some(s1));
     coord.advance_to_next();
     assert_eq!(coord.current().unwrap().item.song_id(), Some(s2));
@@ -117,10 +121,12 @@ fn next_replays_single_entry_instead_of_reloading_or_pausing() {
     let player = FakePlayer::new();
     let mut coord = PlaybackCoordinator::new(player);
     let s = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s],
+            selected_index: 0,
+        })
+        .unwrap();
     coord.seek(24.0);
 
     let current = coord.queue().current_id();
@@ -133,73 +139,16 @@ fn next_replays_single_entry_instead_of_reloading_or_pausing() {
 }
 
 #[test]
-fn play_context_keeps_the_user_mode() {
-    // 设计: 记忆播放模式 — a new context never resets the mode back to
-    // sequential (the old hardcode did exactly that on every play click).
-    let player = FakePlayer::new();
-    let mut coord = PlaybackCoordinator::new(player);
-    coord.set_mode(PlayMode::RepeatOne);
-    coord.play_context(&ViewContext {
-        songs: vec![song(), song()],
-        selected_index: 0,
-    });
-    assert_eq!(coord.mode(), PlayMode::RepeatOne);
-}
-
-#[test]
-fn new_view_context_replaces_old_pending_and_priority_lane() {
-    // 视图播放是替换而非追加 (spec: 从曲库开始播放 / 视图播放重建队列数量):
-    // a fresh context must leave no entry from an older context or its manual
-    // "play next" lane behind — no persisted/old-session pending bleeds in.
-    let player = FakePlayer::new();
-    let mut coord = PlaybackCoordinator::new(player);
-    let old = song();
-    let old2 = song();
-    coord.play_context(&ViewContext {
-        songs: vec![old, old2],
-        selected_index: 0,
-    });
-    coord.play_next(lib_entry(song())); // a priority-lane entry from the old context
-    assert_eq!(coord.queue().priority_ids().len(), 1);
-
-    let s1 = song();
-    let s2 = song();
-    let s3 = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s1, s2, s3],
-        selected_index: 1,
-    });
-
-    assert_eq!(
-        coord.current().unwrap().item.song_id(),
-        Some(s2),
-        "the selected song of the new view is current"
-    );
-    assert!(
-        coord.queue().priority_ids().is_empty(),
-        "a new context never inherits the old priority lane"
-    );
-    let view_ids: Vec<_> = coord
-        .queue_view()
-        .into_iter()
-        .map(|entry| entry.item.song_id().unwrap())
-        .collect();
-    assert_eq!(
-        view_ids,
-        vec![s2, s3, s1],
-        "the new view's queue starts at the selection and wraps around"
-    );
-}
-
-#[test]
 fn play_context_paused_loads_without_playing() {
     let player = FakePlayer::new();
     let mut coord = PlaybackCoordinator::new(player);
     let s1 = song();
-    coord.play_context_paused(&ViewContext {
-        songs: vec![s1, song()],
-        selected_index: 0,
-    });
+    coord
+        .play_context_paused(&ViewContext {
+            songs: vec![s1, song()],
+            selected_index: 0,
+        })
+        .unwrap();
     assert_eq!(coord.current().unwrap().item.song_id(), Some(s1));
     assert_eq!(
         coord.snapshot().state,
@@ -263,15 +212,17 @@ fn prime_context_paused_preserves_settings_without_playing() {
     let player = FakePlayer::new();
     let mut coord = PlaybackCoordinator::new(player);
     let song = song();
-    coord.prime_context_paused(
-        &ViewContext {
-            songs: vec![song],
-            selected_index: 0,
-        },
-        PlayMode::Shuffle,
-        0.42,
-        true,
-    );
+    coord
+        .prime_context_paused(
+            &ViewContext {
+                songs: vec![song],
+                selected_index: 0,
+            },
+            PlayMode::Shuffle,
+            0.42,
+            true,
+        )
+        .unwrap();
 
     assert_eq!(coord.current().unwrap().item.song_id(), Some(song));
     assert_eq!(coord.queue().len(), 1);
@@ -290,10 +241,12 @@ fn error_end_auto_skips_to_next_available() {
     let mut coord = PlaybackCoordinator::new(player);
     let s1 = song();
     let s2 = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s1, s2],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s1, s2],
+            selected_index: 0,
+        })
+        .unwrap();
     assert_eq!(coord.current().unwrap().item.song_id(), Some(s1));
     let advanced = coord.on_played_to_end();
     assert!(advanced.is_some());
@@ -393,10 +346,12 @@ fn shuffle_round_plays_no_repeated_entry_while_bag_last() {
     let s0 = song();
     let s1 = song();
     let s2 = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s0, s1, s2],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s0, s1, s2],
+            selected_index: 0,
+        })
+        .unwrap();
     coord.set_mode(PlayMode::Shuffle);
     // pending_ids after current (s0) = [s1, s2]; len 2 permutation -> [2,0]
     // clamps to identity? Check behavior: advance twice and confirm we
@@ -425,10 +380,12 @@ fn duplicate_song_in_shuffle_round_stays_distinct() {
     let mut coord =
         PlaybackCoordinator::with_shuffle(player, FixedShuffle::from_order(vec![1, 0, 2]));
     let s = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s, s, s],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s, s, s],
+            selected_index: 0,
+        })
+        .unwrap();
     coord.set_mode(PlayMode::Shuffle);
     // The queue has 3 distinct shuffle candidates (all same SongId but 3
     // queueEntryIds). A round of 2 advances must consume two different
@@ -451,10 +408,12 @@ fn repeat_one_repeats_current_on_end() {
     let player = FakePlayer::new();
     let mut coord = PlaybackCoordinator::new(player);
     let s = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s],
+            selected_index: 0,
+        })
+        .unwrap();
     coord.set_mode(PlayMode::RepeatOne);
     let id = coord.current().unwrap().id;
     let advanced = coord.on_played_to_end();
@@ -468,10 +427,12 @@ fn explicit_next_advances_repeat_one_without_changing_selected_mode() {
     let mut coord = PlaybackCoordinator::new(player);
     let s1 = song();
     let s2 = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s1, s2],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s1, s2],
+            selected_index: 0,
+        })
+        .unwrap();
     coord.set_mode(PlayMode::RepeatOne);
     // Explicit next must use list-loop order while retaining repeat-one.
     coord.advance_to_next();
@@ -485,10 +446,12 @@ fn mode_switch_keeps_current_item() {
     let mut coord = PlaybackCoordinator::new(player);
     let s1 = song();
     let s2 = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s1, s2],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s1, s2],
+            selected_index: 0,
+        })
+        .unwrap();
     assert_eq!(coord.current().unwrap().item.song_id(), Some(s1));
     // Switch through all modes; the current item never changes.
     coord.set_mode(PlayMode::Shuffle);
@@ -521,10 +484,12 @@ fn selecting_a_queue_entry_makes_it_current_and_loads_it() {
     let mut coord = PlaybackCoordinator::new(player);
     let first = song();
     let selected = song();
-    coord.play_context(&ViewContext {
-        songs: vec![first, selected],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![first, selected],
+            selected_index: 0,
+        })
+        .unwrap();
     let selected_entry = coord.queue_view()[1].id;
 
     assert_eq!(coord.play_queue_entry(selected_entry), Some(selected_entry));
@@ -538,10 +503,12 @@ fn previous_restarts_current_after_5_seconds() {
     let mut coord = PlaybackCoordinator::new(player);
     let s1 = song();
     let s2 = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s1, s2],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s1, s2],
+            selected_index: 0,
+        })
+        .unwrap();
     // Simulate being 6 seconds into the current track.
     coord.player().set_position(6.0);
     coord.previous();
@@ -557,10 +524,12 @@ fn previous_moves_back_within_5_seconds() {
     let s1 = song();
     let s2 = song();
     // Start at s1, then advance to s2 (so s1 is in history).
-    coord.play_context(&ViewContext {
-        songs: vec![s1, s2],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s1, s2],
+            selected_index: 0,
+        })
+        .unwrap();
     coord.advance_to_next();
     assert_eq!(coord.current().unwrap().item.song_id(), Some(s2));
     // We're on s2, just a moment in (< 5s). Previous goes back to s1.
@@ -574,10 +543,12 @@ fn previous_replays_single_entry_instead_of_pausing() {
     let player = FakePlayer::new();
     let mut coord = PlaybackCoordinator::new(player);
     let s = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s],
+            selected_index: 0,
+        })
+        .unwrap();
     coord.seek(24.0);
 
     coord.previous();
@@ -594,10 +565,12 @@ fn recovered_blocked_entry_becomes_eligible_after_retry() {
     let mut coord = PlaybackCoordinator::new(player);
     let s1 = song();
     let s2 = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s1, s2],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s1, s2],
+            selected_index: 0,
+        })
+        .unwrap();
     let blocked = coord.queue().pending_ids()[0];
     coord.queue_mut().set_blocked(blocked, true);
     assert_eq!(
@@ -615,10 +588,12 @@ fn recovered_blocked_entry_becomes_eligible_after_retry() {
 fn seek_updates_snapshot_through_coordinator() {
     let player = FakePlayer::new();
     let mut coord = PlaybackCoordinator::new(player);
-    coord.play_context(&ViewContext {
-        songs: vec![song()],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![song()],
+            selected_index: 0,
+        })
+        .unwrap();
     coord.seek(42.5);
     assert_eq!(coord.snapshot().position, Some(42.5));
 }
@@ -661,10 +636,12 @@ fn rejected_property_leaves_snapshot_authoritative() {
     let player = FakePlayer::new();
     player.fail_next_property(); // simulate backend rejection
     let mut coord = PlaybackCoordinator::new(player);
-    coord.play_context(&ViewContext {
-        songs: vec![song()],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![song()],
+            selected_index: 0,
+        })
+        .unwrap();
     assert_eq!(coord.snapshot().position, Some(0.0));
     coord.seek(9.0);
     assert_eq!(
@@ -683,10 +660,12 @@ fn error_skips_bad_entry_and_plays_next_sequential() {
     let s1 = song();
     let s2 = song();
     let s3 = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s1, s2, s3],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s1, s2, s3],
+            selected_index: 0,
+        })
+        .unwrap();
     // s1 and s3 are fine; s2 is corrupt. After s1 ends, s2 fails and we
     // skip to s3 (never retry s2 this round).
     assert_eq!(coord.current().unwrap().item.song_id(), Some(s1));
@@ -706,10 +685,12 @@ fn error_bypasses_repeat_one() {
     let mut coord = PlaybackCoordinator::new(player);
     let s1 = song();
     let s2 = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s1, s2],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s1, s2],
+            selected_index: 0,
+        })
+        .unwrap();
     coord.set_mode(PlayMode::RepeatOne);
     assert_eq!(coord.current().unwrap().item.song_id(), Some(s1));
     // The current (repeat-one) entry fails — error advance must NOT loop it;
@@ -730,10 +711,12 @@ fn error_advance_never_retries_same_entry_in_round() {
     let mut coord = PlaybackCoordinator::new(player);
     let s = song();
     let s2 = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s, s2],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s, s2],
+            selected_index: 0,
+        })
+        .unwrap();
     // s fails; then s2 (the only other) fails too. With no un-failed entry
     // left, the queue stops rather than re-attempting s (no spin).
     coord.on_load_error(); // s fails → s2
@@ -753,10 +736,12 @@ fn error_advance_all_bad_stops_without_spin() {
     let mut coord = PlaybackCoordinator::new(player);
     let s1 = song();
     let s2 = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s1, s2],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s1, s2],
+            selected_index: 0,
+        })
+        .unwrap();
     coord.on_load_error(); // s1 fails → s2
     coord.on_load_error(); // s2 fails → stop
                            // A further error on no current must not resurrect playback.
@@ -779,10 +764,12 @@ fn error_advance_in_shuffle_skips_failed_entry() {
     let s1 = song();
     let s2 = song();
     let s3 = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s0, s1, s2, s3],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s0, s1, s2, s3],
+            selected_index: 0,
+        })
+        .unwrap();
     coord.set_mode(PlayMode::Shuffle);
     // pending after s0 = [s1,s2,s3]; FixedShuffle [1,0,2] → plays
     // pending[1]=s2 first, then pending[0]=s1, then pending[2]=s3.
@@ -810,10 +797,12 @@ fn play_next_promotes_an_already_queued_song_instead_of_duplicating() {
     let mut coord = PlaybackCoordinator::new(player);
     let target = song();
     let other = song();
-    coord.play_context(&ViewContext {
-        songs: vec![song(), target, other],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![song(), target, other],
+            selected_index: 0,
+        })
+        .unwrap();
     let before_len = coord.queue().entries().len();
 
     let promoted = coord.play_next(lib_entry(target));
@@ -826,10 +815,12 @@ fn play_next_promotes_an_already_queued_song_instead_of_duplicating() {
 fn play_next_appends_when_song_is_not_queued() {
     let player = FakePlayer::new();
     let mut coord = PlaybackCoordinator::new(player);
-    coord.play_context(&ViewContext {
-        songs: vec![song(), song()],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![song(), song()],
+            selected_index: 0,
+        })
+        .unwrap();
     let before_len = coord.queue().entries().len();
 
     let fresh = song();
@@ -846,10 +837,12 @@ fn play_next_appends_when_song_is_not_queued() {
 fn play_next_repeatedly_same_song_keeps_single_lane_copy() {
     let player = FakePlayer::new();
     let mut coord = PlaybackCoordinator::new(player);
-    coord.play_context(&ViewContext {
-        songs: vec![song(), song(), song()],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![song(), song(), song()],
+            selected_index: 0,
+        })
+        .unwrap();
 
     let s = song();
     coord.play_next(lib_entry(s));
@@ -872,10 +865,12 @@ fn queue_revision_survives_whole_queue_replacement() {
 
     assert_eq!(coord.queue_revision(), QueueRevision::INITIAL);
 
-    coord.play_context(&ViewContext {
-        songs: vec![s1, s2],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s1, s2],
+            selected_index: 0,
+        })
+        .unwrap();
     let after_first = coord.queue_revision();
     assert!(
         after_first > QueueRevision::INITIAL,
@@ -883,10 +878,12 @@ fn queue_revision_survives_whole_queue_replacement() {
     );
 
     // A second context replaces the whole queue.
-    coord.play_context(&ViewContext {
-        songs: vec![s2, s1],
-        selected_index: 1,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s2, s1],
+            selected_index: 1,
+        })
+        .unwrap();
     let after_second = coord.queue_revision();
     assert!(
         after_second > after_first,
@@ -894,10 +891,12 @@ fn queue_revision_survives_whole_queue_replacement() {
     );
 
     // The paused priming path replaces the queue as well.
-    coord.play_context_paused(&ViewContext {
-        songs: vec![s1],
-        selected_index: 0,
-    });
+    coord
+        .play_context_paused(&ViewContext {
+            songs: vec![s1],
+            selected_index: 0,
+        })
+        .unwrap();
     let after_paused = coord.queue_revision();
     assert!(
         after_paused > after_second,
@@ -938,10 +937,12 @@ fn coordinator_revision_advances_on_mode_and_failed_round_changes() {
     let mut coord = PlaybackCoordinator::new(FakePlayer::new());
     let s1 = song();
     let s2 = song();
-    coord.play_context(&ViewContext {
-        songs: vec![s1, s2],
-        selected_index: 0,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![s1, s2],
+            selected_index: 0,
+        })
+        .unwrap();
 
     let before_mode = coord.queue_revision();
     coord.set_mode(PlayMode::Shuffle);

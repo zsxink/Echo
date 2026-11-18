@@ -3,6 +3,8 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+use crate::protocol::validate_mutation;
+
 #[derive(Deserialize)]
 pub(super) struct CommitQuery {
     after: u64,

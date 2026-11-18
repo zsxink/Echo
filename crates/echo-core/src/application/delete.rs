@@ -112,7 +112,7 @@ impl<'a> DeleteSongs<'a> {
 
         let audio_source = subject.path().clone();
         let audio_hash = self.deps.hasher.hash(root, &audio_source)?;
-        let lyrics_path = derive_lrc_path(&audio_source);
+        let lyrics_path = derive_lrc_path(&audio_source)?;
         let has_lyrics = self.deps.fs.path_exists(root, &lyrics_path)?;
 
         let operation = self.deps.ids.new_operation_id();
@@ -542,12 +542,31 @@ fn wall_ms(clock: &dyn crate::application::ports::Clock) -> Result<i64, Error> {
 
 /// The same-basename `.lrc` path beside an audio path: same directory, same
 /// stem, `.lrc` extension (design §9: 同名 `.lrc`).
-fn derive_lrc_path(audio: &RelativeMediaPath) -> RelativeMediaPath {
-    let extension = audio.extension().map_or(0, |extension| extension.len());
+///
+/// Derived by *stripping* the extension, never by truncating a byte count: the
+/// name is UTF-8, so a byte offset can land inside a character. When the suffix
+/// cannot be stripped (a case-mismatched extension) the original path is used
+/// instead — a missing sidecar is better than one pointing at another file.
+///
+/// # Errors
+///
+/// [`Error::InvariantViolation`] when the derived sibling is not a valid
+/// relative media path. The input was already validated, so a failure can only
+/// come from this derivation.
+fn derive_lrc_path(audio: &RelativeMediaPath) -> Result<RelativeMediaPath, Error> {
     let normalized = audio.normalized();
-    let without_extension = &normalized[..normalized.len().saturating_sub(extension + 1)];
-    RelativeMediaPath::new(&format!("{without_extension}.lrc"))
-        .expect("deriving an .lrc sibling of a valid media path stays valid")
+    // Cut at the file name's own last `.` (ASCII, hence always a char
+    // boundary) so the extension's case never matters — `extension()`
+    // lower-cases it, and a case-mismatched suffix must still be replaced.
+    // A leading dot is a hidden-name marker, not an extension separator.
+    let stem = audio
+        .file_name()
+        .and_then(|name| name.rsplit_once('.'))
+        .filter(|(stem, _)| !stem.is_empty())
+        .map_or(normalized, |(_, extension)| {
+            &normalized[..normalized.len() - extension.len() - 1]
+        });
+    RelativeMediaPath::new(&format!("{stem}.lrc")).map_err(|_| Error::invariant("lrc sibling path"))
 }
 
 impl From<DeleteResourceKind> for OperationResourceKind {

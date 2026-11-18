@@ -5,6 +5,7 @@ use crate::application::delete::DeleteSongs;
 use crate::application::import::{ImportOutcome, PlanImport};
 use crate::application::ports::ControlPlanePort;
 use crate::application::ports::ImportSource;
+use crate::application::ports::UnitOfWork;
 use crate::application::testing::{FakeImportSources, ScanFixture};
 use crate::domain::entities::Song;
 use crate::domain::ids::{RelativeMediaPath, Revision, SongId};
@@ -643,5 +644,127 @@ fn derive_root_id_is_deterministic_and_path_bound() {
         first,
         derive_root_id(&other.path().canonicalize().unwrap()),
         "different paths → different root ids"
+    );
+}
+
+/// Prepare + activate one directory and return its root id.
+fn prepare_and_activate(fixture: &ScanFixture, dir: &std::path::Path) -> LibraryRootId {
+    let root_id = bind_candidate(fixture, dir);
+    let prepared =
+        PrepareLibraryCandidate::new(&fixture.deps, &fixture.database, &fixture.supervisor)
+            .prepare(dir)
+            .expect("prepare");
+    ActivateLibrary::new(
+        &fixture.deps,
+        &fixture.database,
+        &fixture.supervisor,
+        &fixture.database,
+        &Blockers::new(),
+    )
+    .activate(prepared.root_id)
+    .expect("activate");
+    root_id
+}
+
+/// Overwrite the persisted root epoch directly (simulating a corrupted or
+/// externally written `runtime_state` row).
+fn seed_epoch(fixture: &ScanFixture, value: &str) {
+    let value = value.to_owned();
+    fixture
+        .database
+        .with_tx(Box::new(move |tx| {
+            tx.set_runtime_state(ROOT_EPOCH_KEY, &value)
+        }))
+        .expect("seed epoch");
+}
+
+/// `LL-R01-S06`: a persisted epoch that is not a number is a broken internal
+/// invariant — the switch must fail and leave the current binding serving,
+/// never silently restart the epoch at 0 (which would make the new epoch
+/// collide with the old one and accept stale results).
+#[test]
+fn root_switch_rejects_an_unparseable_epoch() {
+    let fixture = fixture();
+    let first_dir = tempfile::tempdir().unwrap();
+    let first = prepare_and_activate(&fixture, first_dir.path());
+
+    seed_epoch(&fixture, "not-a-number");
+
+    let second_dir = tempfile::tempdir().unwrap();
+    bind_candidate(&fixture, second_dir.path());
+    let second =
+        PrepareLibraryCandidate::new(&fixture.deps, &fixture.database, &fixture.supervisor)
+            .prepare(second_dir.path())
+            .unwrap();
+
+    let error = ActivateLibrary::new(
+        &fixture.deps,
+        &fixture.database,
+        &fixture.supervisor,
+        &fixture.database,
+        &Blockers::new(),
+    )
+    .activate(second.root_id)
+    .expect_err("an unparseable epoch must not be treated as 0");
+
+    assert_eq!(
+        error.code(),
+        "invariant_violation",
+        "a corrupt persisted epoch is an internal invariant violation: {error}"
+    );
+    assert_eq!(
+        fixture.database.active_root().unwrap().unwrap().id(),
+        first,
+        "the refused switch left the old root serving"
+    );
+    assert_eq!(
+        fixture.database.runtime_state(ROOT_EPOCH_KEY).as_deref(),
+        Some("not-a-number"),
+        "the failed switch wrote nothing"
+    );
+}
+
+/// `LL-R01-S06`: the epoch is monotone and must never wrap. At `u64::MAX` the
+/// switch fails explicitly instead of committing `0` — a reused generation
+/// would let results of the old epoch be accepted.
+#[test]
+fn root_switch_does_not_overflow_the_epoch() {
+    let fixture = fixture();
+    let first_dir = tempfile::tempdir().unwrap();
+    let first = prepare_and_activate(&fixture, first_dir.path());
+
+    seed_epoch(&fixture, &u64::MAX.to_string());
+
+    let second_dir = tempfile::tempdir().unwrap();
+    bind_candidate(&fixture, second_dir.path());
+    let second =
+        PrepareLibraryCandidate::new(&fixture.deps, &fixture.database, &fixture.supervisor)
+            .prepare(second_dir.path())
+            .unwrap();
+
+    let error = ActivateLibrary::new(
+        &fixture.deps,
+        &fixture.database,
+        &fixture.supervisor,
+        &fixture.database,
+        &Blockers::new(),
+    )
+    .activate(second.root_id)
+    .expect_err("an exhausted epoch must fail instead of wrapping");
+
+    assert_eq!(
+        error.code(),
+        "invariant_violation",
+        "epoch exhaustion is an internal invariant violation: {error}"
+    );
+    assert_eq!(
+        fixture.database.active_root().unwrap().unwrap().id(),
+        first,
+        "the refused switch left the old root serving"
+    );
+    assert_eq!(
+        fixture.database.runtime_state(ROOT_EPOCH_KEY).as_deref(),
+        Some(u64::MAX.to_string().as_str()),
+        "no wrapped epoch was committed"
     );
 }

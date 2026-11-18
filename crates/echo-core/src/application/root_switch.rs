@@ -362,11 +362,18 @@ impl<'a> ActivateLibrary<'a> {
 
         let previous = self.roots.active_root()?;
         let previous_id = previous.as_ref().map(LibraryRoot::id);
-        let current_epoch = self
-            .state
-            .load(ROOT_EPOCH_KEY)?
-            .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(0);
+        // A missing epoch is a first activation (0). A *present but
+        // unparseable* value is a broken invariant: falling back to 0 would
+        // restart the generation, so the new epoch would collide with one the
+        // runtime may already have accepted.
+        let current_epoch = match self.state.load(ROOT_EPOCH_KEY)? {
+            None => 0,
+            Some(value) => value.parse::<u64>().map_err(|error| {
+                Error::invariant(format!(
+                    "persisted root epoch {value:?} is not a u64: {error}"
+                ))
+            })?,
+        };
         let mut barrier =
             RootSwitchBarrier::new(previous_id, candidate, RootEpoch::from_u64(current_epoch));
 
@@ -382,7 +389,12 @@ impl<'a> ActivateLibrary<'a> {
         barrier
             .transition(RootSwitchState::CommitActivation)
             .map_err(|error| to_invariant(&error))?;
-        let new_epoch = RootEpoch::from_u64(current_epoch + 1);
+        // The epoch is monotone and never wraps: at `u64::MAX` the switch ends
+        // explicitly rather than reusing a generation the runtime may still
+        // hold results for.
+        let new_epoch = RootEpoch::from_u64(current_epoch.checked_add(1).ok_or_else(|| {
+            Error::invariant("root epoch is exhausted; the switch cannot advance it")
+        })?);
         let write_capable = candidate_root.write_capable();
         let mut activated = LibraryRoot::new(
             candidate,

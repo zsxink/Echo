@@ -65,6 +65,24 @@ reqwest = { version = "0.12.28", default-features = false, features = ["json", "
 rustls = { version = "0.23.45", default-features = false, features = ["ring", "std"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
 mdns-sd = { version = "0.21.5", default-features = false, features = ["async"] }
+# Pairing-code PAKE (RFC 9382 SPAKE2 over P-256) for the LAN pairing bootstrap.
+# Only the RFC-compliant `Spake2P256` suite is used; the crate is
+# `#![forbid(unsafe_code)]`, zeroize-based and MSRV 1.88 (matches the workspace).
+# `rand_core`/`getrandom` are the PAKE's random source; `getrandom` is pinned to
+# the `sys_rng` backend so the handshake never blocks on a userspace RNG.
+pakery-crypto = { version = "0.6.2", default-features = false, features = ["std", "spake2", "p256"] }
+# `pakery-crypto` ships the RFC-compliant `Spake2P256` ciphersuite but does not
+# re-export the protocol state machines, so the crate itself is a direct
+# dependency too.
+pakery-spake2 = "0.6.2"
+# The `CpaceGroup` trait that owns `scalar_from_wide_bytes` lives in
+# `pakery-core`; the concrete `P256Group` impl lives in `pakery-crypto`.
+pakery-core = "0.6.2"
+rand_core = "0.10"
+getrandom = { version = "0.4", features = ["sys_rng"] }
+# Constant-time comparison for the pairing certificate proof. Already in the
+# tree through `pakery-core`; declared directly because echo-sync uses it.
+subtle = "2"
 
 # Phase 4 media pipeline: probing, tags/covers/lyrics parsing, file watching
 # and thumbnail scaling. All pure-Rust, cross-platform crates with no `unsafe`

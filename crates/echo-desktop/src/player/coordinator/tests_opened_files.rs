@@ -81,10 +81,12 @@ fn opened_batch_mixes_library_and_temporary_in_input_order() {
 #[test]
 fn opened_batch_replaces_the_current_queue_and_priority_lane() {
     let mut coord = PlaybackCoordinator::new(FakePlayer::new());
-    coord.play_context(&ViewContext {
-        songs: vec![song(), song(), song()],
-        selected_index: 1,
-    });
+    coord
+        .play_context(&ViewContext {
+            songs: vec![song(), song(), song()],
+            selected_index: 1,
+        })
+        .unwrap();
     coord.on_load_error();
     assert_eq!(coord.failed_round().count(), 1);
     let revision = coord.queue_revision();

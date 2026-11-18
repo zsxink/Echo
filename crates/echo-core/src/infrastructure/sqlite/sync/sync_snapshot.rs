@@ -247,11 +247,11 @@ fn published_records(
         let digest: [u8; 32] = digest.as_slice().try_into().map_err(storage)?;
         verify_commit(checkpoint, sequence, previous, digest, &canonical)?;
         let commit: SnapshotCommit = serde_json::from_str(&canonical).map_err(storage)?;
-        if commit.protocol_version != 1
+        if commit.protocol_version != crate::domain::sync::PROTOCOL_VERSION
             || commit.binding != binding
             || commit.commit_seq != sequence
             || commit.previous_digest != previous
-            || commit.mutation.protocol_version != 1
+            || commit.mutation.protocol_version != crate::domain::sync::PROTOCOL_VERSION
             || commit.mutation.binding != binding
         {
             return Err(Error::conflict(
@@ -297,7 +297,7 @@ fn verify_commit(
     }
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"echo.lan.commit.v1\0");
-    hasher.update(&1u16.to_be_bytes());
+    hasher.update(&crate::domain::sync::PROTOCOL_VERSION.to_be_bytes());
     hasher.update(&sequence.as_u64().to_be_bytes());
     hasher.update(&previous);
     hasher.update(

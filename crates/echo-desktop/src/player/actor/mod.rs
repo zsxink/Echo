@@ -300,6 +300,17 @@ struct ActorLoop<B: Backend> {
     load_completed: bool,
 }
 
+/// The actor's initial `last_property_publish`, one second in the past so the
+/// very first property event always publishes.
+///
+/// `Instant` is host-uptime based, so a host that has been up for under one
+/// second cannot represent that point: `checked_sub` yields `None`, and the
+/// actor must start from `now` (one throttle interval of delay at worst)
+/// instead of panicking during construction (design D11, DP-R01-S04).
+fn initial_publish_mark(backdated: Option<std::time::Instant>) -> std::time::Instant {
+    backdated.unwrap_or_else(std::time::Instant::now)
+}
+
 impl<B: Backend> ActorLoop<B> {
     fn new(
         backend: B,
@@ -321,9 +332,9 @@ impl<B: Backend> ActorLoop<B> {
             foreground: true,
             // Backdate so the first property event always publishes (avoids a
             // dropped first `time-pos` right after startup / a load).
-            last_property_publish: std::time::Instant::now()
-                .checked_sub(std::time::Duration::from_secs(1))
-                .unwrap(),
+            last_property_publish: initial_publish_mark(
+                std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1)),
+            ),
             resolver: None,
             loudness_lookup: None,
             // A fresh actor has nothing loaded, so "not paused" is the only

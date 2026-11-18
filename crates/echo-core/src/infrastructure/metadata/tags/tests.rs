@@ -586,3 +586,31 @@ fn riff_info_wav_tags_are_read() {
     assert_eq!(parsed.parameters.sample_rate_hz, Some(8_000));
     assert!(parsed.warnings.is_empty());
 }
+
+/// `LL-R03-S06`: `udta` nesting in a hostile `.m4a` can be arbitrarily deep.
+/// Recursing without a bound turns a small crafted file into stack exhaustion —
+/// a process abort, not a diagnosable failure. The walk must stop at a fixed
+/// depth and still return.
+#[test]
+fn deeply_nested_udta_does_not_overflow_the_stack() {
+    // ~1 MB of nested `udta` atoms: each level costs an 8-byte header, so this
+    // is far deeper than any real file and would blow a default thread stack
+    // if the recursion were unbounded.
+    const DEPTH: usize = 20_000;
+    let mut content = quicktime_atom_bytes(*b"\xa9nam", &quicktime_text_payload("深层"));
+    for _ in 0..DEPTH {
+        content = quicktime_atom_bytes(*b"udta", &content);
+    }
+    let content = quicktime_atom_bytes(*b"moov", &content);
+    let mut parsed = ParsedMetadata::default();
+
+    // The contract is "returns": a bounded walk simply finds nothing at the
+    // depths it does not visit.
+    read_quicktime_udta_tags(&content, &InputLimits::defaults(), &mut parsed);
+
+    assert!(
+        parsed.title.is_none() || parsed.title.as_deref() == Some("深层"),
+        "a bounded walk either stops before the tag or reads it: {:?}",
+        parsed.title
+    );
+}

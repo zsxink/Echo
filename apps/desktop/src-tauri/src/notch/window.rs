@@ -291,6 +291,30 @@ define_class!(
     }
 );
 
+/// Deregister one observer. `addObserver:selector:name:object:` keeps an
+/// unretained reference, so the center must be told before the `Retained` is
+/// dropped; otherwise it later messages freed memory.
+fn unregister(observer: &ScreenObserver) {
+    // SAFETY: the observer is alive for this call and was registered with the
+    // default center.
+    unsafe {
+        NSNotificationCenter::defaultCenter().removeObserver(observer);
+    }
+}
+
+/// Move the current registration out of `slot`, deregistering it before it can
+/// be dropped, and hand it back to the caller. Both the replacement path and
+/// the shutdown path go through this one sequence, so a future edit cannot
+/// introduce a second deregistration order. Generic over the slot value so the
+/// transition is testable without the `AppKit` main thread.
+fn take_registration<T>(slot: &RefCell<Option<T>>, deregister: impl FnOnce(&T)) -> Option<T> {
+    let previous = slot.borrow_mut().take();
+    if let Some(previous) = &previous {
+        deregister(previous);
+    }
+    previous
+}
+
 /// Observe screen-parameter changes for the lifetime of the app.
 ///
 /// Idempotent: a second install replaces the stored observer instead of
@@ -301,6 +325,10 @@ pub fn install_screen_observer(app: &AppHandle) -> Result<(), String> {
     let this = ScreenObserver::alloc(mtm).set_ivars(ObserverIvars { app: app.clone() });
     // SAFETY: NSObject's designated initializer is valid for this subclass.
     let observer: Retained<ScreenObserver> = unsafe { msg_send![super(this), init] };
+    // Registering a replacement must first deregister the previous observer:
+    // the center holds it without retaining it, so dropping the old slot value
+    // without this step leaves a dangling registration behind.
+    drop(OBSERVER.with(|slot| take_registration(slot, |previous| unregister(previous))));
     let center = NSNotificationCenter::defaultCenter();
     // SAFETY: the selector is implemented above and the observer outlives the
     // registration (kept in the thread-local slot).
@@ -318,13 +346,44 @@ pub fn install_screen_observer(app: &AppHandle) -> Result<(), String> {
 
 /// Remove the observer (called on explicit shutdown in tests and on exit).
 pub fn unregister_screen_observer() {
-    OBSERVER.with(|slot| {
-        if let Some(observer) = slot.borrow_mut().take() {
-            // SAFETY: the observer is still alive here; removing it before drop
-            // keeps the notification center from messaging a freed object.
-            unsafe {
-                NSNotificationCenter::defaultCenter().removeObserver(&observer);
-            }
-        }
-    });
+    drop(OBSERVER.with(|slot| take_registration(slot, |previous| unregister(previous))));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `install_screen_observer` needs the `AppKit` main thread and a live
+    /// notification center, neither of which the test harness provides. The
+    /// regression lives in the slot transition, so drive that with stand-in
+    /// values and count deregistrations through the same seam the real
+    /// install uses.
+    #[test]
+    fn reinstalling_the_screen_observer_removes_the_previous_registration() {
+        let slot = RefCell::new(None::<&'static str>);
+        let deregistered = RefCell::new(Vec::new());
+        // The closure only borrows the log, so it is `Copy` and can be handed
+        // to each call by value — the same way the real install passes
+        // `unregister` as a fresh `FnOnce`.
+        let deregister = |value: &&'static str| deregistered.borrow_mut().push(*value);
+
+        assert_eq!(take_registration(&slot, deregister), None);
+        slot.replace(Some("first"));
+        // A second install replaces: the previous registration is deregistered
+        // before the replacement is stored, so the center never keeps a pointer
+        // to a dropped observer.
+        assert_eq!(take_registration(&slot, deregister), Some("first"));
+        slot.replace(Some("second"));
+        assert_eq!(*deregistered.borrow(), vec!["first"]);
+        assert_eq!(
+            *slot.borrow(),
+            Some("second"),
+            "exactly one registration remains after two installs"
+        );
+
+        // Shutdown uses the same sequence and leaves an empty slot.
+        assert_eq!(take_registration(&slot, deregister), Some("second"));
+        assert_eq!(*deregistered.borrow(), vec!["first", "second"]);
+        assert_eq!(*slot.borrow(), None);
+    }
 }

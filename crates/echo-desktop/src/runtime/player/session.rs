@@ -185,7 +185,12 @@ pub fn restore_or_prime_playback(
                     selected_index: 0,
                 };
                 if let Ok(mut coord) = coordinator.lock() {
-                    coord.prime_context_paused(&ctx, mode, volume, muted);
+                    if let Err(error) = coord.prime_context_paused(&ctx, mode, volume, muted) {
+                        // The context is non-empty here, so this can only be the
+                        // internal "no current entry" invariant; log it instead of
+                        // claiming the bar was primed in silence.
+                        tracing::warn!(%error, "cold-start restore could not prime the context");
+                    }
                 }
                 return "primed";
             }
@@ -205,7 +210,9 @@ pub fn restore_or_prime_playback(
         selected_index: 0,
     };
     if let Ok(mut coord) = coordinator.lock() {
-        coord.play_context_paused(&ctx);
+        if let Err(error) = coord.play_context_paused(&ctx) {
+            tracing::warn!(%error, "cold-start priming could not load the default context");
+        }
     }
     "primed"
 }

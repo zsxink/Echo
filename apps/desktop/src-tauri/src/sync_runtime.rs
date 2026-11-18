@@ -15,7 +15,7 @@ pub use echo_desktop::ipc::sync::{
     SyncStatus,
 };
 use echo_sync::discovery::LanDiscovery;
-use echo_sync::pairing::{PairingError, PairingGrantDto, PairingInvitation};
+use echo_sync::pairing::{PairingError, PairingGrantDto, PairingHostDescriptor, PairingInvitation};
 use echo_sync::server::{host_router, serve_tls, HostApiState};
 use tokio::sync::oneshot;
 
@@ -191,7 +191,7 @@ pub trait SyncProvisioner: Send + Sync {
     fn complete_peer_pairing(
         &self,
         root: LibraryRootId,
-        invitation: &PairingInvitation,
+        host: &PairingHostDescriptor,
         endpoint: &str,
         grant: &PairingGrantDto,
     ) -> Result<(), SyncRuntimeError>;

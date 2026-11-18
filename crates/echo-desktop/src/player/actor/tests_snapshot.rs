@@ -202,3 +202,45 @@ fn discrete_pause_is_immediate_even_while_property_is_throttled() {
     // so this proves the Pause publish was immediate, not throttled.
     actor.shutdown();
 }
+
+/// `Instant` is host-uptime based. On a host that has been up for under one
+/// second, `Instant::now().checked_sub(1s)` is `None` — the value the old
+/// constructor `.unwrap()`ed into a panic. The actor must start from `now`
+/// instead, and the first property event must still publish one throttle
+/// interval later (DP-R01-S04, design D11).
+#[test]
+fn actor_initializes_when_the_host_uptime_is_under_one_second() {
+    // The exact value a sub-second uptime produces: no representable point
+    // one second back, so `checked_sub` yields `None`.
+    let before = std::time::Instant::now();
+    let mark = initial_publish_mark(None);
+    let after = std::time::Instant::now();
+    assert!(
+        before <= mark && mark <= after,
+        "an unrepresentable backdate falls back to `now` instead of panicking"
+    );
+    // The normal path is unchanged: a representable backdate is kept as is.
+    let backdated = std::time::Instant::now()
+        .checked_sub(std::time::Duration::from_secs(1))
+        .expect("the test host has been up for at least one second");
+    assert_eq!(initial_publish_mark(Some(backdated)), backdated);
+
+    // Constructing the whole loop must not panic, and the first property
+    // event still lands from the fallback mark once the interval elapses
+    // (at worst one interval after startup, not never).
+    let snapshot = snapshot_stub();
+    let mut loop_state = ActorLoop::new(TestBackend::new(vec![]), snapshot, subscribers_stub());
+    loop_state.foreground = true;
+    loop_state.position = Some(1.0);
+    loop_state.last_property_publish = initial_publish_mark(None);
+    loop_state.last_property_publish = loop_state
+        .last_property_publish
+        .checked_sub(loop_state.property_interval())
+        .expect("the test host has been up for at least 100 ms");
+    loop_state.publish_throttled(0);
+    assert_eq!(
+        loop_state.snapshot.read().unwrap().position,
+        Some(1.0),
+        "the first property event still publishes from the fallback mark"
+    );
+}

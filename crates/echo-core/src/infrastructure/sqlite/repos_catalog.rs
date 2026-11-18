@@ -261,13 +261,17 @@ impl PlaylistRepository for SqliteDatabase {
 
     fn delete(&self, id: PlaylistId) -> Result<(), Error> {
         self.writer.run(move |connection| {
+            // The enqueue, the tombstone and the row removal are one fact:
+            // committing them separately lets a failure after the enqueue leave
+            // a deletion queued for a playlist that still exists.
+            let transaction = connection.transaction().map_err(storage)?;
             // A user-initiated playlist delete is a durable, syncable tombstone:
             // the deletion itself must propagate cross-device, so it has to
             // enter the mutation stream and not just the local tombstone table.
             // The row is still present here, which is what lets the enqueue
             // resolve the object's owning library root.
             let payload = serde_json::json!({ "tombstone": true });
-            let exists: bool = connection
+            let exists: bool = transaction
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid = ?1)",
                     params![id.to_string()],
@@ -276,26 +280,26 @@ impl PlaylistRepository for SqliteDatabase {
                 .map_err(storage)?;
             let revision = if exists {
                 sync::enqueue_sync(
-                    connection,
+                    &transaction,
                     sync::KIND_PLAYLIST,
                     &id.to_string(),
                     &serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_owned()),
                     sync::OP_DELETE,
                 )?
             } else {
-                sync::current_outbox_revision(connection, sync::KIND_PLAYLIST, &id.to_string())?
+                sync::current_outbox_revision(&transaction, sync::KIND_PLAYLIST, &id.to_string())?
                     .saturating_add(1)
             };
             // Replayed deletes of an already-tombstoned playlist stay
             // idempotent: no second mutation, only the durable local tombstone.
-            sync::write_tombstone(connection, sync::KIND_PLAYLIST, &id.to_string(), revision)?;
-            connection
+            sync::write_tombstone(&transaction, sync::KIND_PLAYLIST, &id.to_string(), revision)?;
+            transaction
                 .execute(
                     "DELETE FROM playlists WHERE uuid = ?1",
                     params![id.to_string()],
                 )
                 .map_err(storage)?;
-            Ok(())
+            transaction.commit().map_err(storage)
         })
     }
 
@@ -358,10 +362,15 @@ impl PlaylistRepository for SqliteDatabase {
 
     fn remove_member(&self, playlist: PlaylistId, song: SongId) -> Result<(), Error> {
         self.writer.run(move |connection| {
+            // The member tombstone, the row removal, the playlist snapshot and
+            // its HLC are one fact. Committing them separately can leave the
+            // member deleted locally while the playlist snapshot still lists
+            // it, or a half-applied membership change in the outbox.
+            let transaction = connection.transaction().map_err(storage)?;
             // Capture the stable membership identity before erasing its local
             // projection. The tombstone is what prevents a recovery on another
             // device from resurrecting this member.
-            let member_uuid: Option<String> = connection
+            let member_uuid: Option<String> = transaction
                 .query_row(
                     "SELECT member_uuid FROM playlist_songs WHERE playlist_uuid = ?1 AND song_uuid = ?2",
                     params![playlist.to_string(), song.to_string()],
@@ -380,30 +389,30 @@ impl PlaylistRepository for SqliteDatabase {
                 // `playlist_songs`.
                 let payload = serde_json::json!({ "tombstone": true });
                 let revision = sync::enqueue_sync(
-                    connection,
+                    &transaction,
                     sync::KIND_PLAYLIST_ITEM,
                     &member_uuid,
                     &serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_owned()),
                     sync::OP_DELETE,
                 )?;
                 sync::write_tombstone(
-                    connection,
+                    &transaction,
                     sync::KIND_PLAYLIST_ITEM,
                     &member_uuid,
                     revision,
                 )?;
             }
-            connection
+            transaction
                 .execute(
                     "DELETE FROM playlist_songs WHERE playlist_uuid = ?1 AND song_uuid = ?2",
                     params![playlist.to_string(), song.to_string()],
                 )
                 .map_err(storage)?;
             // Membership removal is a playlist logic change.
-            let members_json = statements::playlist_members_excerpt(connection, playlist)?;
+            let members_json = statements::playlist_members_excerpt(&transaction, playlist)?;
             let payload = serde_json::json!({ "members": members_json });
             statements::enqueue_object_snapshot(
-                connection,
+                &transaction,
                 sync::KIND_PLAYLIST,
                 &playlist.to_string(),
                 &payload,
@@ -411,12 +420,12 @@ impl PlaylistRepository for SqliteDatabase {
             )?;
             let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
             statements::advance_object_hlc(
-                connection,
+                &transaction,
                 sync::KIND_PLAYLIST,
                 &playlist.to_string(),
                 now_secs,
             )?;
-            Ok(())
+            transaction.commit().map_err(storage)
         })
     }
 }

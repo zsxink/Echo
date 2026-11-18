@@ -1,7 +1,10 @@
 //! Short-lived LAN pairing codes for pinned peers.
 //!
-//! The registry retains only hashes of invitation and receipt secrets. Approved
-//! credentials belong to the desktop's durable authorization and OS vault port.
+//! The registry retains the plaintext six-digit code only for the lifetime of
+//! its invitation (at most ten minutes): the SPAKE2 password scalar is derived
+//! from it, and the code never travels on the wire. Receipt secrets are
+//! retained as hashes only. Approved credentials belong to the desktop's
+//! durable authorization and OS vault port.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -9,6 +12,8 @@ use std::time::{Duration, Instant};
 
 use echo_core::domain::sync::{DeviceId, MutationId, SyncBinding};
 use serde::{Deserialize, Serialize};
+
+use crate::pairing_pake::{HostPake, PakeContext, PakeError, PAKE_MESSAGE_BYTES};
 
 const MAX_PENDING: usize = 32;
 const MAX_TTL: Duration = Duration::from_secs(600);
@@ -34,16 +39,71 @@ pub struct PairingRequestDto {
     pub device_name: String,
 }
 
+/// Public host identity released to the joining device only inside the
+/// PAKE-authenticated bootstrap response. It carries no code and no credential.
 #[derive(Clone, Serialize, Deserialize)]
-pub struct PairingCodeRequest {
-    pub code: String,
-    pub device_id: DeviceId,
-    pub device_name: String,
+pub struct PairingHostDescriptor {
+    pub binding: SyncBinding,
+    pub host_device_id: DeviceId,
+    pub invitation_id: String,
+    pub host_certificate_der: Vec<u8>,
+    pub expires_in_secs: u64,
 }
 
+/// First pairing round: the device's SPAKE2 message.
+///
+/// The six-digit code is deliberately absent. A bootstrap-terminating relay
+/// reads every byte of this request; if the code travelled here, the relay
+/// could complete both PAKE legs and the binding would be worthless.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PairingCodeRequest {
+    /// Wire protocol version the device speaks. A host rejects a peer whose
+    /// version differs before any handshake state is created, so an
+    /// incompatible build reports a version mismatch rather than a bad code.
+    pub protocol_version: u16,
+    pub device_id: DeviceId,
+    pub device_name: String,
+    /// One serialized SPAKE2 message ([`PAKE_MESSAGE_BYTES`] bytes).
+    pub message: Vec<u8>,
+}
+
+/// Host's answer to the first pairing round.
+///
+/// It carries no credential: the grant is released only after the device's
+/// confirmation MAC proves the device also holds the code.
 #[derive(Serialize, Deserialize)]
 pub struct PairingBootstrapResponse {
-    pub invitation: PairingInvitation,
+    pub host: PairingHostDescriptor,
+    /// The host's SPAKE2 message.
+    pub message: Vec<u8>,
+    /// The host's confirmation MAC, proving it holds the code.
+    pub confirmation: Vec<u8>,
+    /// Keyed-hash proof that `host.host_certificate_der` is the certificate
+    /// this handshake authenticated.
+    pub certificate_proof: Vec<u8>,
+    pub receipt: PairingReceipt,
+}
+
+/// Second pairing round: the device proves it holds the same code.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PairingConfirmationDto {
+    /// Wire protocol version the device speaks (see [`PairingCodeRequest`]).
+    pub protocol_version: u16,
+    pub binding: SyncBinding,
+    pub request_id: String,
+    pub device_id: DeviceId,
+    pub claim_secret: String,
+    /// The device's confirmation MAC.
+    pub confirmation: Vec<u8>,
+}
+
+/// A completed pairing: the host whose certificate this device authenticated,
+/// and the credential issued only to the confirmed device.
+///
+/// Only `host.host_certificate_der` may be persisted as the pin; it is the one
+/// certificate the handshake authenticated.
+pub struct PairedHost {
+    pub host: PairingHostDescriptor,
     pub grant: PairingGrantDto,
 }
 
@@ -116,6 +176,14 @@ pub enum PairingError {
     Capacity,
     Pending,
     ProvisioningUnavailable,
+    /// The peer did not prove possession of the pairing code, or its handshake
+    /// material was malformed. Distinct from [`Self::Unavailable`] so a wrong
+    /// code (or a relay) is not reported as an expired code.
+    ProtocolMismatch,
+    /// The peer speaks a different wire protocol version. Rejected before any
+    /// handshake state exists, so an incompatible build never consumes the
+    /// invitation.
+    UnsupportedVersion,
 }
 
 impl std::fmt::Display for PairingError {
@@ -127,6 +195,11 @@ impl std::error::Error for PairingError {}
 
 struct Invitation {
     host_device_id: DeviceId,
+    /// Plaintext code, needed to derive the SPAKE2 password scalar. Held for
+    /// the invitation lifetime only; never serialized into a response.
+    code: String,
+    /// Hash used by the out-of-band invitation-text path, which never needs
+    /// the plaintext after minting.
     secret_hash: [u8; 32],
     certificate_der: Vec<u8>,
     expires: Instant,
@@ -146,12 +219,18 @@ struct Request {
     receipt_hash: [u8; 32],
     expires: Instant,
     state: RequestState,
+    /// The invitation this request was started from; a successful
+    /// confirmation spends it and every sibling handshake.
+    invitation_id: String,
 }
 
 #[derive(Default)]
 struct RegistryState {
     invitations: HashMap<String, Invitation>,
     requests: HashMap<String, Request>,
+    /// Host-side SPAKE2 state per pending request. Kept out of [`Request`]
+    /// because it is single-use and not cloneable.
+    pakes: HashMap<String, HostPake>,
 }
 
 pub struct PairingRegistry {
@@ -215,6 +294,7 @@ impl PairingRegistry {
         let requests = {
             let mut state = self.state.lock().map_err(|_| PairingError::Unavailable)?;
             state.invitations.clear();
+            state.pakes.clear();
             state
                 .requests
                 .drain()
@@ -255,6 +335,9 @@ impl PairingRegistry {
                     receipt_hash: [0; 32],
                     expires: Instant::now(),
                     state: RequestState::Approved,
+                    // The placeholder is never Pending, so confirmation never
+                    // reaches the invitation-clearing path with this value.
+                    invitation_id: String::new(),
                 });
             return Err(error);
         }
@@ -294,6 +377,7 @@ impl PairingRegistry {
             invitation_id.clone(),
             Invitation {
                 host_device_id,
+                code: invitation_secret.clone(),
                 secret_hash: *blake3::hash(invitation_secret.as_bytes()).as_bytes(),
                 certificate_der: host_certificate_der.clone(),
                 expires: Instant::now() + ttl,
@@ -310,62 +394,155 @@ impl PairingRegistry {
         })
     }
 
-    /// Resolve a short code to the host's temporary TLS pin, then create the
-    /// same one-use receipt used by the existing credential lifecycle.
+    /// First PAKE round: answer a device that presented its SPAKE2 message.
+    ///
+    /// The invitation is not consumed here. Until the device's confirmation
+    /// MAC arrives the host cannot tell a wrong code from a relay, so a failed
+    /// attempt must not lock the real device out; only [`Self::confirm`]
+    /// spends the code.
     ///
     /// # Errors
-    /// Rejects a malformed or expired code, a code already claimed by another
-    /// request, and registry or provisioning failures.
-    pub fn request_with_code(
+    /// Rejects malformed metadata or handshake messages, an absent or expired
+    /// invitation, capacity limits, and unusable OS entropy.
+    pub fn request_with_pake(
         &self,
         dto: &PairingCodeRequest,
-    ) -> Result<(PairingReceipt, PairingInvitation), PairingError> {
-        if dto.code.len() != 6
-            || !dto.code.bytes().all(|byte| byte.is_ascii_digit())
-            || !valid_name(&dto.device_name)
-        {
+    ) -> Result<PairingBootstrapResponse, PairingError> {
+        if !valid_name(&dto.device_name) || dto.message.len() != PAKE_MESSAGE_BYTES {
             return Err(PairingError::InvalidRequest);
         }
-        let (invitation_id, host_device_id, certificate_der, expires_in_secs) = {
+        let (invitation_id, host_device_id, code, certificate_der, expires) = {
             let mut state = self.state.lock().map_err(|_| PairingError::Unavailable)?;
             prune(&mut state);
-            let found = state
+            let (id, invite) = state
                 .invitations
                 .iter()
-                .find(|(_, invite)| secret_matches(&dto.code, &invite.secret_hash))
-                .map(|(id, invite)| {
-                    (
-                        id.clone(),
-                        invite.host_device_id,
-                        invite.certificate_der.clone(),
-                        invite
-                            .expires
-                            .saturating_duration_since(Instant::now())
-                            .as_secs(),
-                    )
-                })
+                .next()
                 .ok_or(PairingError::Unavailable)?;
+            let found = (
+                id.clone(),
+                invite.host_device_id,
+                invite.code.clone(),
+                invite.certificate_der.clone(),
+                invite.expires,
+            );
+            drop(state);
             found
         };
-        let invitation_secret = dto.code.clone();
-        let receipt = self.request(&PairingRequestDto {
-            binding: self.binding,
-            invitation_id: invitation_id.clone(),
-            invitation_secret: invitation_secret.clone(),
+        if dto.device_id == host_device_id {
+            return Err(PairingError::InvalidRequest);
+        }
+        let context = PakeContext {
+            code: &code,
             device_id: dto.device_id,
-            device_name: dto.device_name.clone(),
-        })?;
-        Ok((
-            receipt,
-            PairingInvitation {
+        };
+        let response = HostPake::respond(&context, &dto.message).map_err(pake_error)?;
+        let certificate_proof = response.state.certificate_proof(&certificate_der).to_vec();
+        let mut state = self.state.lock().map_err(|_| PairingError::Unavailable)?;
+        prune(&mut state);
+        // The invitation may have expired or been rotated while the handshake
+        // ran; never answer for an invitation that is no longer live.
+        if !state.invitations.contains_key(&invitation_id) {
+            return Err(PairingError::Unavailable);
+        }
+        if state.requests.len() >= MAX_PENDING {
+            return Err(PairingError::Capacity);
+        }
+        let request_id = random_secret();
+        let claim_secret = random_secret();
+        let expires_in_secs = expires.saturating_duration_since(Instant::now()).as_secs();
+        state.requests.insert(
+            request_id.clone(),
+            Request {
+                metadata: PendingPairingRequest {
+                    binding: self.binding,
+                    request_id: request_id.clone(),
+                    device_id: dto.device_id,
+                    device_name: dto.device_name.clone(),
+                    expires_in_secs,
+                },
+                receipt_hash: *blake3::hash(claim_secret.as_bytes()).as_bytes(),
+                expires,
+                state: RequestState::Pending,
+                invitation_id: invitation_id.clone(),
+            },
+        );
+        state.pakes.insert(request_id.clone(), response.state);
+        drop(state);
+        Ok(PairingBootstrapResponse {
+            host: PairingHostDescriptor {
                 binding: self.binding,
                 host_device_id,
                 invitation_id,
-                invitation_secret,
                 host_certificate_der: certificate_der,
                 expires_in_secs,
             },
-        ))
+            message: response.message,
+            confirmation: response.confirmation,
+            certificate_proof,
+            receipt: PairingReceipt {
+                binding: self.binding,
+                request_id,
+                device_id: dto.device_id,
+                claim_secret,
+                expires_in_secs,
+            },
+        })
+    }
+
+    /// Second PAKE round: verify the device's confirmation MAC and spend the
+    /// invitation.
+    ///
+    /// Only after this returns `Ok` may the caller approve and claim, so no
+    /// credential exists for a peer that has not proved possession of the code.
+    ///
+    /// # Errors
+    /// Rejects wrong bindings or receipts, unknown or expired requests, and a
+    /// confirmation that does not prove possession of the code
+    /// ([`PairingError::ProtocolMismatch`]). A failed confirmation consumes the
+    /// handshake.
+    pub fn confirm(&self, dto: &PairingConfirmationDto) -> Result<(), PairingError> {
+        if dto.binding != self.binding
+            || !valid_secret(&dto.request_id)
+            || !valid_secret(&dto.claim_secret)
+        {
+            return Err(PairingError::InvalidRequest);
+        }
+        let mut state = self.state.lock().map_err(|_| PairingError::Unavailable)?;
+        prune(&mut state);
+        let invitation_id = {
+            let request = state
+                .requests
+                .get(&dto.request_id)
+                .ok_or(PairingError::Unavailable)?;
+            if request.metadata.device_id != dto.device_id
+                || !secret_matches(&dto.claim_secret, &request.receipt_hash)
+                || request.state != RequestState::Pending
+            {
+                return Err(PairingError::Unavailable);
+            }
+            request.invitation_id.clone()
+        };
+        let pake = state
+            .pakes
+            .remove(&dto.request_id)
+            .ok_or(PairingError::Unavailable)?;
+        if pake.verify_device_confirmation(&dto.confirmation).is_err() {
+            // Single-use even on failure: a wrong confirmation must not leave
+            // a usable handshake behind for a retry.
+            state.requests.remove(&dto.request_id);
+            return Err(PairingError::ProtocolMismatch);
+        }
+        // The code has proved itself. Spend it, along with every other
+        // handshake started from the same invitation.
+        state.invitations.remove(&invitation_id);
+        state
+            .requests
+            .retain(|id, request| id == &dto.request_id || request.invitation_id != invitation_id);
+        let live = state.requests.keys().cloned().collect::<Vec<_>>();
+        state.pakes.retain(|id, _| live.contains(id));
+        drop(state);
+        Ok(())
     }
 
     /// Consume an invitation and create a request requiring explicit approval.
@@ -413,6 +590,7 @@ impl PairingRegistry {
                 receipt_hash: *blake3::hash(claim_secret.as_bytes()).as_bytes(),
                 expires,
                 state: RequestState::Pending,
+                invitation_id: dto.invitation_id.clone(),
             },
         );
         drop(state);
@@ -619,6 +797,24 @@ fn prune(state: &mut RegistryState) {
     state
         .requests
         .retain(|_, request| request.expires > now || request.state != RequestState::Pending);
+    let requests = &state.requests;
+    state
+        .pakes
+        .retain(|request_id, _| requests.contains_key(request_id));
+}
+
+/// Map a handshake failure onto the registry's error surface.
+///
+/// A wrong code or a relay is a protocol mismatch, not an expired code; only
+/// an unusable environment maps to `Unavailable`.
+const fn pake_error(error: PakeError) -> PairingError {
+    match error {
+        PakeError::EntropyUnavailable | PakeError::Internal => PairingError::Unavailable,
+        PakeError::InvalidMessage => PairingError::InvalidRequest,
+        PakeError::ConfirmationFailed | PakeError::CertificateUnverified => {
+            PairingError::ProtocolMismatch
+        }
+    }
 }
 
 fn valid_name(value: &str) -> bool {

@@ -7,12 +7,15 @@ use axum::http::Request;
 use echo_core::application::ports::StagedConfirmation;
 use echo_core::domain::ids::SongId;
 use echo_core::domain::sync::{
-    AuthorityId, CommitCheckpoint, CommitSeq, Epoch, LibraryId, MutationId, ObjectKey,
+    confirm_candidate_at, AuthorityId, CommitCheckpoint, CommitSeq, ConfirmedObject, Epoch,
+    LibraryId, MutationCandidate, MutationId, ObjectKey, ObjectVersion,
 };
 use echo_core::error::Error;
 use hyper::service::Service;
 
 use super::*;
+
+use crate::protocol::MutationAck;
 
 const TOKEN: &str = "0123456789abcdef0123456789abcdef";
 
@@ -22,6 +25,8 @@ struct Ledger {
     staged: Mutex<Option<(MutationCandidate, StagedConfirmation)>>,
     published: AtomicUsize,
     commits: Mutex<Vec<PublishedCommit>>,
+    /// Arbitration times the server handed to the ledger, in order.
+    changed_at: Mutex<Vec<Option<u64>>>,
 }
 
 impl HostCommitLedgerPort for Ledger {
@@ -49,6 +54,16 @@ impl HostCommitLedgerPort for Ledger {
         *staged = Some((candidate.clone(), receipt.clone()));
         drop(staged);
         Ok(receipt)
+    }
+
+    fn stage_confirmation_at(
+        &self,
+        binding: SyncBinding,
+        candidate: &MutationCandidate,
+        changed_at_ms: Option<u64>,
+    ) -> Result<StagedConfirmation, Error> {
+        self.changed_at.lock().unwrap().push(changed_at_ms);
+        self.stage_confirmation(binding, candidate)
     }
 
     fn mark_published(&self, _checkpoint: CommitCheckpoint) -> Result<(), Error> {
@@ -768,6 +783,56 @@ async fn resource_range_requires_matching_library_and_bounded_explicit_offsets()
         b"udi"
     );
     assert_eq!(resources.calls.load(Ordering::Relaxed), 1);
+}
+
+#[path = "server_tests/pairing.rs"]
+mod pairing;
+
+#[tokio::test]
+async fn host_clamps_a_far_future_changed_at_ms() {
+    const NOW_MS: u64 = 1_000_000;
+    let mut fixture = Fixture::new();
+    fixture.state = fixture.state.clone().with_clock(Arc::new(|| NOW_MS));
+    let mut mutation = fixture.mutation.clone();
+    mutation.changed_at_ms = Some(u64::MAX);
+    assert_eq!(fixture.submit(&mutation).await.status(), StatusCode::OK);
+
+    // Arbitration receives `now + MAX_CLOCK_SKEW_MS`, not the claimed value.
+    let ceiling = NOW_MS + HostApiState::MAX_CLOCK_SKEW_MS;
+    assert_eq!(
+        *fixture.ledger.changed_at.lock().unwrap(),
+        vec![Some(ceiling)]
+    );
+
+    // The clamp is not permanent: a local edit made even one millisecond past
+    // the ceiling still outranks the stored value, so a device with a broken
+    // clock cannot freeze the object.
+    let current = ConfirmedObject {
+        object: mutation.object,
+        version: ObjectVersion::from_commit_seq(CommitSeq::from_u64(4)),
+        origin_device_id: mutation.origin_device_id,
+        payload: mutation.payload.clone(),
+    };
+    let local = MutationCandidate {
+        mutation_id: MutationId::new(),
+        origin_device_id: DeviceId::new(),
+        origin_seq: 1,
+        previous_mutation_id: None,
+        object: mutation.object,
+        base_object_version: Some(current.version),
+        payload: serde_json::json!({"favorite": false}),
+        resource_refs: Vec::new(),
+    };
+    let decision = confirm_candidate_at(
+        Some(&current),
+        None,
+        &local,
+        CommitSeq::from_u64(5),
+        ceiling + 1,
+        ceiling,
+    )
+    .unwrap();
+    assert!(decision.candidate_wins);
 }
 
 #[path = "server_security_tests.rs"]

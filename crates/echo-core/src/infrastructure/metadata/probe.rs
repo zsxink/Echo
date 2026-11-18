@@ -109,11 +109,9 @@ impl SymphoniaMediaProbe {
             let duration = params
                 .n_frames
                 .zip(params.time_base)
-                .map(|(frames, time_base)| {
+                .and_then(|(frames, time_base)| {
                     let time = time_base.calc_time(frames);
-                    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-                    let frac_nanos = (time.frac * 1_000_000_000.0) as u64;
-                    Duration::from_nanos(time.seconds * 1_000_000_000 + frac_nanos)
+                    duration_from_time(time.seconds, time.frac)
                 });
             return Ok(ContainerKind::Audio(AudioTrack {
                 format: audio_format,
@@ -233,6 +231,19 @@ impl MediaProbe for SymphoniaMediaProbe {
             |kind| Ok(kind.into_outcome()),
         )
     }
+}
+
+/// Convert a container time base into a [`Duration`], or `None` when the
+/// conversion does not fit. `n_frames` and `time_base` come from the file, so
+/// their product can exceed `u64` nanoseconds; a bogus length must leave the
+/// track without a duration rather than panic (debug) or wrap (release).
+fn duration_from_time(seconds: u64, frac: f64) -> Option<Duration> {
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    let frac_nanos = (frac * 1_000_000_000.0) as u64;
+    seconds
+        .checked_mul(1_000_000_000)
+        .and_then(|whole| whole.checked_add(frac_nanos))
+        .map(Duration::from_nanos)
 }
 
 /// An `IoError` during probing is either a missing file (`Error::Io`) or a
@@ -417,6 +428,32 @@ mod tests {
             .probe(root, &relative)
             .unwrap_err();
         assert_eq!(outcome.code(), "corrupt_media", "{outcome}");
+    }
+
+    /// `LL-R03-S07`: the frame count and time base come from the container, so
+    /// their product can leave `u64`. A debug-build overflow panics and takes
+    /// the whole scan with it; the track must simply have no duration.
+    #[test]
+    fn probe_duration_overflow_yields_no_duration() {
+        // `u64::MAX` seconds cannot be expressed in nanoseconds.
+        assert_eq!(duration_from_time(u64::MAX, 0.0), None);
+        // The nanosecond part alone can push a representable value over.
+        let almost = u64::MAX / 1_000_000_000;
+        assert!(duration_from_time(almost, 0.5).is_some(), "fits exactly");
+        assert_eq!(
+            duration_from_time(almost, 0.5),
+            Some(Duration::from_nanos(almost * 1_000_000_000 + 500_000_000))
+        );
+        assert_eq!(
+            duration_from_time(almost, 1.0),
+            None,
+            "the fractional part pushes the total over the limit"
+        );
+        // A normal value still converts.
+        assert_eq!(
+            duration_from_time(269, 0.25),
+            Some(Duration::from_millis(269_250))
+        );
     }
 
     /// A minimal valid PNG header (the content signature is what matters).

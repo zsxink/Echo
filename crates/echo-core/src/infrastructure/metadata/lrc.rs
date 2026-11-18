@@ -66,7 +66,13 @@ pub fn parse_lrc(raw: &str, source: LyricsSource) -> LyricsCandidate {
         }
         let text = text.trim().to_owned();
         for timestamp_ms in timestamps {
-            let shifted = timestamp_ms + offset_ms;
+            // Both operands come from the file, so their sum can leave `i64`.
+            // An overflowing shift is as unusable as a negative one: drop the
+            // line instead of aborting the scan.
+            let Some(shifted) = timestamp_ms.checked_add(offset_ms) else {
+                out_of_range += 1;
+                continue;
+            };
             if shifted < 0 {
                 out_of_range += 1;
                 continue;
@@ -295,4 +301,28 @@ mod tests {
         assert_eq!(plain.lines().count(), 2_000);
         assert!(candidate.parse_error().is_none());
     }
+}
+
+/// `LL-R03-S07`: both the timestamp and the global offset come from an
+/// untrusted file, so their sum can leave `i64`. A debug-build panic here
+/// aborts the whole scan for one malformed sidecar; the line must instead
+/// be dropped like any other out-of-range timestamp.
+#[test]
+fn lrc_offset_overflow_drops_the_line_instead_of_panicking() {
+    // The offset parses to i64::MAX; the timestamp is positive, so the sum
+    // overflows. Nothing readable is left, so the candidate is a note.
+    let raw = "[offset:9223372036854775807]\n[00:10.00]overflow";
+    let candidate = LrcLyricsParser.parse(raw);
+    assert!(candidate.lines().is_empty(), "{:?}", candidate.lines());
+
+    // A second, readable line survives: only the overflowing one is
+    // dropped, so a single hostile line cannot void the sidecar.
+    let raw = "[offset:-9223372036854775808]\n[00:10.00]overflow\nplain text";
+    let candidate = LrcLyricsParser.parse(raw);
+    assert!(
+        candidate.lines().is_empty(),
+        "the shifted line is out of range: {:?}",
+        candidate.lines()
+    );
+    assert_eq!(candidate.plain_text(), Some("plain text"));
 }

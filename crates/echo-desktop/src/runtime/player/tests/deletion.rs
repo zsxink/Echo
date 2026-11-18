@@ -13,10 +13,12 @@ fn coordinated_delete_removes_current_song_and_commits() {
     let s2 = SongId::new();
     {
         let mut coord = coordinator.lock().expect("coordinator lock");
-        coord.play_context(&ViewContext {
-            songs: vec![s1, s2],
-            selected_index: 0,
-        });
+        coord
+            .play_context(&ViewContext {
+                songs: vec![s1, s2],
+                selected_index: 0,
+            })
+            .unwrap();
     }
     fake.set_state(PlaybackState::Playing);
 
@@ -67,10 +69,12 @@ fn coordinated_delete_rolls_back_when_core_refuses() {
     let s2 = SongId::new();
     {
         let mut coord = coordinator.lock().expect("coordinator lock");
-        coord.play_context(&ViewContext {
-            songs: vec![s1, s2],
-            selected_index: 0,
-        });
+        coord
+            .play_context(&ViewContext {
+                songs: vec![s1, s2],
+                selected_index: 0,
+            })
+            .unwrap();
     }
 
     let outcome = delete_song_coordinated(
@@ -115,10 +119,12 @@ fn coordinated_delete_preserves_a_saved_pending_core_failure() {
     let s1 = SongId::new();
     {
         let mut coord = coordinator.lock().expect("coordinator lock");
-        coord.play_context(&ViewContext {
-            songs: vec![s1],
-            selected_index: 0,
-        });
+        coord
+            .play_context(&ViewContext {
+                songs: vec![s1],
+                selected_index: 0,
+            })
+            .unwrap();
     }
     let operation = echo_core::domain::ids::OperationId::new();
 

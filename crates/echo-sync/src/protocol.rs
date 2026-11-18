@@ -12,7 +12,10 @@ use echo_core::domain::sync::{
     SharedResourceKind, SharedResourceManifest, SyncBinding,
 };
 
-pub const PROTOCOL_VERSION: u16 = 1;
+/// Wire protocol version. Version 2 binds the pairing code to the bootstrap
+/// TLS channel with SPAKE2 (see `pairing_pake`); a version 1 peer never shares
+/// a library with a version 2 peer.
+pub const PROTOCOL_VERSION: u16 = 2;
 pub const MAX_MUTATION_BYTES: usize = 1_048_576;
 /// Reserve space for the confirmation envelope around a maximum-size mutation.
 pub const MAX_COMMIT_BYTES: usize = MAX_MUTATION_BYTES + 64 * 1024;
@@ -441,6 +444,13 @@ mod tests {
     use serde_json::json;
     use std::fmt::Write as _;
 
+    #[test]
+    fn protocol_version_matches_the_persistence_layer() {
+        // echo-core stamps and verifies persisted commit bodies with its own
+        // copy of the version; the two must never drift apart.
+        assert_eq!(PROTOCOL_VERSION, echo_core::domain::sync::PROTOCOL_VERSION);
+    }
+
     fn mutation() -> MutationDto {
         MutationDto {
             resource_refs: Vec::new(),
@@ -498,7 +508,7 @@ mod tests {
         dto.protocol_version += 1;
         assert_eq!(
             validate_mutation(&dto),
-            Err(ProtocolError::UnsupportedVersion(2))
+            Err(ProtocolError::UnsupportedVersion(PROTOCOL_VERSION + 1))
         );
     }
 
@@ -575,7 +585,7 @@ mod tests {
     #[test]
     fn checked_in_commit_fixture_remains_readable_and_hashable() {
         let fixture: CommitDto =
-            serde_json::from_str(include_str!("../tests/fixtures/commit-v1.json")).unwrap();
+            serde_json::from_str(include_str!("../tests/fixtures/commit-v2.json")).unwrap();
         assert_eq!(fixture.protocol_version, PROTOCOL_VERSION);
         let digest = commit_digest(&fixture).unwrap();
         let digest_hex = digest
@@ -586,7 +596,17 @@ mod tests {
             });
         assert_eq!(
             digest_hex,
-            "dc2bbbabce5cd3132ff411710a7350df06a736d1ca48cc1e1abe572f8977424b"
+            "0e01d350b14d22eca7e2db4206a56702ce873dec00368eae46b0ff3e1f11458f"
+        );
+    }
+
+    #[test]
+    fn checked_in_v1_commit_fixture_is_rejected_as_an_unsupported_version() {
+        let fixture: CommitDto =
+            serde_json::from_str(include_str!("../tests/fixtures/commit-v1.json")).unwrap();
+        assert_eq!(
+            commit_digest(&fixture),
+            Err(ProtocolError::UnsupportedVersion(1))
         );
     }
 }

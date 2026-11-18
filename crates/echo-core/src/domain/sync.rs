@@ -86,6 +86,11 @@ uuid_identity!(AuthorityId);
 uuid_identity!(DeviceId);
 uuid_identity!(MutationId);
 
+/// Wire protocol version stamped into persisted commit bodies and checked when
+/// they are verified. Must equal `echo_sync::protocol::PROTOCOL_VERSION`; the
+/// sync crate asserts the two stay in lock-step.
+pub const PROTOCOL_VERSION: u16 = 2;
+
 /// Monotone generation of one library authority. A restored authority must
 /// receive a new epoch before serving peers.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -239,8 +244,9 @@ pub struct FinalTombstone {
     pub mutation_id: MutationId,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum TombstoneDecisionError {
+    #[error("object is already finally deleted")]
     ObjectAlreadyDeleted,
 }
 
@@ -371,14 +377,21 @@ pub struct Confirmation {
     pub candidate_wins: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ConfirmationError {
+    #[error("confirmation names a different object")]
     WrongObject,
+    #[error("confirmation originates from the wrong device")]
     WrongOrigin,
+    #[error("play statistics may only be written by their origin device")]
     UnauthorizedPlayStatsBucket,
+    #[error("origin sequence is exhausted")]
     OriginSequenceExhausted,
+    #[error("confirmation predecessor is out of order")]
     OutOfOrderPredecessor,
+    #[error("host sequence is not monotone")]
     NonMonotoneHostSequence,
+    #[error("host sequence is exhausted")]
     HostSequenceExhausted,
 }
 
@@ -702,10 +715,13 @@ pub enum DeleteIntentOutcome {
     AlreadyFinalized,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum DeleteIntentError {
+    #[error("delete deadline precedes the intent's creation")]
     InvalidDeadline,
+    #[error("the delete undo window has expired")]
     UndoWindowExpired,
+    #[error("the delete intent already reached a terminal state")]
     AlreadyResolved,
 }
 

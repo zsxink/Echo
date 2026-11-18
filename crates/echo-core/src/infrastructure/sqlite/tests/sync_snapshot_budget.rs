@@ -58,7 +58,7 @@ fn publish_song(
             let previous: Vec<u8> = connection.query_row("SELECT previous_digest FROM sync_commits WHERE commit_seq=?1", params![sequence], |row| row.get(0)).map_err(storage)?;
             let mut hash = blake3::Hasher::new();
             hash.update(b"echo.lan.commit.v1\0");
-            hash.update(&1u16.to_be_bytes());
+            hash.update(&crate::domain::sync::PROTOCOL_VERSION.to_be_bytes());
             hash.update(&sequence.to_be_bytes());
             hash.update(&previous);
             hash.update(&u32::try_from(body.len()).unwrap().to_be_bytes());

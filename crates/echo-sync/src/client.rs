@@ -2,12 +2,15 @@
 
 use std::time::Duration;
 
-use crate::pairing::{PairingBootstrapResponse, PairingCodeRequest};
+use crate::pairing::{
+    PairedHost, PairingBootstrapResponse, PairingCodeRequest, PairingConfirmationDto,
+    PairingGrantDto, PairingHostDescriptor,
+};
 
 use crate::protocol::{
     commit_digest, validate_mutation, validate_resource, validate_snapshot_page, CommitPageDto,
     MutationAck, MutationDto, ProtocolError, SnapshotPageDto, MAX_COMMIT_BYTES, MAX_COMMIT_WAIT_MS,
-    MAX_PAGE_SIZE, MAX_SYNC_PAGE_BYTES,
+    MAX_PAGE_SIZE, MAX_SYNC_PAGE_BYTES, PROTOCOL_VERSION,
 };
 use crate::resource_transfer::{
     PrepareResource, ResourceTransferPort, TransferProgress, MAX_RESOURCE_BYTES,
@@ -55,6 +58,8 @@ pub enum ClientError {
     HostRejectedCode(StatusCode, String),
     InvalidResponse(reqwest::Error),
     InvalidResponseBody,
+    /// The local side of the pairing handshake could not start or complete.
+    PairingHandshake,
     InvalidCommitChain,
     RemoteApply(echo_core::error::Error),
 }
@@ -75,6 +80,7 @@ impl std::fmt::Display for ClientError {
             Self::InvalidResponseBody => {
                 f.write_str("sync host returned an invalid or oversized response body")
             }
+            Self::PairingHandshake => f.write_str("the pairing handshake could not be completed"),
             Self::InvalidCommitChain => {
                 f.write_str("sync host returned a forked or invalid commit chain")
             }

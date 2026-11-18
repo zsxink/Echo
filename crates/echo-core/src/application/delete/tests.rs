@@ -26,7 +26,10 @@ fn seed_song(fixture: &ScanFixture, path: &str, audio: &[u8], lrc: Option<&[u8]>
     song.record_play();
     SongRepository::upsert(&fixture.database, &song).unwrap();
     if let Some(lrc_bytes) = lrc {
-        fixture.write_file(derive_lrc_path(&audio_path).display(), lrc_bytes);
+        fixture.write_file(
+            derive_lrc_path(&audio_path).expect("lrc sibling").display(),
+            lrc_bytes,
+        );
         // A persisted sidecar lyrics candidate, like an import would leave.
         let subject = song.id();
         let candidate = crate::domain::entities::LyricsCandidate::new(
@@ -148,7 +151,7 @@ fn delete_stages_audio_and_lrc_into_trash_and_hides_the_song() {
         Some(b"lrc-bytes"),
     );
     let audio_path = fixture.path("歌手/周杰伦 - 晴天.flac");
-    let lrc_path = derive_lrc_path(&audio_path);
+    let lrc_path = derive_lrc_path(&audio_path).expect("lrc sibling");
 
     let outcome = DeleteSongs::new(&fixture.deps)
         .delete(fixture.root, song)
@@ -510,4 +513,36 @@ fn undoing_a_delete_removes_a_legacy_temporary_tombstone() {
         .unwrap()
         .unwrap();
     assert_eq!(after.availability(), SongAvailability::Available);
+}
+
+/// `LL-R07-S05`: the `.lrc` sibling is derived by *appending* `.lrc`, never by
+/// dropping a fixed number of bytes. An extension-less media name is legal in
+/// a library, and truncating one byte of it points the delete at the wrong
+/// file — the sidecar is then neither staged nor reported missing.
+#[test]
+fn derive_lrc_path_keeps_an_extension_less_name() {
+    let audio = RelativeMediaPath::new("media/歌手/晴天").expect("extension-less path");
+    let lyrics = derive_lrc_path(&audio).expect("lrc sibling");
+    assert_eq!(
+        lyrics.normalized(),
+        "media/歌手/晴天.lrc",
+        "an extension-less name keeps every byte and gains `.lrc`"
+    );
+}
+
+/// `LL-R07-S05`: the extension reported by `RelativeMediaPath::extension()` is
+/// lower-case while the path keeps its original case. A case-mismatched suffix
+/// must not panic and must never produce a path that points at another file.
+#[test]
+fn derive_lrc_path_handles_an_upper_case_extension() {
+    let audio = RelativeMediaPath::new("media/歌手/晴天.FLAC").expect("upper-case extension");
+    let lyrics = derive_lrc_path(&audio).expect("lrc sibling");
+    assert_eq!(lyrics.normalized(), "media/歌手/晴天.lrc");
+
+    // A dotted name whose "extension" is not one (a trailing dot) and a name
+    // that is nothing but a dot-prefixed stem must stay derivable.
+    for raw in ["media/歌手/晴天.", "media/歌手/.晴天", "media/晴天"] {
+        let audio = RelativeMediaPath::new(raw).expect("valid media path");
+        let _ = derive_lrc_path(&audio);
+    }
 }

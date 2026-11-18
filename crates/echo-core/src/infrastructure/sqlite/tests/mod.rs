@@ -32,6 +32,7 @@ mod sync_snapshot_apply;
 mod sync_snapshot_apply_durability;
 mod sync_song_projection;
 
+mod catalog_transactions;
 mod controlled_order;
 mod durability_migration;
 mod lifecycle;

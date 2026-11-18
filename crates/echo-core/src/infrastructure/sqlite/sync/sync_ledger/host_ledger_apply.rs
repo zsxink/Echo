@@ -372,12 +372,12 @@ pub(super) fn encode_commit(
     // host log records its deterministic canonical result for every replica.
     confirmed_candidate.payload = confirmed_payload.clone();
     let commit_body = WireCommitBody {
-        protocol_version: 1,
+        protocol_version: crate::domain::sync::PROTOCOL_VERSION,
         binding,
         commit_seq: sequence,
         previous_digest,
         mutation: WireMutationBody {
-            protocol_version: 1,
+            protocol_version: crate::domain::sync::PROTOCOL_VERSION,
             binding,
             origin_device_id: candidate.origin_device_id,
             mutation_id: candidate.mutation_id,
@@ -413,7 +413,7 @@ pub(super) fn encode_commit(
     let body_len = u32::try_from(body.len()).map_err(storage)?;
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"echo.lan.commit.v1\0");
-    hasher.update(&1u16.to_be_bytes());
+    hasher.update(&crate::domain::sync::PROTOCOL_VERSION.to_be_bytes());
     hasher.update(&sequence.as_u64().to_be_bytes());
     hasher.update(&previous_digest);
     hasher.update(&body_len.to_be_bytes());
