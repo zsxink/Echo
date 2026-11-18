@@ -101,4 +101,4 @@
 - [x] 11.2 复核 `docs/PRODUCT.md` / `docs/ROADMAP.md`：本 change 不改变产品范围、阶段或界面术语，记录结论即可。验证：`git diff --name-only` 中不含这两个文件与 `AGENT.md`；若结论相反，先修正规格再改文档。
 - [x] 11.3 运行完整门禁：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`cargo test --workspace --all-features`、`cargo deny check`、`node scripts/verify/reconcile-scenarios.mjs`、`pnpm verify:governance`、`pnpm exec openspec validate fix-rust-review-p0 --strict`。验证：七条命令退出 0；`pnpm verify:governance` 须**独占运行**（并行 cargo 或其它扫描会让墙钟断言误报）。
 - [x] 11.4 按 `engineering-governance` 的要求，在创建 PR 前把本 change 的 delta 同步到主规格并归档，然后才进入 PR。验证：`pnpm exec openspec list` 中不再列出 `fix-rust-review-p0` 为进行中；`git status --short` 干净。
-- [ ] 11.5 在 PR 描述中显式写明三项发布影响：协议版本 1 → 2 导致已配对设备需重新配对；`echo-sync` 新增 PAKE 依赖与其许可证核对结论；`AREA_PREFIX` 外的四个 capability 只由 crate 级测试证明（design D14）。验证：PR 正文含这三条，且与 `design.md` 的 Migration Plan 一致。
+- [x] 11.5 在 PR 描述中显式写明三项发布影响：协议版本 1 → 2 导致已配对设备需重新配对；`echo-sync` 新增 PAKE 依赖与其许可证核对结论；`AREA_PREFIX` 外的四个 capability 只由 crate 级测试证明（design D14）。验证：PR 正文含这三条，且与 `design.md` 的 Migration Plan 一致。
