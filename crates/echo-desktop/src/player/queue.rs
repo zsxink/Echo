@@ -306,6 +306,14 @@ pub struct ViewContext {
 }
 
 impl ViewContext {
+    /// The song playback starts at: `selected_index` clamped to the last
+    /// entry, or `None` when the view has no songs.
+    #[must_use]
+    pub fn selected_song(&self) -> Option<SongId> {
+        let selected = self.selected_index.min(self.songs.len().saturating_sub(1));
+        self.songs.get(selected).copied()
+    }
+
     /// Build a queue from a view context: each song becomes a `Library` entry
     /// with an independent `QueueEntryId`, and the selected song is made
     /// current. Returns the queue.

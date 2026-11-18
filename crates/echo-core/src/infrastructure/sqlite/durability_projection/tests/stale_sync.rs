@@ -44,14 +44,14 @@ fn confirmed_event(
     payload: Value,
 ) {
     let mutation = json!({
-        "protocol_version": 1,
+        "protocol_version": crate::domain::sync::PROTOCOL_VERSION,
         "mutation_id": MutationId::new(),
         "origin_device_id": SyncDeviceId::new(),
         "object": object,
         "payload": payload,
     });
     let body = json!({
-        "protocol_version": 1,
+        "protocol_version": crate::domain::sync::PROTOCOL_VERSION,
         "binding": binding,
         "commit_seq": sequence,
         "previous_digest": serde_json::to_value([7u8; 32]).unwrap(),
@@ -60,7 +60,7 @@ fn confirmed_event(
     let raw = serde_json::to_string(&body).unwrap();
     let mut hash = blake3::Hasher::new();
     hash.update(b"echo.lan.commit.v1\0");
-    hash.update(&1u16.to_be_bytes());
+    hash.update(&crate::domain::sync::PROTOCOL_VERSION.to_be_bytes());
     hash.update(&sequence.to_be_bytes());
     hash.update(&[7u8; 32]);
     hash.update(&u32::try_from(raw.len()).unwrap().to_be_bytes());

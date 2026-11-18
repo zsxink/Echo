@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+#[cfg(feature = "server")]
+use echo_core::application::ports::PublishedCommit;
 use echo_core::application::ports::{
     ControlPlanePort, DeviceIdProvider, HostCommitLedgerPort, LibraryRepository,
 };
@@ -202,6 +204,95 @@ fn bind_library_database(
     )
     .unwrap();
     database.bind_sync_library(binding, is_host, root).unwrap();
+}
+
+/// The host clamps an untrusted peer edit time before arbitration, but the
+/// clamp is an arbitration input only (design D8 "不改写"): the stored
+/// canonical commit body — the mutation every replica re-verifies by digest —
+/// must stay exactly what the peer submitted. A control run whose edit time
+/// already sits on the allowance therefore has to persist the very same bytes;
+/// if a future change wrote the clamped time back into the mutation, both the
+/// body and the digest would drift and every replica would reject it.
+#[cfg(feature = "server")]
+#[test]
+fn clamping_does_not_rewrite_the_stored_mutation() {
+    const FAR_FUTURE_MS: u64 = u64::MAX;
+    const NOW_MS: u64 = 1_000_000;
+    let binding = SyncBinding {
+        library_id: LibraryId::new(),
+        authority_id: AuthorityId::new(),
+        epoch: Epoch::INITIAL,
+    };
+    let device = DeviceId::new();
+    let song = SongId::new();
+    let mutation = MutationCandidate {
+        resource_refs: Vec::new(),
+        mutation_id: MutationId::new(),
+        origin_device_id: device,
+        origin_seq: 1,
+        previous_mutation_id: None,
+        object: ObjectKey::Song(song),
+        base_object_version: None,
+        payload: serde_json::json!({
+            "song_uuid": song.to_string(),
+            "relative_path": "Music/clock-skew.flac",
+            "title": "clock skew",
+            "added_at": 1,
+        }),
+    };
+    let ceiling = NOW_MS + echo_sync::server::HostApiState::MAX_CLOCK_SKEW_MS;
+    let clamped = publish_one(binding, device, &mutation, Some(ceiling));
+    let unclamped = publish_one(binding, device, &mutation, Some(FAR_FUTURE_MS));
+    assert_eq!(
+        clamped.canonical_json, unclamped.canonical_json,
+        "the clamp must not rewrite the persisted mutation body"
+    );
+    assert_eq!(clamped.digest, unclamped.digest);
+    let wire: CommitDto = serde_json::from_str(&clamped.canonical_json).unwrap();
+    assert_eq!(commit_digest(&wire).unwrap(), clamped.digest);
+    assert_eq!(
+        wire.mutation,
+        MutationDto {
+            resource_refs: Vec::new(),
+            protocol_version: PROTOCOL_VERSION,
+            binding,
+            origin_device_id: device,
+            mutation_id: mutation.mutation_id,
+            origin_seq: 1,
+            previous_mutation_id: None,
+            object: mutation.object,
+            base_object_version: None,
+            changed_at_ms: None,
+            payload: mutation.payload,
+        },
+        "the stored mutation keeps the peer's own body; only arbitration used the clamp"
+    );
+}
+
+/// Stage and publish one mutation through the real SQLite host ledger, exactly
+/// as the server hands it to `stage_confirmation_at`.
+#[cfg(feature = "server")]
+fn publish_one(
+    binding: SyncBinding,
+    origin: DeviceId,
+    mutation: &MutationCandidate,
+    changed_at_ms: Option<u64>,
+) -> PublishedCommit {
+    let directory = tempfile::tempdir().unwrap();
+    let database = SqliteDatabase::open(directory.path().join("library.db")).unwrap();
+    bind_library_database(&database, &directory.path().join("music"), binding, true);
+    database
+        .authorize_sync_peer(binding, origin, "peer".to_owned(), "handle".to_owned())
+        .unwrap();
+    let staged = database
+        .stage_confirmation_at(binding, mutation, changed_at_ms)
+        .unwrap();
+    let checkpoint = staged.checkpoint.unwrap();
+    database.mark_published(checkpoint).unwrap();
+    database
+        .published_commits_after(binding, CommitSeq::GENESIS, [0; 32], 8)
+        .unwrap()
+        .remove(0)
 }
 
 fn pad_to_mutation_limit(binding: SyncBinding, mutation: &mut MutationCandidate) {

@@ -1,4 +1,6 @@
 use super::pairing::*;
+use crate::pairing_pake::{DevicePake, PakeContext};
+use crate::protocol::PROTOCOL_VERSION;
 use echo_core::domain::sync::{AuthorityId, DeviceId, Epoch, LibraryId, SyncBinding};
 use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
@@ -346,8 +348,40 @@ fn deny_during_approval_compensates_the_late_grant() {
     assert!(registry.pending_requests().unwrap().is_empty());
 }
 
+fn code_request(code: &str, device: DeviceId) -> (PairingCodeRequest, DevicePake) {
+    let (message, state) = DevicePake::start(&PakeContext {
+        code,
+        device_id: device,
+    })
+    .unwrap();
+    (
+        PairingCodeRequest {
+            protocol_version: PROTOCOL_VERSION,
+            device_id: device,
+            device_name: "Joining device".into(),
+            message,
+        },
+        state,
+    )
+}
+
+fn confirmation(
+    receipt: &PairingReceipt,
+    device: DeviceId,
+    confirmation: Vec<u8>,
+) -> PairingConfirmationDto {
+    PairingConfirmationDto {
+        protocol_version: PROTOCOL_VERSION,
+        binding: receipt.binding,
+        request_id: receipt.request_id.clone(),
+        device_id: device,
+        claim_secret: receipt.claim_secret.clone(),
+        confirmation,
+    }
+}
+
 #[test]
-fn short_code_rejects_wrong_expired_consumed_and_rotated_codes() {
+fn pake_pairing_rejects_malformed_and_wrong_codes() {
     let registry = PairingRegistry::new(binding());
     let invitation = invite(&registry, DeviceId::new());
     assert_eq!(invitation.invitation_secret.len(), 6);
@@ -355,57 +389,145 @@ fn short_code_rejects_wrong_expired_consumed_and_rotated_codes() {
         .invitation_secret
         .bytes()
         .all(|byte| byte.is_ascii_digit()));
-    let mut request = PairingCodeRequest {
-        code: invitation.invitation_secret.clone(),
-        device_id: DeviceId::new(),
-        device_name: "Joining device".into(),
-    };
-    request.code = if request.code == "000000" {
+    let device = DeviceId::new();
+
+    // A malformed first message never reaches the handshake.
+    let (mut request, _state) = code_request(&invitation.invitation_secret, device);
+    request.message.truncate(64);
+    assert_eq!(
+        registry.request_with_pake(&request).err(),
+        Some(PairingError::InvalidRequest)
+    );
+
+    // A wrong code is not detectable at the first message, but the device
+    // cannot verify the host's confirmation and never confirms.
+    let wrong_code = if invitation.invitation_secret == "000000" {
         "111111"
     } else {
         "000000"
-    }
-    .into();
+    };
+    let (request, state) = code_request(wrong_code, device);
+    let bootstrap = registry.request_with_pake(&request).unwrap();
+    assert_eq!(bootstrap.host.host_certificate_der, vec![1, 2, 3]);
+    assert_eq!(bootstrap.receipt.binding, bootstrap.host.binding);
+    assert!(state
+        .finish(&bootstrap.message, &bootstrap.confirmation)
+        .is_err());
+}
+
+#[test]
+fn pake_pairing_completes_once_and_rejects_spent_expired_and_rotated_codes() {
+    let registry = PairingRegistry::new(binding());
+    let invitation = invite(&registry, DeviceId::new());
+    let device = DeviceId::new();
+
+    // The correct code completes: the confirmation unlocks approval.
+    let (request, state) = code_request(&invitation.invitation_secret, device);
+    let bootstrap = registry.request_with_pake(&request).unwrap();
+    let device_confirmation = state
+        .finish(&bootstrap.message, &bootstrap.confirmation)
+        .unwrap();
     assert_eq!(
-        registry.request_with_code(&request).err(),
-        Some(PairingError::Unavailable)
+        registry.confirm(&confirmation(
+            &bootstrap.receipt,
+            device,
+            device_confirmation.confirmation
+        )),
+        Ok(())
     );
-    request.code = "12x456".into();
+    let port = Port::default();
+    registry
+        .approve(&bootstrap.receipt.request_id, &port, |_| Ok(()))
+        .unwrap();
+    let grant = registry
+        .claim(
+            &PairingClaimDto {
+                binding: bootstrap.receipt.binding,
+                request_id: bootstrap.receipt.request_id.clone(),
+                device_id: device,
+                claim_secret: bootstrap.receipt.claim_secret,
+            },
+            &port,
+        )
+        .unwrap();
+    assert_eq!(grant.device_id, device);
+    assert!(registry.pending_requests().unwrap().is_empty());
+    // The code is spent: another handshake finds no live invitation.
+    let (request, _state) = code_request(&invitation.invitation_secret, device);
     assert_eq!(
-        registry.request_with_code(&request).err(),
-        Some(PairingError::InvalidRequest)
-    );
-    request.code = invitation.invitation_secret;
-    let (receipt, pin) = registry.request_with_code(&request).unwrap();
-    assert_eq!(receipt.binding, pin.binding);
-    assert_eq!(pin.host_certificate_der, vec![1, 2, 3]);
-    assert_eq!(
-        registry.request_with_code(&request).err(),
+        registry.request_with_pake(&request).err(),
         Some(PairingError::Unavailable)
     );
 
+    // An expired invitation is unavailable before any handshake runs.
     let expired = registry
         .create_invitation(DeviceId::new(), vec![1], Duration::from_nanos(1))
         .unwrap();
     thread::sleep(Duration::from_millis(1));
-    request.code = expired.invitation_secret;
+    let (request, _state) = code_request(&expired.invitation_secret, device);
     assert_eq!(
-        registry.request_with_code(&request).err(),
+        registry.request_with_pake(&request).err(),
         Some(PairingError::Unavailable)
     );
 
+    // Rotation invalidates the old code immediately — even if an extremely
+    // unlikely six-digit collision reuses its displayed code — because the
+    // host derives its scalar from the current code only.
     let rotated = invite(&registry, DeviceId::new());
-    let current = invite(&registry, DeviceId::new());
-    // Rotation must invalidate an outstanding invitation immediately, even if
-    // an extremely unlikely six-digit collision reuses its displayed code.
+    let mut current = invite(&registry, DeviceId::new());
+    while current.invitation_secret == rotated.invitation_secret {
+        current = invite(&registry, DeviceId::new());
+    }
+    let (request, state) = code_request(&rotated.invitation_secret, device);
+    let bootstrap = registry.request_with_pake(&request).unwrap();
+    assert_eq!(bootstrap.host.invitation_id, current.invitation_id);
+    assert!(state
+        .finish(&bootstrap.message, &bootstrap.confirmation)
+        .is_err());
+}
+
+#[test]
+fn a_forged_confirmation_is_a_protocol_mismatch_and_consumes_the_handshake() {
+    let registry = PairingRegistry::new(binding());
+    let invitation = invite(&registry, DeviceId::new());
+    let device = DeviceId::new();
+    let (message, state) = DevicePake::start(&PakeContext {
+        code: &invitation.invitation_secret,
+        device_id: device,
+    })
+    .unwrap();
+    let bootstrap = registry
+        .request_with_pake(&PairingCodeRequest {
+            protocol_version: PROTOCOL_VERSION,
+            device_id: device,
+            device_name: "Joining device".into(),
+            message,
+        })
+        .unwrap();
+    let genuine = state
+        .finish(&bootstrap.message, &bootstrap.confirmation)
+        .unwrap();
+    let dto = |confirmation: Vec<u8>| PairingConfirmationDto {
+        protocol_version: PROTOCOL_VERSION,
+        binding: bootstrap.receipt.binding,
+        request_id: bootstrap.receipt.request_id.clone(),
+        device_id: device,
+        claim_secret: bootstrap.receipt.claim_secret.clone(),
+        confirmation,
+    };
+
+    let mut forged = genuine.confirmation.clone();
+    forged[0] ^= 0xff;
     assert_eq!(
-        registry
-            .request(&request_dto(&rotated, DeviceId::new()))
-            .err(),
+        registry.confirm(&dto(forged)).err(),
+        Some(PairingError::ProtocolMismatch),
+        "a wrong code or relay must not be reported as an expired code"
+    );
+    // Single use even on failure: the genuine MAC no longer has a handshake.
+    assert_eq!(
+        registry.confirm(&dto(genuine.confirmation)).err(),
         Some(PairingError::Unavailable)
     );
-    request.code = current.invitation_secret;
-    assert!(registry.request_with_code(&request).is_ok());
 }
 
 #[test]

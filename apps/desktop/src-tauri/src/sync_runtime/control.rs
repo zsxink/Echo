@@ -28,7 +28,7 @@ impl SyncRuntime {
 
     pub fn complete_peer_pairing(
         &self,
-        invitation: &PairingInvitation,
+        host: &PairingHostDescriptor,
         endpoint: &str,
         grant: &PairingGrantDto,
     ) -> Result<SyncStatus, SyncRuntimeError> {
@@ -44,7 +44,7 @@ impl SyncRuntime {
         if Some(root) != self.active_root().ok() {
             return Err(SyncRuntimeError::LibraryUnavailable);
         }
-        provisioner.complete_peer_pairing(root, invitation, endpoint, grant)?;
+        provisioner.complete_peer_pairing(root, host, endpoint, grant)?;
         self.start_peer_locked()
     }
 
@@ -414,7 +414,10 @@ pub(super) fn wait_for_sync_wakeup(
 pub(super) const fn map_pairing_error(error: PairingError) -> SyncRuntimeError {
     match error {
         PairingError::Capacity | PairingError::Pending => SyncRuntimeError::Busy,
-        PairingError::InvalidRequest => SyncRuntimeError::InvalidAddress,
+        PairingError::InvalidRequest | PairingError::ProtocolMismatch => {
+            SyncRuntimeError::InvalidAddress
+        }
+        PairingError::UnsupportedVersion => SyncRuntimeError::PairingProtocolFailed,
         PairingError::Unavailable | PairingError::ProvisioningUnavailable => {
             SyncRuntimeError::Unconfigured
         }

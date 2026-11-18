@@ -3426,6 +3426,18 @@
       ]
     },
     {
+      "id": "DP-R01-S04",
+      "title": "系统刚启动时的播放会话初始化",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "actor_initializes_when_the_host_uptime_is_under_one_second"
+        }
+      ],
+      "delegatedTo": "workspace-test"
+    },
+    {
       "id": "DP-R02-S01",
       "title": "从曲库开始播放",
       "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
@@ -5095,6 +5107,18 @@
         {
           "kind": "rust",
           "target": "library_durability_broken_chain_and_corrupt_checkpoint_fail_closed_preserve_bytes"
+        }
+      ],
+      "delegatedTo": "workspace-test"
+    },
+    {
+      "id": "LD-R06-S03",
+      "title": "恢复读取既有投影失败",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "restore_propagates_a_projection_read_failure"
         }
       ],
       "delegatedTo": "workspace-test"
@@ -6837,6 +6861,22 @@
       "delegatedTo": "workspace-test"
     },
     {
+      "id": "LL-R01-S06",
+      "title": "根目录代际值异常时不崩溃",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "root_switch_rejects_an_unparseable_epoch"
+        },
+        {
+          "kind": "rust",
+          "target": "root_switch_does_not_overflow_the_epoch"
+        }
+      ],
+      "delegatedTo": "workspace-test"
+    },
+    {
       "id": "LL-R02-S01",
       "title": "首次扫描发现支持文件",
       "command": "cargo test -p echo-core --all-features",
@@ -6923,6 +6963,18 @@
       "delegatedTo": "frontend-test"
     },
     {
+      "id": "LL-R02-S08",
+      "title": "大小写敏感文件系统上的新增与修改事件",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "coalescer_samples_the_real_case_of_a_created_file"
+        }
+      ],
+      "delegatedTo": "workspace-test"
+    },
+    {
       "id": "LL-R03-S01",
       "title": "解析内嵌数据",
       "command": "cargo test -p echo-core --all-features",
@@ -6978,6 +7030,34 @@
         {
           "kind": "rust",
           "target": "tagless_wav_reads_as_ok_with_empty_fields"
+        }
+      ],
+      "delegatedTo": "workspace-test"
+    },
+    {
+      "id": "LL-R03-S06",
+      "title": "深度嵌套容器不使进程崩溃",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "deeply_nested_udta_does_not_overflow_the_stack"
+        }
+      ],
+      "delegatedTo": "workspace-test"
+    },
+    {
+      "id": "LL-R03-S07",
+      "title": "极端时间轴数值不崩溃",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "lrc_offset_overflow_drops_the_line_instead_of_panicking"
+        },
+        {
+          "kind": "rust",
+          "target": "probe_duration_overflow_yields_no_duration"
         }
       ],
       "delegatedTo": "workspace-test"
@@ -7055,6 +7135,22 @@
       "delegatedTo": "workspace-test"
     },
     {
+      "id": "LL-R05-S03",
+      "title": "多语句投影写入中断",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "catalog_delete_rolls_back_every_statement"
+        },
+        {
+          "kind": "rust",
+          "target": "catalog_remove_member_rolls_back_every_statement"
+        }
+      ],
+      "delegatedTo": "workspace-test"
+    },
+    {
       "id": "LL-R06-S01",
       "title": "覆盖层优先展示",
       "command": "cargo test -p echo-core --all-features",
@@ -7127,6 +7223,18 @@
       "delegatedTo": "workspace-test"
     },
     {
+      "id": "LL-R07-S05",
+      "title": "无扩展名音频的歌词兄弟路径",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "derive_lrc_path_keeps_an_extension_less_name"
+        }
+      ],
+      "delegatedTo": "workspace-test"
+    },
+    {
       "id": "LL-R08-S01",
       "title": "Unicode 和平台路径",
       "command": "node scripts/verify/checks/task-12.7.mjs --static-only",
@@ -7156,6 +7264,18 @@
         {
           "kind": "rust",
           "target": "permission"
+        }
+      ],
+      "delegatedTo": "workspace-test"
+    },
+    {
+      "id": "LL-R08-S04",
+      "title": "media 目录本身是符号链接",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "enumerate_files_rejects_a_symlinked_media_dir"
         }
       ],
       "delegatedTo": "workspace-test"

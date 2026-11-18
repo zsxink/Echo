@@ -5,7 +5,7 @@
 - 本表逐项覆盖 specs 中的全部 Scenario；稳定 ID 不得复用，标题调整时保留原 ID。
 - 场景 ID 由 spec 标题派生；每行必须给出可执行验收命令，且该场景在 `scripts/verify/scenario-commands.mjs` 的 `SCENARIOS` 中声明非空 `evidence`（命令可执行 + 证据可观测）。人工举证由 `docs/native-attestation-playbook.md` 与 `artifacts/native-attestations/<ID>.log` 承担，字段与判定见 `check-native-attestation.mjs`。
 - 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表与场景清单的 ID 集合完全相等，并逐项执行；命令按域聚合后逐条断言 evidence 目标在输出中被观测到，缺失、重复、无命令、无证据、证据未观测或失败均返回非零。
-- 当前基线：153 个 Requirement，621 个 Scenario（#118 歌曲行歌手/专辑链接新增 1 个 Requirement / 6 个 Scenario，壳层导航目标新增 1 个 Requirement / 4 个 Scenario，播放栏与沉浸式播放器各新增 1 个 Scenario；#152 收藏同步投影新增 1 个 Requirement / 6 个 Scenario；#117 窗口文件投放新增 3 个 Requirement / 23 个 Scenario；0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16、封面载荷受控与预览回收 9、内嵌封面解码与 MIME 约束 5、封面原件内容真实性校验 8、封面选图预览受控缩略图 5）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
+- 当前基线：153 个 Requirement，630 个 Scenario（#162 Rust 全量复核新增 9 个 Scenario（LL-R01-S06、LL-R02-S08、LL-R03-S06/S07、LL-R05-S03、LL-R07-S05、LL-R08-S04、LD-R06-S03、DP-R01-S04）；#118 歌曲行歌手/专辑链接新增 1 个 Requirement / 6 个 Scenario，壳层导航目标新增 1 个 Requirement / 4 个 Scenario，播放栏与沉浸式播放器各新增 1 个 Scenario；#152 收藏同步投影新增 1 个 Requirement / 6 个 Scenario；#117 窗口文件投放新增 3 个 Requirement / 23 个 Scenario；0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16、封面载荷受控与预览回收 9、内嵌封面解码与 MIME 约束 5、封面原件内容真实性校验 8、封面选图预览受控缩略图 5）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
 
 ## ci-release-pipeline
 
@@ -172,6 +172,7 @@
 | DP-R01-S01 | 桌面音频播放 | 播放资料库歌曲 | 8.1–8.4, 8.12 | Desktop/Native | `pnpm verify:scenario -- DP-R01-S01` |
 | DP-R01-S02 | 桌面音频播放 | 文件不可用 | 8.1–8.4, 8.12 | Desktop/Native | `pnpm verify:scenario -- DP-R01-S02` |
 | DP-R01-S03 | 桌面音频播放 | 平台播放后端缺失 | 9.7 | Gate | `pnpm verify:scenario -- DP-R01-S03` |
+| DP-R01-S04 | 桌面音频播放 | 系统刚启动时的播放会话初始化 | issue-162 | Desktop | `node scripts/verify/run-scenario.mjs DP-R01-S04` |
 | DP-R02-S01 | 播放队列 | 从曲库开始播放 | 8.5, 8.6, 11.2 | Desktop/React | `pnpm verify:scenario -- DP-R02-S01` |
 | DP-R02-S02 | 播放队列 | 视图播放重建队列数量 | — | Gate | `pnpm verify:scenario -- DP-R02-S02` |
 | DP-R02-S03 | 播放队列 | 当前项始终置顶 | 8.5, 8.6, 11.2 | Desktop/React | `pnpm verify:scenario -- DP-R02-S03` |
@@ -324,6 +325,7 @@
 | LD-R05-S01 | 运行期间不得自动改写身份 | 运行期间发现身份冲突 | 2.4, 7.2 | Core | `pnpm verify:scenario -- LD-R05-S01` |
 | LD-R06-S01 | 不完整资料不得被静默破坏 | 新协议投影遇到悬空关系 | 4.5 | Core | `pnpm verify:scenario -- LD-R06-S01` |
 | LD-R06-S02 | 不完整资料不得被静默破坏 | 控制面含损坏记录 | 4.3, 4.4 | Core | `pnpm verify:scenario -- LD-R06-S02` |
+| LD-R06-S03 | 不完整资料不得被静默破坏 | 恢复读取既有投影失败 | issue-162 | Core | `node scripts/verify/run-scenario.mjs LD-R06-S03` |
 | LD-R07-S01 | 已确认基线与待确认资料分别恢复 | 离线改歌单后重装 | 7.7 | Core | `pnpm verify:scenario -- LD-R07-S01` |
 | LD-R07-S02 | 已确认基线与待确认资料分别恢复 | 主机账本不可验证 | 7.3, 7.7 | Core | `pnpm verify:scenario -- LD-R07-S02` |
 | LD-R07-S03 | 已确认基线与待确认资料分别恢复 | ACK 丢失后重装并重新配对 | 7.6, 7.7 | Core | `pnpm verify:scenario -- LD-R07-S03` |
@@ -476,6 +478,7 @@
 | LL-R01-S03 | 单一资料库根目录与本地持久化 | 切换根目录失败 | 3.1, 4.1, 10.3 | Core/Desktop/E2E | `pnpm verify:scenario -- LL-R01-S03` |
 | LL-R01-S04 | 单一资料库根目录与本地持久化 | 本机数据库丢失后重新选择同一目录 | 15.2, 15.3 | Core | `pnpm verify:scenario -- LL-R01-S04` |
 | LL-R01-S05 | 单一资料库根目录与本地持久化 | 投影滞后时读己之写 | 13.1, 13.2 | Core | `pnpm verify:scenario -- LL-R01-S05` |
+| LL-R01-S06 | 单一资料库根目录与本地持久化 | 根目录代际值异常时不崩溃 | issue-162 | Core | `node scripts/verify/run-scenario.mjs LL-R01-S06` |
 | LL-R02-S01 | 扫描、监听与手动重扫 | 首次扫描发现支持文件 | 4.7, 4.9, 4.10 | Core/Infrastructure | `pnpm verify:scenario -- LL-R02-S01` |
 | LL-R02-S02 | 扫描、监听与手动重扫 | 忽略不支持文件 | 4.7, 4.9, 4.10 | Core/Infrastructure | `pnpm verify:scenario -- LL-R02-S02` |
 | LL-R02-S03 | 扫描、监听与手动重扫 | 忽略控制面目录 | — | Gate | `pnpm verify:scenario -- LL-R02-S03` |
@@ -483,26 +486,32 @@
 | LL-R02-S05 | 扫描、监听与手动重扫 | 监听外部新增和修改 | 4.7, 4.9, 4.10 | Core/Infrastructure | `pnpm verify:scenario -- LL-R02-S05` |
 | LL-R02-S06 | 扫描、监听与手动重扫 | 从设置页手动重新扫描 | 3.1, 4.1, 10.3 | Core/Desktop/E2E | `pnpm verify:scenario -- LL-R02-S06` |
 | LL-R02-S07 | 扫描、监听与手动重扫 | 没有活动资料库时不能重扫 | 3.1, 4.1, 10.3 | Core/Desktop/E2E | `pnpm verify:scenario -- LL-R02-S07` |
+| LL-R02-S08 | 扫描、监听与手动重扫 | 大小写敏感文件系统上的新增与修改事件 | issue-162 | Core/Infrastructure | `node scripts/verify/run-scenario.mjs LL-R02-S08` |
 | LL-R03-S01 | 一期格式与内容解析矩阵 | 解析内嵌数据 | 1.6, 4.3–4.5, 8.12 | Core/Desktop/Native | `pnpm verify:scenario -- LL-R03-S01` |
 | LL-R03-S02 | 一期格式与内容解析矩阵 | 解析同名 LRC 侧车 | 1.6, 4.3–4.5, 8.12 | Core/Desktop/Native | `pnpm verify:scenario -- LL-R03-S02` |
 | LL-R03-S03 | 一期格式与内容解析矩阵 | 文件损坏或标签异常 | 1.6, 4.3–4.5, 8.12 | Core/Desktop/Native | `pnpm verify:scenario -- LL-R03-S03` |
 | LL-R03-S04 | 一期格式与内容解析矩阵 | m4a 内嵌标签解析 | 3.1, 4.1, 10.3 | Core/Desktop/E2E | `pnpm verify:scenario -- LL-R03-S04` |
 | LL-R03-S05 | 一期格式与内容解析矩阵 | wav 无标签兜底 | 3.1, 4.1, 10.3 | Core/Desktop/E2E | `pnpm verify:scenario -- LL-R03-S05` |
+| LL-R03-S06 | 一期格式与内容解析矩阵 | 深度嵌套容器不使进程崩溃 | issue-162 | Core/Infrastructure | `node scripts/verify/run-scenario.mjs LL-R03-S06` |
+| LL-R03-S07 | 一期格式与内容解析矩阵 | 极端时间轴数值不崩溃 | issue-162 | Core/Infrastructure | `node scripts/verify/run-scenario.mjs LL-R03-S07` |
 | LL-R04-S01 | 稳定身份、哈希与路径重关联 | 原地重扫保持身份 | 3.2, 4.8, 13.4 | Core/Infrastructure | `pnpm verify:scenario -- LL-R04-S01` |
 | LL-R04-S02 | 稳定身份、哈希与路径重关联 | 移动或改名后重关联 | 3.2, 4.8, 13.4 | Core/Infrastructure | `pnpm verify:scenario -- LL-R04-S02` |
 | LL-R04-S03 | 稳定身份、哈希与路径重关联 | 相同内容出现在两个路径 | 3.2, 4.8, 13.4 | Core/Infrastructure | `pnpm verify:scenario -- LL-R04-S03` |
 | LL-R04-S04 | 稳定身份、哈希与路径重关联 | 音乐键不得触发身份合并 | 3.2, 4.8, 13.4 | Core/Infrastructure | `pnpm verify:scenario -- LL-R04-S04` |
 | LL-R05-S01 | SQLite 检索与曲库排序 | 搜索并排序 | 3.1–3.8 | Infrastructure | `pnpm verify:scenario -- LL-R05-S01` |
 | LL-R05-S02 | SQLite 检索与曲库排序 | 重启后数据可用 | 3.1–3.8 | Infrastructure | `pnpm verify:scenario -- LL-R05-S02` |
+| LL-R05-S03 | SQLite 检索与曲库排序 | 多语句投影写入中断 | issue-162 | Infrastructure | `node scripts/verify/run-scenario.mjs LL-R05-S03` |
 | LL-R06-S01 | 生效元数据、封面和歌词优先级 | 覆盖层优先展示 | 2.2, 4.5, 4.6 | Core/Infrastructure | `pnpm verify:scenario -- LL-R06-S01` |
 | LL-R06-S02 | 生效元数据、封面和歌词优先级 | 外部修改不覆盖用户值 | 2.2, 4.5, 4.6 | Core/Infrastructure | `pnpm verify:scenario -- LL-R06-S02` |
 | LL-R07-S01 | 资料库不可用与删除恢复 | 根目录不可用 | 5.7–5.10, 8.11, 10.3, 10.8 | Core/Desktop/React/Native | `pnpm verify:scenario -- LL-R07-S01` |
 | LL-R07-S02 | 资料库不可用与删除恢复 | 删除歌曲后关联可见 | 5.7–5.10, 8.11, 10.3, 10.8 | Core/Desktop/React/Native | `pnpm verify:scenario -- LL-R07-S02` |
 | LL-R07-S03 | 资料库不可用与删除恢复 | 删除歌曲后可重新导入 | 5.7–5.10, 8.11, 10.3, 10.8 | Core/Desktop/React/Native | `pnpm verify:scenario -- LL-R07-S03` |
 | LL-R07-S04 | 资料库不可用与删除恢复 | 文件恢复 | 5.7–5.10, 8.11, 10.3, 10.8 | Core/Desktop/React/Native | `pnpm verify:scenario -- LL-R07-S04` |
+| LL-R07-S05 | 资料库不可用与删除恢复 | 无扩展名音频的歌词兄弟路径 | issue-162 | Core | `node scripts/verify/run-scenario.mjs LL-R07-S05` |
 | LL-R08-S01 | 跨平台路径、隐私与性能约束 | Unicode 和平台路径 | 4.2, 7.7, 12.5–12.7, 13.4 | Security/Perf/Native | `pnpm verify:scenario -- LL-R08-S01` |
 | LL-R08-S02 | 跨平台路径、隐私与性能约束 | 扫描期间继续使用界面 | 4.2, 7.7, 12.5–12.7, 13.4 | Security/Perf/Native | `pnpm verify:scenario -- LL-R08-S02` |
 | LL-R08-S03 | 跨平台路径、隐私与性能约束 | 不泄露本机路径 | 4.2, 7.7, 12.5–12.7, 13.4, 1.8, 7.8 | Security/Perf/Native | `pnpm verify:scenario -- LL-R08-S03` |
+| LL-R08-S04 | 跨平台路径、隐私与性能约束 | media 目录本身是符号链接 | issue-162 | Core/Infrastructure | `node scripts/verify/run-scenario.mjs LL-R08-S04` |
 | LL-R09-S01 | 导入事实时间真实性与时区呈现 | 真实导入时间 | 5.5, 13.9, 13.13 | Core/Native | `pnpm verify:scenario -- LL-R09-S01` |
 | LL-R09-S02 | 导入事实时间真实性与时区呈现 | 重复或重扫不改写时间 | 5.5, 13.9, 13.13 | Core/Native | `pnpm verify:scenario -- LL-R09-S02` |
 | LL-R09-S03 | 导入事实时间真实性与时区呈现 | 当前时区转换 | 5.5, 13.9, 13.13 | Core/Native | `pnpm verify:scenario -- LL-R09-S03` |

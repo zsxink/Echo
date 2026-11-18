@@ -344,7 +344,7 @@ fn with_resource(
         let body=body.replace("\"resource_refs\":[]",&format!("\"resource_refs\":{refs}"));
         let mut hash=blake3::Hasher::new();
         hash.update(b"echo.lan.commit.v1\0");
-        hash.update(&1u16.to_be_bytes());
+        hash.update(&crate::domain::sync::PROTOCOL_VERSION.to_be_bytes());
         hash.update(&1u64.to_be_bytes());
         hash.update(&[0;32]);
         hash.update(&u32::try_from(body.len()).unwrap().to_be_bytes());

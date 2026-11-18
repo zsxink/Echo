@@ -81,10 +81,12 @@ fn forwarder_emits_a_ui_snapshot_that_names_the_playing_song() {
 
     {
         let mut coord = controller.coordinator.lock().expect("coordinator lock");
-        coord.play_context(&ViewContext {
-            songs: vec![song],
-            selected_index: 0,
-        });
+        coord
+            .play_context(&ViewContext {
+                songs: vec![song],
+                selected_index: 0,
+            })
+            .unwrap();
     }
 
     let ui = rx
@@ -133,10 +135,12 @@ fn snapshot_forwarder_emits_queue_projection_only_when_revision_changes() {
 
     {
         let mut coord = controller.coordinator.lock().expect("coordinator lock");
-        coord.play_context(&ViewContext {
-            songs: vec![song],
-            selected_index: 0,
-        });
+        coord
+            .play_context(&ViewContext {
+                songs: vec![song],
+                selected_index: 0,
+            })
+            .unwrap();
     }
 
     // The queue changed → exactly one projection.

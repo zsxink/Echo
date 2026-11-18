@@ -19,10 +19,13 @@ pub struct PlaylistMemberAlias {
     pub canonical_member_id: PlaylistItemId,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum AliasError {
+    #[error("a member cannot be aliased to itself")]
     SelfAlias,
+    #[error("the alias member is already mapped")]
     AlreadyMapped,
+    #[error("the alias would form a cycle")]
     CyclicAlias,
 }
 

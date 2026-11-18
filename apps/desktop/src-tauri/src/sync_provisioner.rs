@@ -29,7 +29,7 @@ use echo_desktop::platform::sync_security::{
 };
 use echo_sync::client::{ClientError, LanClient};
 use echo_sync::pairing::{
-    PairingError, PairingGrantDto, PairingInvitation, PairingPort, PairingRegistry,
+    PairingError, PairingGrantDto, PairingHostDescriptor, PairingPort, PairingRegistry,
     PendingPairingRequest,
 };
 #[cfg(test)]
@@ -256,6 +256,7 @@ fn map_sync_client_error(error: ClientError) -> SyncRuntimeError {
         | ClientError::InvalidSnapshot(_)
         | ClientError::InvalidResponse(_)
         | ClientError::InvalidResponseBody
+        | ClientError::PairingHandshake
         | ClientError::InvalidCommitChain => SyncRuntimeError::SyncProtocolFailed,
         ClientError::RemoteApply(error) => {
             // Applying host commits is a local write against the catalog. It

@@ -411,6 +411,14 @@ impl Error {
         }
     }
 
+    /// Convenience builder for an `InvariantViolation` failure — a documented
+    /// internal invariant was broken. Never use it for user-input problems
+    /// (those are [`Error::validation`]).
+    #[must_use]
+    pub fn invariant(why: impl Into<String>) -> Self {
+        Self::InvariantViolation { why: why.into() }
+    }
+
     /// Preserve a durable operation when its directory materialization fails.
     #[must_use]
     pub fn saved_pending_recovery(

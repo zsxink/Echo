@@ -155,7 +155,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
     fn complete_peer_pairing(
         &self,
         root: LibraryRootId,
-        invitation: &PairingInvitation,
+        host: &PairingHostDescriptor,
         endpoint: &str,
         grant: &PairingGrantDto,
     ) -> Result<(), SyncRuntimeError> {
@@ -170,9 +170,9 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
         validate_peer_endpoint(endpoint)?;
         let local_device = DeviceId::from_uuid(self.database.current_device_id().as_uuid());
-        if grant.binding != invitation.binding
+        if grant.binding != host.binding
             || grant.device_id != local_device
-            || invitation.host_device_id == local_device
+            || host.host_device_id == local_device
             || !(32..=256).contains(&grant.bearer_token.len())
             || !grant
                 .bearer_token
@@ -195,19 +195,19 @@ impl SyncProvisioner for NativeSyncProvisioner {
         }
         // Keep the local catalog and media in place throughout enrollment.
         prepare_enrollment_root(library.absolute_path(), root)?;
-        LanClient::new(&invitation.host_certificate_der, grant.bearer_token.clone())
+        LanClient::new(&host.host_certificate_der, grant.bearer_token.clone())
             .map_err(|_| SyncRuntimeError::Unconfigured)?;
         let identity = PeerIdentity {
-            binding: invitation.binding,
+            binding: host.binding,
             local_root: root,
             local_device,
-            host_device: invitation.host_device_id,
-            generation: invitation.invitation_id.clone(),
+            host_device: host.host_device_id,
+            generation: host.invitation_id.clone(),
             endpoint: endpoint.to_owned(),
-            host_certificate_der: invitation.host_certificate_der.clone(),
+            host_certificate_der: host.host_certificate_der.clone(),
             bearer_token: grant.bearer_token.clone(),
         };
-        let handle = peer_identity_handle(invitation.binding, root)?;
+        let handle = peer_identity_handle(host.binding, root)?;
         let secret = SecretBytes::new(
             serde_json::to_vec(&identity).map_err(|_| SyncRuntimeError::Unconfigured)?,
         );
@@ -215,7 +215,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .set(&handle, &secret)
             .map_err(|_| SyncRuntimeError::Unconfigured)?;
         let already_bound_to_this_host = current_configuration.as_ref().is_some_and(|current| {
-            !current.host && current.binding == invitation.binding && current.local_root == root
+            !current.host && current.binding == host.binding && current.local_root == root
         });
         let replaced_existing_binding =
             current_configuration.is_some() && !already_bound_to_this_host;
@@ -234,7 +234,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
         }
         if let Err(error) = self
             .database
-            .bind_sync_replica_for_enrollment(invitation.binding, root)
+            .bind_sync_replica_for_enrollment(host.binding, root)
         {
             if let Err(cleanup_error) = remove_peer_identity_if_generation(&handle, &identity) {
                 tracing::error!(
@@ -254,7 +254,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
         }
         if let Err(error) = self
             .database
-            .ensure_replica_sync_baseline(invitation.binding, root)
+            .ensure_replica_sync_baseline(host.binding, root)
         {
             // The identity is usable only after the local baseline transaction
             // succeeds. Keep the exact database binding so a retry can resume

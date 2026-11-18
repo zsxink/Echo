@@ -326,8 +326,12 @@ mod native {
     ) {
         let property = NSString::from_str(property);
         let command: Retained<AnyObject> = unsafe { msg_send![commands, valueForKey: &*property] };
-        let _: Retained<AnyObject> =
-            unsafe { msg_send![&*command, addTarget: target, action: action] };
+        // `MPRemoteCommand.h:57` declares `addTarget:action:` as returning
+        // `void`. objc2's `ConvertReturn<NoneFamily> for Retained<T>` would
+        // `retain_autoreleased` the garbage left in the return register — a
+        // panic in debug and a wild retain in release. Binding the result as
+        // `()` makes objc2 skip the conversion entirely.
+        let _: () = unsafe { msg_send![&*command, addTarget: target, action: action] };
     }
 
     pub fn clear() {

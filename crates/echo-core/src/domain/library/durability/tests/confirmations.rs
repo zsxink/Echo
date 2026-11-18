@@ -1,12 +1,13 @@
 //! A complete confirmation retains the exact original LAN confirmation.
 use super::*;
+use crate::domain::sync::PROTOCOL_VERSION;
 use serde_json::Value;
 
 fn reseal(payload: &mut Value, body: &Value) {
     let raw = serde_json::to_string_pretty(body).unwrap();
     let mut hash = blake3::Hasher::new();
     hash.update(b"echo.lan.commit.v1\0");
-    hash.update(&1u16.to_be_bytes());
+    hash.update(&PROTOCOL_VERSION.to_be_bytes());
     hash.update(&9u64.to_be_bytes());
     hash.update(&[7; 32]);
     hash.update(&u32::try_from(raw.len()).unwrap().to_be_bytes());
@@ -21,11 +22,11 @@ fn confirmation() -> (StateKey, Value, Value) {
     };
     let original = frozen(namespace.clone());
     let mut mutation = original.payload["frozen"]["candidate"].clone();
-    mutation["protocol_version"] = json!(1);
+    mutation["protocol_version"] = json!(PROTOCOL_VERSION);
     mutation["binding"] = json!(binding);
     let object = serde_json::from_value(mutation["object"].clone()).unwrap();
     let alias = json!({"kind":"song","alias":{"alias":uuid::Uuid::from_u128(55),"canonical":uuid::Uuid::from_u128(5)}});
-    let body = json!({"protocol_version":1,"binding":binding,"commit_seq":9,
+    let body = json!({"protocol_version":PROTOCOL_VERSION,"binding":binding,"commit_seq":9,
         "previous_digest":vec![7;32],"mutation":mutation,"aliases":[alias],"resource_refs":[]});
     let key = StateKey {
         namespace,

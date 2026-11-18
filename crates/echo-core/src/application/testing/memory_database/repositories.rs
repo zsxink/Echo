@@ -97,8 +97,18 @@ impl SongRepository for MemoryDatabase {
             .cloned())
     }
     fn all_in_root(&self, root: LibraryRootId) -> Result<Vec<Song>, Error> {
-        Ok(self
-            .lock()
+        let mut store = self.lock();
+        let read_index = store.song_reads;
+        store.song_reads += 1;
+        if store.fail_song_reads.is_some_and(|from| read_index >= from) {
+            // A storage failure, not an empty projection: the distinction the
+            // restore coordinator must preserve.
+            return Err(Error::Storage {
+                what: "song projection read".to_owned(),
+                source: "injected read failure".into(),
+            });
+        }
+        Ok(store
             .songs
             .values()
             .filter(|song| song.root() == root)

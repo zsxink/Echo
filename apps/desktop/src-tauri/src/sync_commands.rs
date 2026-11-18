@@ -362,7 +362,7 @@ pub async fn request_sync_pairing(
                 local_device_name(),
             ))
             .map_err(map_pairing_client_error)?;
-        worker_runtime.complete_peer_pairing(&pairing.invitation, endpoint.as_str(), &pairing.grant)
+        worker_runtime.complete_peer_pairing(&pairing.host, endpoint.as_str(), &pairing.grant)
     })
     .await
     .map_err(|_| error(SyncRuntimeError::WorkerFailed))?;
@@ -377,6 +377,11 @@ pub async fn request_sync_pairing(
         }
     }
 }
+
+/// Host error code for a peer that speaks a different wire protocol version.
+const PAIRING_PROTOCOL_VERSION_ERROR: &str = "pairing_protocol_version";
+/// Host error code for a failed PAKE or certificate proof.
+const PAIRING_PROTOCOL_MISMATCH_ERROR: &str = "pairing_protocol_mismatch";
 
 fn map_pairing_client_error(error: echo_sync::client::ClientError) -> SyncRuntimeError {
     use echo_sync::client::ClientError;
@@ -399,6 +404,15 @@ fn map_pairing_client_error(error: echo_sync::client::ClientError) -> SyncRuntim
         ClientError::HostRejectedCode(status, _) if status == StatusCode::SERVICE_UNAVAILABLE => {
             SyncRuntimeError::PairingHostUnavailable
         }
+        // An incompatible build and a failed PAKE/certificate proof are both
+        // diagnosable protocol problems. Keep them out of the generic
+        // "request rejected" bucket so the UI can say what to check.
+        ClientError::HostRejectedCode(_, ref code)
+            if code == PAIRING_PROTOCOL_VERSION_ERROR
+                || code == PAIRING_PROTOCOL_MISMATCH_ERROR =>
+        {
+            SyncRuntimeError::PairingProtocolFailed
+        }
         ClientError::HostRejected(_) | ClientError::HostRejectedCode(_, _) => {
             SyncRuntimeError::PairingRequestRejected
         }
@@ -412,6 +426,7 @@ fn map_pairing_client_error(error: echo_sync::client::ClientError) -> SyncRuntim
         }
         ClientError::InvalidResponse(_)
         | ClientError::InvalidResponseBody
+        | ClientError::PairingHandshake
         | ClientError::InvalidEndpoint
         | ClientError::InvalidTlsConfiguration(_)
         | ClientError::InvalidMutation(_)
@@ -482,6 +497,37 @@ mod tests {
         assert_eq!(
             pairing_endpoint("https://192.168.1.5:43000", Some("host.example")),
             Err(SyncRuntimeError::InvalidAddress)
+        );
+    }
+
+    #[test]
+    fn pairing_failures_map_to_distinguishable_categories() {
+        use echo_sync::client::ClientError;
+        use reqwest::StatusCode;
+
+        // An incompatible build is a protocol failure, never a bad code.
+        assert_eq!(
+            map_pairing_client_error(ClientError::HostRejectedCode(
+                StatusCode::BAD_REQUEST,
+                PAIRING_PROTOCOL_VERSION_ERROR.into(),
+            )),
+            SyncRuntimeError::PairingProtocolFailed
+        );
+        // A failed PAKE or certificate proof is likewise a protocol failure.
+        assert_eq!(
+            map_pairing_client_error(ClientError::HostRejectedCode(
+                StatusCode::BAD_REQUEST,
+                PAIRING_PROTOCOL_MISMATCH_ERROR.into(),
+            )),
+            SyncRuntimeError::PairingProtocolFailed
+        );
+        // An absent, expired, or spent code stays the code-failure category.
+        assert_eq!(
+            map_pairing_client_error(ClientError::HostRejectedCode(
+                StatusCode::NOT_FOUND,
+                "pairing_unavailable".into(),
+            )),
+            SyncRuntimeError::PairingFailed
         );
     }
 }

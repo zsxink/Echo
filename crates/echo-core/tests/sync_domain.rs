@@ -812,3 +812,39 @@ fn playlist_append_renumbers_positions_from_the_merged_order() {
         json!(existing_member)
     );
 }
+
+/// Domain errors are returned from public functions, so callers must be able
+/// to propagate them with `?` and surface them in their own error chain
+/// (`engineering-governance`: 公开错误类型可进入错误链). The concrete enums
+/// stay matchable — this only adds `Display` + `std::error::Error`.
+#[test]
+fn domain_errors_implement_std_error() {
+    fn assert_error<E: std::error::Error + Send + Sync + 'static>() {}
+
+    assert_error::<TombstoneDecisionError>();
+    assert_error::<ConfirmationError>();
+    assert_error::<DeleteIntentError>();
+    assert_error::<AliasError>();
+
+    let cases: [(&str, &dyn std::error::Error); 4] = [
+        (
+            "TombstoneDecisionError",
+            &TombstoneDecisionError::ObjectAlreadyDeleted,
+        ),
+        ("ConfirmationError", &ConfirmationError::WrongObject),
+        ("DeleteIntentError", &DeleteIntentError::InvalidDeadline),
+        ("AliasError", &AliasError::SelfAlias),
+    ];
+    for (type_name, error) in cases {
+        let text = error.to_string();
+        assert!(!text.is_empty(), "{type_name} has an empty Display");
+        assert_ne!(
+            text, type_name,
+            "{type_name} Display only repeats its type name"
+        );
+        assert!(
+            error.source().is_none(),
+            "{type_name} carries no data, so it has no source"
+        );
+    }
+}

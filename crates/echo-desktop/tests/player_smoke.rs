@@ -545,7 +545,7 @@ fn cold_restored_playback_advances_after_natural_eof_with_real_libmpv() {
             } else {
                 let mut coord = controller.coordinator.lock().unwrap();
                 coord.set_mode(mode);
-                coord.play_context(&context);
+                coord.play_context(&context).unwrap();
             }
             let initial_session = controller.coordinator.lock().unwrap().active_load_session();
             if restored {

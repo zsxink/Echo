@@ -9,6 +9,11 @@
 //! cargo test -p echo-sync --test discovery_network -- --ignored --nocapture
 //! ```
 
+// The crate only exists with the discovery feature; without this gate a
+// `cargo test -p echo-sync --features server` run fails to compile instead of
+// simply skipping the real-network tests.
+#![cfg(feature = "discovery")]
+
 use echo_sync::discovery::{LanDiscovery, SERVICE_TYPE};
 use std::collections::BTreeMap;
 use std::net::IpAddr;

@@ -15,8 +15,7 @@ use echo_core::application::ports::{
     HostCommitLedgerPort, HostPeerAuthorizationPort, HostSnapshotPort, HostSnapshotRecord,
     PublicationCheckpointPort, PublishedCommit,
 };
-use echo_core::application::sync::ConfirmHostMutation;
-use echo_core::domain::sync::{DeviceId, MutationCandidate, SyncBinding};
+use echo_core::domain::sync::{DeviceId, SyncBinding};
 use hyper_util::rt::TokioIo;
 use hyper_util::rt::TokioTimer;
 use hyper_util::service::TowerToHyperService;
@@ -29,20 +28,23 @@ use tokio_rustls::TlsAcceptor;
 mod commit_routes;
 use commit_routes::pull_commits;
 
+mod mutation_routes;
+use mutation_routes::submit_mutation;
+
 mod resource_routes;
 use resource_routes::{complete_resource, download_resource, prepare_resource, upload_chunk};
 
 use crate::pairing::{
-    PairingBootstrapResponse, PairingClaimDto, PairingCodeRequest, PairingError, PairingInvitation,
-    PairingPort, PairingRegistry, PendingPairingRequest,
+    PairingBootstrapResponse, PairingClaimDto, PairingCodeRequest, PairingConfirmationDto,
+    PairingError, PairingGrantDto, PairingInvitation, PairingPort, PairingRegistry,
+    PendingPairingRequest,
 };
 
 use crate::protocol::{
-    commit_digest, validate_mutation, validate_resource, validate_snapshot_page, CheckpointDto,
-    CommitDto, CommitPageDto, CommittedEntryDto, MemberAliasDto, MutationAck, MutationDto,
-    ProtocolError, ResourceRefDto, SnapshotObjectDto, SnapshotPageDto, SongAliasDto, TypedAliasDto,
-    MAX_COMMIT_BYTES, MAX_COMMIT_WAIT_MS, MAX_MUTATION_BYTES, MAX_PAGE_SIZE, MAX_SYNC_PAGE_BYTES,
-    PROTOCOL_VERSION,
+    commit_digest, validate_resource, validate_snapshot_page, CheckpointDto, CommitDto,
+    CommitPageDto, CommittedEntryDto, MemberAliasDto, MutationDto, ProtocolError, ResourceRefDto,
+    SnapshotObjectDto, SnapshotPageDto, SongAliasDto, TypedAliasDto, MAX_COMMIT_BYTES,
+    MAX_COMMIT_WAIT_MS, MAX_MUTATION_BYTES, MAX_PAGE_SIZE, MAX_SYNC_PAGE_BYTES, PROTOCOL_VERSION,
 };
 use crate::resource_transfer::{
     PrepareResource, ResourceTransferPort, TransferError, MAX_RESOURCE_BYTES,
@@ -69,6 +71,9 @@ pub struct HostApiState {
     authorization: Option<Arc<dyn HostPeerAuthorizationPort>>,
     snapshots: Option<Arc<dyn HostSnapshotPort>>,
     resources: Option<Arc<dyn ResourceTransferPort>>,
+    /// Host wall clock in Unix milliseconds. Injected so tests can pin `now`
+    /// and assert the `changed_at_ms` clamp exactly.
+    now_ms: Arc<dyn Fn() -> u64 + Send + Sync>,
 }
 
 impl HostApiState {
@@ -122,7 +127,28 @@ impl HostApiState {
             authorization: None,
             snapshots: None,
             resources: None,
+            now_ms: Arc::new(system_now_ms),
         })
+    }
+
+    /// Replace the host wall clock. Only tests need this; the default reads
+    /// `SystemTime::now`.
+    #[must_use]
+    pub fn with_clock(mut self, now_ms: Arc<dyn Fn() -> u64 + Send + Sync>) -> Self {
+        self.now_ms = now_ms;
+        self
+    }
+
+    /// Upper bound on how far ahead of the host a peer's edit time may claim
+    /// to be. Five minutes is far beyond ordinary NTP drift; a larger claim is
+    /// clamped so a device with a broken clock cannot outrank every later edit.
+    pub const MAX_CLOCK_SKEW_MS: u64 = 300_000;
+
+    /// The edit time used for arbitration: the peer's claim, clamped to
+    /// `now + MAX_CLOCK_SKEW_MS`. `None` stays `None`.
+    fn arbitrated_changed_at_ms(&self, changed_at_ms: Option<u64>) -> Option<u64> {
+        let ceiling = (self.now_ms)().saturating_add(Self::MAX_CLOCK_SKEW_MS);
+        changed_at_ms.map(|value| value.min(ceiling))
     }
 
     /// Require a live authorization lookup so revocation applies to an
@@ -162,29 +188,54 @@ impl HostApiState {
         registry.create_invitation(host_device_id, certificate_der, ttl)
     }
 
-    /// Validate the short code, provision the peer immediately, and return the
-    /// certificate pin and bearer together for the joining device to persist.
+    /// Answer the first PAKE round of a short-code pairing.
+    ///
+    /// Returns the host's handshake message, its confirmation MAC, and the
+    /// certificate proof — but no credential. The device must prove possession
+    /// of the code in [`Self::confirm_pairing`] before anything is granted.
     ///
     /// # Errors
-    /// Rejects unavailable pairing, an expired or already-claimed code, the peer
-    /// credential capacity limit, and any provisioning failure.
-    pub fn pair_with_code(
+    /// Rejects an incompatible wire protocol version, unavailable pairing, an
+    /// absent or expired invitation, malformed handshake messages, the peer
+    /// credential capacity limit, and unusable OS entropy.
+    pub fn begin_pairing(
         &self,
         request: &PairingCodeRequest,
     ) -> Result<PairingBootstrapResponse, PairingError> {
+        if request.protocol_version != PROTOCOL_VERSION {
+            return Err(PairingError::UnsupportedVersion);
+        }
+        let (registry, _port) = self.pairing.as_ref().ok_or(PairingError::Unavailable)?;
+        registry.request_with_pake(request)
+    }
+
+    /// Verify the device's confirmation MAC, then provision the peer and
+    /// return its certificate pin and bearer.
+    ///
+    /// # Errors
+    /// Rejects an incompatible wire protocol version, a confirmation that does
+    /// not prove possession of the code, an expired or already-spent
+    /// invitation, the peer credential capacity limit, and any provisioning
+    /// failure.
+    pub fn confirm_pairing(
+        &self,
+        confirmation: &PairingConfirmationDto,
+    ) -> Result<PairingGrantDto, PairingError> {
+        if confirmation.protocol_version != PROTOCOL_VERSION {
+            return Err(PairingError::UnsupportedVersion);
+        }
         let (registry, port) = self.pairing.as_ref().ok_or(PairingError::Unavailable)?;
-        let (receipt, invitation) = registry.request_with_code(request)?;
-        self.approve_pairing_request(&receipt.request_id)?;
-        let grant = registry.claim(
+        registry.confirm(confirmation)?;
+        self.approve_pairing_request(&confirmation.request_id)?;
+        registry.claim(
             &PairingClaimDto {
-                binding: receipt.binding,
-                request_id: receipt.request_id,
-                device_id: receipt.device_id,
-                claim_secret: receipt.claim_secret,
+                binding: confirmation.binding,
+                request_id: confirmation.request_id.clone(),
+                device_id: confirmation.device_id,
+                claim_secret: confirmation.claim_secret.clone(),
             },
             port.as_ref(),
-        )?;
-        Ok(PairingBootstrapResponse { invitation, grant })
+        )
     }
 
     /// Return metadata for requests awaiting explicit host approval.
@@ -384,6 +435,10 @@ pub fn host_router(state: HostApiState) -> Router {
             "/v1/pairing/requests",
             post(request_pairing).layer(DefaultBodyLimit::max(8 * 1024)),
         )
+        .route(
+            "/v1/pairing/confirmations",
+            post(confirm_pairing).layer(DefaultBodyLimit::max(8 * 1024)),
+        )
         .route("/v1/mutations", post(submit_mutation))
         .route("/v1/commits", get(pull_commits))
         .route(
@@ -502,12 +557,35 @@ async fn request_pairing(
     if state.pairing.is_none() {
         return api_error(StatusCode::NOT_FOUND, "pairing_unavailable");
     }
-    let result = tokio::task::spawn_blocking(move || state.pair_with_code(&request)).await;
+    let result = tokio::task::spawn_blocking(move || state.begin_pairing(&request)).await;
     match result {
         Ok(Ok(pairing)) => (
             StatusCode::OK,
             [(axum::http::header::CACHE_CONTROL, "no-store")],
             Json(pairing),
+        )
+            .into_response(),
+        Ok(Err(error)) => pairing_error(error),
+        Err(_) => api_error(StatusCode::SERVICE_UNAVAILABLE, "pairing_unavailable"),
+    }
+}
+
+async fn confirm_pairing(
+    State(state): State<HostApiState>,
+    Json(request): Json<PairingConfirmationDto>,
+) -> Response<Body> {
+    if !allow_pairing_request(&state) {
+        return api_error(StatusCode::TOO_MANY_REQUESTS, "rate_limited");
+    }
+    if state.pairing.is_none() {
+        return api_error(StatusCode::NOT_FOUND, "pairing_unavailable");
+    }
+    let result = tokio::task::spawn_blocking(move || state.confirm_pairing(&request)).await;
+    match result {
+        Ok(Ok(grant)) => (
+            StatusCode::OK,
+            [(axum::http::header::CACHE_CONTROL, "no-store")],
+            Json(grant),
         )
             .into_response(),
         Ok(Err(error)) => pairing_error(error),
@@ -523,107 +601,16 @@ fn pairing_error(error: PairingError) -> Response<Body> {
         PairingError::Pending => api_error(StatusCode::CONFLICT, "approval_pending"),
         PairingError::Capacity => api_error(StatusCode::TOO_MANY_REQUESTS, "pairing_capacity"),
         PairingError::Unavailable => api_error(StatusCode::NOT_FOUND, "pairing_unavailable"),
+        PairingError::ProtocolMismatch => {
+            api_error(StatusCode::BAD_REQUEST, "pairing_protocol_mismatch")
+        }
+        PairingError::UnsupportedVersion => {
+            api_error(StatusCode::BAD_REQUEST, "pairing_protocol_version")
+        }
         PairingError::ProvisioningUnavailable => api_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "pairing_provisioning_unavailable",
         ),
-    }
-}
-
-async fn submit_mutation(
-    State(state): State<HostApiState>,
-    headers: HeaderMap,
-    Json(mutation): Json<MutationDto>,
-) -> Response<Body> {
-    let Some(authenticated_device) = state.authenticated_device(&headers) else {
-        return api_error(StatusCode::UNAUTHORIZED, "unauthorized");
-    };
-    if !peer_is_currently_authorized(&state, authenticated_device).await {
-        return api_error(StatusCode::UNAUTHORIZED, "unauthorized");
-    }
-    if !allow_request(&state, authenticated_device) {
-        return api_error(StatusCode::TOO_MANY_REQUESTS, "rate_limited");
-    }
-    if authenticated_device != mutation.origin_device_id {
-        return api_error(StatusCode::FORBIDDEN, "origin_device_mismatch");
-    }
-    if mutation.binding != state.binding {
-        return api_error(StatusCode::CONFLICT, "library_binding_mismatch");
-    }
-    if validate_mutation(&mutation).is_err() {
-        return api_error(StatusCode::BAD_REQUEST, "invalid_mutation");
-    }
-    if !mutation.resource_refs.is_empty() {
-        let Some(resources) = state.resources.as_ref().map(Arc::clone) else {
-            return api_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "resource_storage_unavailable",
-            );
-        };
-        let binding = state.binding;
-        let references = mutation.resource_refs.clone();
-        match tokio::task::spawn_blocking(move || {
-            references
-                .iter()
-                .try_for_each(|reference| resources.verify_complete(binding, reference))
-        })
-        .await
-        {
-            Ok(Ok(())) => {}
-            Ok(Err(_)) => return api_error(StatusCode::CONFLICT, "resource_not_complete"),
-            Err(_) => {
-                return api_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "resource_storage_unavailable",
-                )
-            }
-        }
-        // Revocation or stop may happen while a large file is being verified.
-        if !peer_is_currently_authorized(&state, authenticated_device).await {
-            return api_error(StatusCode::UNAUTHORIZED, "unauthorized");
-        }
-    }
-    let Ok(resource_refs) = mutation
-        .resource_refs
-        .iter()
-        .map(crate::protocol::ResourceRefDto::to_manifest)
-        .collect::<Result<Vec<_>, _>>()
-    else {
-        return api_error(StatusCode::BAD_REQUEST, "invalid_resource_reference");
-    };
-    let candidate = MutationCandidate {
-        resource_refs,
-        mutation_id: mutation.mutation_id,
-        origin_device_id: mutation.origin_device_id,
-        origin_seq: mutation.origin_seq,
-        previous_mutation_id: mutation.previous_mutation_id,
-        object: mutation.object,
-        base_object_version: mutation.base_object_version,
-        payload: mutation.payload,
-    };
-    let ledger = Arc::clone(&state.ledger);
-    let checkpoint = Arc::clone(&state.checkpoint);
-    let binding = state.binding;
-    let changed_at_ms = mutation.changed_at_ms;
-    match tokio::task::spawn_blocking(move || {
-        ConfirmHostMutation::new(ledger.as_ref(), checkpoint.as_ref()).execute_at(
-            binding,
-            &candidate,
-            changed_at_ms,
-        )
-    })
-    .await
-    {
-        Ok(Ok(confirmation)) => {
-            authorized_response(
-                &state,
-                authenticated_device,
-                (StatusCode::OK, Json(MutationAck { confirmation })).into_response(),
-            )
-            .await
-        }
-        Ok(Err(_)) => api_error(StatusCode::CONFLICT, "mutation_rejected"),
-        Err(_) => api_error(StatusCode::SERVICE_UNAVAILABLE, "host_unavailable"),
     }
 }
 
@@ -912,6 +899,15 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
         );
     }
     difference == 0
+}
+
+/// Host wall clock in Unix milliseconds, saturating at `u64::MAX`.
+fn system_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+        })
 }
 
 fn api_error(status: StatusCode, error: &'static str) -> Response<Body> {

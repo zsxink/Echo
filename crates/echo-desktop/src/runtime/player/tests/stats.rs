@@ -93,10 +93,12 @@ fn stats_recorder_records_a_qualified_library_listen_exactly_once() {
     let song = SongId::new();
     {
         let mut coord = coordinator.lock().expect("coordinator lock");
-        coord.play_context(&ViewContext {
-            songs: vec![song],
-            selected_index: 0,
-        });
+        coord
+            .play_context(&ViewContext {
+                songs: vec![song],
+                selected_index: 0,
+            })
+            .unwrap();
     }
     // duration 0.2s → threshold min(30s, 50%) = 0.1s of *real* listening.
     fake.set_duration(0.2);

@@ -1,5 +1,9 @@
 use super::pairing::validate_pairing_bootstrap;
 use super::*;
+use crate::pairing_pake::{
+    DevicePake, HostPake, PakeContext, PAKE_CERTIFICATE_PROOF_BYTES, PAKE_CONFIRMATION_BYTES,
+    PAKE_MESSAGE_BYTES,
+};
 use echo_core::application::ports::StagedConfirmation;
 use echo_core::domain::ids::SongId;
 
@@ -285,45 +289,203 @@ const RENEWED_CERTIFICATE: &str = "308201653082010aa003020102020900f012247227fd8
 #[path = "client_http_tests.rs"]
 mod http_contracts;
 
+/// Run the host half of the PAKE and assemble the wire response, so the
+/// device-side validation below is exercised against a real handshake.
+fn host_bootstrap(
+    code: &str,
+    device: DeviceId,
+    device_message: &[u8],
+    certificate_der: Vec<u8>,
+    binding: SyncBinding,
+) -> (PairingBootstrapResponse, HostPake) {
+    use crate::pairing::{PairingHostDescriptor, PairingReceipt};
+    let context = PakeContext {
+        code,
+        device_id: device,
+    };
+    let response = HostPake::respond(&context, device_message).unwrap();
+    let certificate_proof = response.state.certificate_proof(&certificate_der).to_vec();
+    (
+        PairingBootstrapResponse {
+            host: PairingHostDescriptor {
+                binding,
+                host_device_id: DeviceId::new(),
+                invitation_id: "a".repeat(64),
+                host_certificate_der: certificate_der,
+                expires_in_secs: 600,
+            },
+            message: response.message,
+            confirmation: response.confirmation,
+            certificate_proof,
+            receipt: PairingReceipt {
+                binding,
+                request_id: "b".repeat(64),
+                device_id: device,
+                claim_secret: "c".repeat(64),
+                expires_in_secs: 600,
+            },
+        },
+        response.state,
+    )
+}
+
 #[test]
 fn bootstrap_rejects_unusable_pins_and_mismatched_identity_before_persistence() {
-    use crate::pairing::{PairingGrantDto, PairingInvitation};
     let candidate = mutation();
     let device = candidate.origin_device_id;
-    let mut response = PairingBootstrapResponse {
-        invitation: PairingInvitation {
+    let code = "123456";
+    let start = || {
+        let context = PakeContext {
+            code,
+            device_id: device,
+        };
+        DevicePake::start(&context).unwrap()
+    };
+
+    // An unusable pin is rejected even when the handshake itself is genuine.
+    let (message, state) = start();
+    let (response, _host) =
+        host_bootstrap(code, device, &message, vec![1, 2, 3], candidate.binding);
+    assert!(matches!(
+        validate_pairing_bootstrap(&response, state, device),
+        Err(ClientError::InvalidResponseBody)
+    ));
+
+    // A wrong code never yields a host confirmation the device can verify.
+    let (message, state) = start();
+    let (response, _host) = host_bootstrap(
+        "654321",
+        device,
+        &message,
+        decode_hex(CERTIFICATE),
+        candidate.binding,
+    );
+    assert!(matches!(
+        validate_pairing_bootstrap(&response, state, device),
+        Err(ClientError::InvalidResponseBody)
+    ));
+
+    // The receipt must belong to this binding and this device.
+    let (message, state) = start();
+    let (mut response, _host) = host_bootstrap(
+        code,
+        device,
+        &message,
+        decode_hex(CERTIFICATE),
+        candidate.binding,
+    );
+    response.receipt.binding.library_id = LibraryId::new();
+    assert!(matches!(
+        validate_pairing_bootstrap(&response, state, device),
+        Err(ClientError::InvalidResponseBody)
+    ));
+    let (message, state) = start();
+    let (response, _host) = host_bootstrap(
+        code,
+        device,
+        &message,
+        decode_hex(CERTIFICATE),
+        candidate.binding,
+    );
+    assert!(matches!(
+        validate_pairing_bootstrap(&response, state, DeviceId::new()),
+        Err(ClientError::InvalidResponseBody)
+    ));
+}
+
+/// `lan-library-sync` R02 (`LL-R02-S08`): a relay that terminates the bootstrap
+/// TLS connection reads the device's first message and substitutes its own
+/// certificate in the response. Echoing anything back must not be enough to get
+/// that certificate pinned — the device has to authenticate the key inside a
+/// handshake only a party holding the code can complete.
+#[test]
+fn pairing_code_is_bound_to_the_tls_channel() {
+    let candidate = mutation();
+    let device = candidate.origin_device_id;
+    let context = PakeContext {
+        code: "123456",
+        device_id: device,
+    };
+    let (_message, state) = DevicePake::start(&context).unwrap();
+    // The relay does not hold the code, so it cannot derive the session key:
+    // it can only fabricate handshake material for its own certificate.
+    let response = PairingBootstrapResponse {
+        host: crate::pairing::PairingHostDescriptor {
             binding: candidate.binding,
             host_device_id: DeviceId::new(),
             invitation_id: "a".repeat(64),
-            invitation_secret: "123456".into(),
-            host_certificate_der: decode_hex(CERTIFICATE),
+            host_certificate_der: decode_hex(WRONG_CERTIFICATE),
             expires_in_secs: 600,
         },
-        grant: PairingGrantDto {
+        message: vec![4; PAKE_MESSAGE_BYTES],
+        confirmation: vec![5; PAKE_CONFIRMATION_BYTES],
+        certificate_proof: vec![6; PAKE_CERTIFICATE_PROOF_BYTES],
+        receipt: crate::pairing::PairingReceipt {
             binding: candidate.binding,
+            request_id: "b".repeat(64),
             device_id: device,
-            bearer_token: "b".repeat(64),
+            claim_secret: "c".repeat(64),
+            expires_in_secs: 600,
         },
     };
-    assert!(validate_pairing_bootstrap(&response, "123456", device).is_ok());
-    response.invitation.host_certificate_der = vec![1, 2, 3];
-    assert!(matches!(
-        validate_pairing_bootstrap(&response, "123456", device),
-        Err(ClientError::InvalidResponseBody)
-    ));
-    response.invitation.host_certificate_der = decode_hex(CERTIFICATE);
-    assert!(matches!(
-        validate_pairing_bootstrap(&response, "654321", device),
-        Err(ClientError::InvalidResponseBody)
-    ));
-    response.grant.binding.library_id = LibraryId::new();
-    assert!(matches!(
-        validate_pairing_bootstrap(&response, "123456", device),
-        Err(ClientError::InvalidResponseBody)
-    ));
-    response.grant.binding = candidate.binding;
-    assert!(matches!(
-        validate_pairing_bootstrap(&response, "123456", DeviceId::new()),
-        Err(ClientError::InvalidResponseBody)
-    ));
+    assert!(
+        matches!(
+            validate_pairing_bootstrap(&response, state, device),
+            Err(ClientError::InvalidResponseBody)
+        ),
+        "a relay that does not hold the code must not get its certificate pinned"
+    );
+}
+
+/// Even a genuine host confirmation must not pin a substituted certificate:
+/// the certificate proof is what ties the pin to the authenticated handshake.
+#[test]
+fn certificate_substitution_after_a_valid_handshake_is_rejected() {
+    let candidate = mutation();
+    let device = candidate.origin_device_id;
+    let code = "123456";
+    let (message, state) = DevicePake::start(&PakeContext {
+        code,
+        device_id: device,
+    })
+    .unwrap();
+    let (mut response, _host) = host_bootstrap(
+        code,
+        device,
+        &message,
+        decode_hex(CERTIFICATE),
+        candidate.binding,
+    );
+    response.host.host_certificate_der = decode_hex(WRONG_CERTIFICATE);
+    assert!(
+        matches!(
+            validate_pairing_bootstrap(&response, state, device),
+            Err(ClientError::InvalidResponseBody)
+        ),
+        "the pinned key must be the one this handshake authenticated"
+    );
+}
+
+#[test]
+fn correct_code_completes_and_pins_the_authenticated_key() {
+    let candidate = mutation();
+    let device = candidate.origin_device_id;
+    let code = "123456";
+    let (message, state) = DevicePake::start(&PakeContext {
+        code,
+        device_id: device,
+    })
+    .unwrap();
+    let (response, host) = host_bootstrap(
+        code,
+        device,
+        &message,
+        decode_hex(CERTIFICATE),
+        candidate.binding,
+    );
+    let confirmation = validate_pairing_bootstrap(&response, state, device)
+        .expect("the host proved the code and the certificate");
+    host.verify_device_confirmation(&confirmation.confirmation)
+        .expect("the device proved possession of the code");
+    assert_eq!(response.host.host_certificate_der, decode_hex(CERTIFICATE));
 }

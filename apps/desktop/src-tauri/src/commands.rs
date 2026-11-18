@@ -534,7 +534,7 @@ fn prime_initial_library_song(services: &AppServices, state: &PlayerHandle) {
     };
     let snapshot = coordinator.snapshot();
     let mode = coordinator.mode();
-    coordinator.prime_context_paused(
+    if let Err(error) = coordinator.prime_context_paused(
         &ViewContext {
             songs: vec![song],
             selected_index: 0,
@@ -542,7 +542,12 @@ fn prime_initial_library_song(services: &AppServices, state: &PlayerHandle) {
         mode,
         snapshot.volume,
         snapshot.muted,
-    );
+    ) {
+        // The context is a single known song, so this can only be the internal
+        // "no current entry" invariant; the import itself succeeded and must
+        // not be reported as failed.
+        tracing::warn!(%error, "first-import priming could not load the song");
+    }
 }
 
 #[tauri::command]
@@ -681,7 +686,8 @@ pub fn play_playlist_context(
         .play_context(&ViewContext {
             songs,
             selected_index,
-        });
+        })
+        .map_err(|error| IpcErrorDto::from(&error))?;
     if let Ok(mut slot) = state.source.lock() {
         *slot = Some(format!("playlist:{playlist}"));
     }
@@ -763,7 +769,8 @@ pub fn play_library_context(
         .play_context(&ViewContext {
             songs,
             selected_index,
-        });
+        })
+        .map_err(|error| IpcErrorDto::from(&error))?;
     if let Ok(mut slot) = state.source.lock() {
         *slot = Some(view);
     }

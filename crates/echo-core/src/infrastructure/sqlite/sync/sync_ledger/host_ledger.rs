@@ -297,7 +297,7 @@ impl HostCommitLedgerPort for SqliteDatabase {
                 let body_len = u32::try_from(body.len()).map_err(storage)?;
                 let mut hasher = blake3::Hasher::new();
                 hasher.update(b"echo.lan.commit.v1\0");
-                hasher.update(&1u16.to_be_bytes());
+                hasher.update(&crate::domain::sync::PROTOCOL_VERSION.to_be_bytes());
                 hasher.update(&u64::try_from(sequence).map_err(storage)?.to_be_bytes());
                 hasher.update(&previous_digest);
                 hasher.update(&body_len.to_be_bytes());

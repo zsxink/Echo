@@ -71,6 +71,19 @@ pub fn enumerate_files(
         // empty, never cascaded into artist folders (portable-layout §5).
         return Ok((Vec::new(), WalkStats::default()));
     }
+    // `media/` must be a real directory. When it is a symlink the canonical
+    // containment check below would silently widen to the link target, so a
+    // link into another library would be scanned as this library's content.
+    // `symlink_metadata` does not follow the link — the only way to see it.
+    let media_meta = std::fs::symlink_metadata(&media_base).map_err(|source| {
+        Error::unavailable_with_source("library", "library media/ is unreadable", source)
+    })?;
+    if media_meta.file_type().is_symlink() {
+        return Err(Error::unavailable(
+            "library",
+            "library media/ must not be a symlink",
+        ));
+    }
     let canonical_base = canonical_root(&media_base)?;
     let mut stats = WalkStats::default();
     let mut out = Vec::new();
@@ -352,5 +365,28 @@ mod tests {
             "TOCTOU-swapped symlink must not be read as a library file: {paths2:?}"
         );
         assert_eq!(stats2.escapes_rejected, 1);
+    }
+
+    /// `LL-R08-S04`: `media/` itself must be a real directory. When it is a
+    /// symlink, the canonical containment check silently widens to whatever the
+    /// link points at, so a link into another library (or any directory the
+    /// user can read) would be scanned as this library's content. The walk
+    /// refuses instead of trusting the target.
+    #[test]
+    fn enumerate_files_rejects_a_symlinked_media_dir() {
+        let (dir, root, staging) = setup();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(outside.path().join("music")).unwrap();
+        std::fs::write(outside.path().join("music/foreign.mp3"), b"foreign").unwrap();
+        let Some(()) = symlink(&outside.path().join("music"), &dir.path().join("media")) else {
+            return;
+        };
+
+        let error = enumerate_files(root, &staging).expect_err("a symlinked media/ is refused");
+        assert_eq!(
+            error.code(),
+            "unavailable",
+            "an unusable media/ layout is an availability problem: {error}"
+        );
     }
 }

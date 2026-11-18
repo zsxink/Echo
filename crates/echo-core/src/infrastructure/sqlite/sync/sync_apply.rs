@@ -521,7 +521,7 @@ pub(crate) fn verify_remote_commit(
     if body
         .get("protocol_version")
         .and_then(serde_json::Value::as_u64)
-        != Some(1)
+        != Some(u64::from(crate::domain::sync::PROTOCOL_VERSION))
         || body.get("binding") != Some(&serde_json::to_value(binding).map_err(storage)?)
         || body.get("commit_seq").and_then(serde_json::Value::as_u64)
             != Some(commit.sequence.as_u64())
@@ -543,7 +543,7 @@ pub(crate) fn verify_remote_commit(
     let body_len = u32::try_from(commit.canonical_json.len()).map_err(storage)?;
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"echo.lan.commit.v1\0");
-    hasher.update(&1u16.to_be_bytes());
+    hasher.update(&crate::domain::sync::PROTOCOL_VERSION.to_be_bytes());
     hasher.update(&commit.sequence.as_u64().to_be_bytes());
     hasher.update(&commit.previous_digest);
     hasher.update(&body_len.to_be_bytes());
