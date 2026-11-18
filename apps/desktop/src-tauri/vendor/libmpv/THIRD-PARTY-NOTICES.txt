@@ -44,7 +44,7 @@ SPDX identifiers referenced by this inventory:
   Zlib
 
 -------------------------------------------------------------------------------
-Rust dependencies (595 packages, conservative superset)
+Rust dependencies (622 packages, conservative superset)
 -------------------------------------------------------------------------------
   adler2 2.0.1 | 0BSD OR MIT OR Apache-2.0 | https://github.com/oyvindln/adler2
   aho-corasick 1.1.5 | Unlicense OR MIT | https://github.com/BurntSushi/aho-corasick
@@ -70,6 +70,7 @@ Rust dependencies (595 packages, conservative superset)
   autocfg 1.5.1 | Apache-2.0 OR MIT | https://github.com/cuviper/autocfg
   axum 0.8.9 | MIT | https://github.com/tokio-rs/axum
   axum-core 0.5.6 | MIT | https://github.com/tokio-rs/axum
+  base16ct 1.0.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats
   base64 0.21.7 | MIT OR Apache-2.0 | https://github.com/marshallpierce/rust-base64
   base64 0.22.1 | MIT OR Apache-2.0 | https://github.com/marshallpierce/rust-base64
   bit-set 0.8.0 | Apache-2.0 OR MIT | https://github.com/contain-rs/bit-set
@@ -78,6 +79,7 @@ Rust dependencies (595 packages, conservative superset)
   bitflags 2.13.2 | MIT OR Apache-2.0 | https://github.com/bitflags/bitflags
   blake3 1.8.2 | CC0-1.0 OR Apache-2.0 OR Apache-2.0 WITH LLVM-exception | https://github.com/BLAKE3-team/BLAKE3
   block-buffer 0.10.4 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils
+  block-buffer 0.12.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils
   block2 0.6.2 | MIT | https://github.com/madsmtm/objc2
   blocking 1.7.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/blocking
   brotli 8.0.4 | BSD-3-Clause AND MIT | https://github.com/dropbox/rust-brotli
@@ -101,34 +103,42 @@ Rust dependencies (595 packages, conservative superset)
   cfg-if 1.0.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/cfg-if
   chacha20 0.10.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/stream-ciphers
   chrono 0.4.45 | MIT OR Apache-2.0 | https://github.com/chronotope/chrono
+  cmov 0.5.4 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils
   color_quant 1.1.0 | MIT | https://github.com/image-rs/color_quant.git
   combine 4.6.8 | MIT | https://github.com/Marwes/combine
   concurrent-queue 2.5.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/concurrent-queue
+  const-oid 0.10.3 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats
   constant_time_eq 0.3.1 | CC0-1.0 OR MIT-0 OR Apache-2.0 | https://github.com/cesarb/constant_time_eq
   cookie 0.18.2 | MIT OR Apache-2.0 | https://github.com/SergioBenitez/cookie-rs
   core-foundation 0.10.1 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs
   core-foundation-sys 0.8.7 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs
   core-graphics 0.25.0 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs
   core-graphics-types 0.2.0 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs
+  cpubits 0.1.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils
   cpufeatures 0.2.17 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils
   cpufeatures 0.3.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils
   crc32fast 1.5.2 | MIT OR Apache-2.0 | https://github.com/srijs/rust-crc32fast
   crossbeam-channel 0.5.17 | MIT OR Apache-2.0 | https://github.com/crossbeam-rs/crossbeam
   crossbeam-utils 0.8.23 | MIT OR Apache-2.0 | https://github.com/crossbeam-rs/crossbeam
+  crypto-bigint 0.7.11 | Apache-2.0 OR MIT | https://github.com/RustCrypto/crypto-bigint
   crypto-common 0.1.7 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits
+  crypto-common 0.2.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits
   cssparser 0.36.0 | MPL-2.0 | https://github.com/servo/rust-cssparser
   cssparser-macros 0.6.1 | MPL-2.0 | https://github.com/servo/rust-cssparser
   ctor 0.8.0 | Apache-2.0 OR MIT | https://github.com/mmastrac/rust-ctor
   ctor-proc-macro 0.0.7 | Apache-2.0 OR MIT | https://github.com/mmastrac/rust-ctor
+  ctutils 0.4.8 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils
   darling 0.21.3 | MIT | https://github.com/TedDriggs/darling
   darling_core 0.21.3 | MIT | https://github.com/TedDriggs/darling
   darling_macro 0.21.3 | MIT | https://github.com/TedDriggs/darling
   data-encoding 2.11.1 | MIT | https://github.com/ia0/data-encoding
   dbus 0.9.12 | Apache-2.0/MIT | https://github.com/diwic/dbus-rs
+  der 0.8.3 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats
   deranged 0.5.5 | MIT OR Apache-2.0 | https://github.com/jhpratt/deranged
   derive_more 2.1.1 | MIT | https://github.com/JelteF/derive_more
   derive_more-impl 2.1.1 | MIT | https://github.com/JelteF/derive_more
   digest 0.10.7 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits
+  digest 0.11.3 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits
   dirs 6.0.0 | MIT OR Apache-2.0 | https://github.com/soc/dirs-rs
   dirs-sys 0.5.0 | MIT OR Apache-2.0 | https://github.com/dirs-dev/dirs-sys-rs
   dispatch2 0.3.1 | Zlib OR Apache-2.0 OR MIT | https://github.com/madsmtm/objc2
@@ -143,6 +153,7 @@ Rust dependencies (595 packages, conservative superset)
   dtor-proc-macro 0.0.6 | Apache-2.0 OR MIT | https://github.com/mmastrac/rust-ctor
   dunce 1.0.5 | CC0-1.0 OR MIT-0 OR Apache-2.0 | https://gitlab.com/kornelski/dunce
   dyn-clone 1.0.20 | MIT OR Apache-2.0 | https://github.com/dtolnay/dyn-clone
+  elliptic-curve 0.14.3 | Apache-2.0 OR MIT | https://github.com/RustCrypto/traits
   embed_plist 1.2.2 | MIT OR Apache-2.0 | https://github.com/nvzqz/embed-plist-rs
   embed-resource 3.0.12 | MIT | https://github.com/nabijaczleweli/rust-embed-resource
   encoding_rs 0.8.35 | (Apache-2.0 OR MIT) AND BSD-3-Clause | https://github.com/hsivonen/encoding_rs
@@ -159,6 +170,7 @@ Rust dependencies (595 packages, conservative superset)
   fallible-streaming-iterator 0.1.9 | MIT/Apache-2.0 | https://github.com/sfackler/fallible-streaming-iterator
   fastrand 2.5.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/fastrand
   fdeflate 0.3.7 | MIT OR Apache-2.0 | https://github.com/image-rs/fdeflate
+  ff 0.14.0 | MIT/Apache-2.0 | https://github.com/zkcrypto/ff
   field-offset 0.3.6 | MIT OR Apache-2.0 | https://github.com/Diggsey/rust-field-offset
   find-msvc-tools 0.1.14 | MIT OR Apache-2.0 | https://github.com/rust-lang/cc-rs
   flate2 1.1.10 | MIT OR Apache-2.0 | https://github.com/rust-lang/flate2-rs
@@ -199,9 +211,11 @@ Rust dependencies (595 packages, conservative superset)
   glib-sys 0.18.1 | MIT | https://github.com/gtk-rs/gtk-rs-core
   glob 0.3.4 | MIT OR Apache-2.0 | https://github.com/rust-lang/glob
   gobject-sys 0.18.0 | MIT | https://github.com/gtk-rs/gtk-rs-core
+  group 0.14.0 | MIT/Apache-2.0 | https://github.com/zkcrypto/group
   gtk 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs
   gtk-sys 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs
   gtk3-macros 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs
+  hash2curve 0.14.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/elliptic-curves
   hashbrown 0.12.3 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown
   hashbrown 0.16.1 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown
   hashbrown 0.17.1 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown
@@ -210,12 +224,15 @@ Rust dependencies (595 packages, conservative superset)
   heck 0.5.0 | MIT OR Apache-2.0 | https://github.com/withoutboats/heck
   hermit-abi 0.5.3 | MIT OR Apache-2.0 | https://github.com/hermit-os/hermit-rs
   hex 0.4.3 | MIT OR Apache-2.0 | https://github.com/KokaKiwi/rust-hex
+  hkdf 0.13.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/KDFs/
+  hmac 0.13.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/MACs
   html5ever 0.38.0 | MIT OR Apache-2.0 | https://github.com/servo/html5ever
   http 1.5.0 | MIT OR Apache-2.0 | https://github.com/hyperium/http
   http-body 1.1.0 | MIT | https://github.com/hyperium/http-body
   http-body-util 0.1.5 | MIT | https://github.com/hyperium/http-body
   httparse 1.10.1 | MIT OR Apache-2.0 | https://github.com/seanmonstar/httparse
   httpdate 1.0.3 | MIT OR Apache-2.0 | https://github.com/pyfisch/httpdate
+  hybrid-array 0.4.15 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hybrid-array
   hyper 1.12.0 | MIT | https://github.com/hyperium/hyper
   hyper-rustls 0.27.7 | Apache-2.0 OR ISC OR MIT | https://github.com/rustls/hyper-rustls
   hyper-util 0.1.20 | MIT | https://github.com/hyperium/hyper-util
@@ -319,6 +336,10 @@ Rust dependencies (595 packages, conservative superset)
   open 5.4.4 | MIT | https://github.com/Byron/open-rs
   option-ext 0.2.0 | MPL-2.0 | https://github.com/soc/option-ext.git
   ordered-stream 0.2.0 | MIT OR Apache-2.0 | https://github.com/danieldg/ordered-stream
+  p256 0.14.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/elliptic-curves
+  pakery-core 0.6.2 | MIT OR Apache-2.0 | https://github.com/djx-y-z/pakery
+  pakery-crypto 0.6.2 | MIT OR Apache-2.0 | https://github.com/djx-y-z/pakery
+  pakery-spake2 0.6.2 | MIT OR Apache-2.0 | https://github.com/djx-y-z/pakery
   pango 0.18.3 | MIT | https://github.com/gtk-rs/gtk-rs-core
   pango-sys 0.18.0 | MIT | https://github.com/gtk-rs/gtk-rs-core
   parking 2.2.1 | Apache-2.0 OR MIT | https://github.com/smol-rs/parking
@@ -341,6 +362,8 @@ Rust dependencies (595 packages, conservative superset)
   powerfmt 0.2.1 | MIT OR Apache-2.0 | https://github.com/jhpratt/powerfmt
   ppv-lite86 0.2.21 | MIT OR Apache-2.0 | https://github.com/cryptocorrosion/cryptocorrosion
   precomputed-hash 0.1.1 | MIT | https://github.com/emilio/precomputed-hash
+  primefield 0.14.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/elliptic-curves
+  primeorder 0.14.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/elliptic-curves
   proc-macro-crate 1.3.1 | MIT OR Apache-2.0 | https://github.com/bkchr/proc-macro-crate
   proc-macro-crate 2.0.2 | MIT OR Apache-2.0 | https://github.com/bkchr/proc-macro-crate
   proc-macro-crate 3.4.0 | MIT OR Apache-2.0 | https://github.com/bkchr/proc-macro-crate
@@ -394,6 +417,7 @@ Rust dependencies (595 packages, conservative superset)
   schemars 1.2.3 | MIT | https://github.com/GREsau/schemars
   schemars_derive 0.8.22 | MIT | https://github.com/GREsau/schemars
   scopeguard 1.2.0 | MIT OR Apache-2.0 | https://github.com/bluss/scopeguard
+  sec1 0.8.1 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats
   selectors 0.36.1 | MPL-2.0 | https://github.com/servo/stylo
   semver 1.0.28 | MIT OR Apache-2.0 | https://github.com/dtolnay/semver
   serde 1.0.229 | MIT OR Apache-2.0 | https://github.com/serde-rs/serde
@@ -414,6 +438,7 @@ Rust dependencies (595 packages, conservative superset)
   servo_arc 0.4.3 | MIT OR Apache-2.0 | https://github.com/servo/stylo
   sha1_smol 1.0.1 | BSD-3-Clause | https://github.com/mitsuhiko/sha1-smol
   sha2 0.10.9 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes
+  sha2 0.11.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes
   sharded-slab 0.1.7 | MIT | https://github.com/hawkw/sharded-slab
   shlex 2.0.1 | MIT OR Apache-2.0 | https://github.com/comex/rust-shlex
   signal-hook-registry 1.4.8 | MIT OR Apache-2.0 | https://github.com/vorner/signal-hook
@@ -616,6 +641,7 @@ Rust dependencies (595 packages, conservative superset)
   winnow 1.0.4 | MIT | https://github.com/winnow-rs/winnow
   winreg 0.56.0 | MIT | https://github.com/gentoo90/winreg-rs
   wit-bindgen 0.57.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/bytecodealliance/wit-bindgen
+  wnaf 0.14.1 | Apache-2.0 OR MIT | https://github.com/RustCrypto/elliptic-curves
   write16 1.0.0 | Apache-2.0 OR MIT | https://github.com/hsivonen/write16
   writeable 0.5.5 | Unicode-3.0 | https://github.com/unicode-org/icu4x
   wry 0.55.1 | Apache-2.0 OR MIT | https://github.com/tauri-apps/wry
@@ -631,7 +657,8 @@ Rust dependencies (595 packages, conservative superset)
   zerocopy-derive 0.8.62 | BSD-2-Clause OR Apache-2.0 OR MIT | https://github.com/google/zerocopy
   zerofrom 0.1.8 | Unicode-3.0 | https://github.com/unicode-org/icu4x
   zerofrom-derive 0.1.8 | Unicode-3.0 | https://github.com/unicode-org/icu4x
-  zeroize 1.8.2 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils
+  zeroize 1.9.2 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils
+  zeroize_derive 1.5.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils
   zerovec 0.10.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x
   zerovec-derive 0.10.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x
   zlib-rs 0.6.8 | Zlib | https://github.com/trifectatechfoundation/zlib-rs
