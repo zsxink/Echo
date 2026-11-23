@@ -180,6 +180,45 @@ try {
     readFileSync(resolve(ROOT, ".github", "workflows", "dependency-audit.yml"), "utf8"),
     "dependency-audit.yml",
   );
+  // Normalize Rustup before it contributes its ambient toolchain executables
+  // to the cache key. Do not let normalization mask dependency/env inputs or
+  // accidentally apply the Linux-only setup to a platform-specific cache.
+  const rustupStepName = "Isolate Linux Rustup home";
+  const rustupCommand = "bash scripts/verify/isolate-linux-rustup-home.sh";
+  for (const [file, jobs, participants] of [
+    ["ci.yml", workflow.jobs, ["rust", "task-gates", "governance-static"]],
+    ["dependency-audit.yml", auditWorkflow.jobs, ["audit"]],
+  ]) {
+    for (const id of new Set([...Object.keys(jobs), ...participants])) {
+      const steps = jobs[id]?.steps || [];
+      const candidates = steps.filter((s) => s.name === rustupStepName || String(s.run || "").includes("isolate-linux-rustup-home.sh"));
+      const label = `${file} job '${id}'`;
+      if (!participants.includes(id)) {
+        if (candidates.length) fail(`${label} must not isolate Linux Rustup home`);
+        continue;
+      }
+      if (candidates.length !== 1) fail(`${label} must configure exactly one Linux Rustup home isolation step`);
+      const [isolation] = candidates;
+      const checkout = steps.findIndex((s) => String(s.uses || "").startsWith("actions/checkout@"));
+      const install = steps.findIndex((s) => String(s.uses || "").startsWith("dtolnay/rust-toolchain@"));
+      const cache = steps.findIndex((s) => s.name === CACHE_STEP);
+      const isolationIndex = steps.indexOf(isolation);
+      if (!(checkout >= 0 && checkout < isolationIndex && isolationIndex < install && install < cache)) {
+        fail(`${label} must isolate Linux Rustup home after checkout and before toolchain installation and cache`);
+      }
+      if (isolation.name !== rustupStepName || isolation.run !== rustupCommand ||
+          isolation.if !== undefined || isolation["continue-on-error"] !== undefined) {
+        fail(`${label} must execute unconditional Linux Rustup home isolation using '${rustupCommand}'`);
+      }
+      const restore = steps[cache];
+      if (restore.uses !== "Swatinem/rust-cache@v2" ||
+          restore.with?.["env-vars"] !== undefined ||
+          (restore.with?.["add-rust-environment-hash-key"] !== undefined &&
+            String(restore.with?.["add-rust-environment-hash-key"]) !== "true")) {
+        fail(`${label} must preserve the Rust cache action's environment key inputs`);
+      }
+    }
+  }
   const auditKeys = Object.values(auditWorkflow.jobs).flatMap((job) =>
     (job.steps || []).filter((s) => s.name === CACHE_STEP).map((s) => String(s.with?.["shared-key"] || "")),
   );

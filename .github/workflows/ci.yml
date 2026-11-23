@@ -39,6 +39,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Isolate Linux Rustup home
+        run: bash scripts/verify/isolate-linux-rustup-home.sh
+
       - name: Install Rust toolchain (pinned, rustfmt + clippy)
         uses: dtolnay/rust-toolchain@master
         with:
@@ -249,6 +252,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Isolate Linux Rustup home
+        run: bash scripts/verify/isolate-linux-rustup-home.sh
 
       - name: Install Rust toolchain (pinned, rustfmt + clippy)
         uses: dtolnay/rust-toolchain@master
@@ -462,6 +468,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Isolate Linux Rustup home
+        run: bash scripts/verify/isolate-linux-rustup-home.sh
 
       - name: Install Rust toolchain (pinned, rustfmt + clippy)
         uses: dtolnay/rust-toolchain@master

@@ -106,6 +106,49 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       },
     },
     {
+      id: "ci-structure/linux-rustup-isolation-missing",
+      guard: "scheduled dependency audit restoring its Linux cache without normalized Rustup state",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: dependency-audit\.yml job 'audit' must configure exactly one Linux Rustup home isolation step/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "dependency-audit.yml"),
+          "      - name: Isolate Linux Rustup home\n        run: bash scripts/verify/isolate-linux-rustup-home.sh\n\n",
+          "",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/linux-rustup-isolation-misordered",
+      guard: "isolating Rustup after toolchain installation would leave the isolated home without its pinned toolchain",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: dependency-audit\.yml job 'audit' must isolate Linux Rustup home after checkout and before toolchain installation and cache/,
+      baseline: true,
+      inject() {
+        const isolation = "      - name: Isolate Linux Rustup home\n        run: bash scripts/verify/isolate-linux-rustup-home.sh\n\n";
+        const install = "      - name: Install Rust toolchain (pinned)\n        uses: dtolnay/rust-toolchain@master\n        with:\n          toolchain: 1.98.1\n\n";
+        replaceIn(join(ROOT, ".github", "workflows", "dependency-audit.yml"), isolation + install, install + isolation);
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/linux-rustup-isolation-no-environment-hash",
+      guard: "disabling the environment and dependency hash instead of isolating the toolchain",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: dependency-audit\.yml job 'audit' must preserve the Rust cache action's environment key inputs/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "dependency-audit.yml"),
+          "          shared-key: governance-static\n          save-if: false",
+          "          shared-key: governance-static\n          save-if: false\n          add-rust-environment-hash-key: false",
+        );
+        return {};
+      },
+    },
+    {
       id: "ci-structure/perf-step-dropped",
       guard: "the performance-scenarios step disappearing from task-gates core, leaving three delegated scenarios with no execution location",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],

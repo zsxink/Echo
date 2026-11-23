@@ -14,6 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Isolate Linux Rustup home
+        run: bash scripts/verify/isolate-linux-rustup-home.sh
+
       - name: Install Rust toolchain (pinned)
         uses: dtolnay/rust-toolchain@master
         with:
