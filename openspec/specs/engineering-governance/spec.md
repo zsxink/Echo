@@ -93,6 +93,8 @@
 
 依赖审计的在线公告扫描 MAY 在 Pull Request 上跳过，但 MUST 在推送到 `main` 与定时任务上真实执行。跳过时 MUST 在日志中打印显式 note，说明在线半未执行；MUST NOT 以不输出任何说明的方式静默略过。该分层 MUST 由结构门禁断言：在线扫描的执行条件、它在 `main` 与定时任务中的真实执行位置，以及跳过 note 的存在性 MUST 被静态校验。
 
+依赖审计 MUST 在每次运行中只执行一次 Cargo 本地政策检查，覆盖 licenses、bans 和 sources，政策失败 MUST 阻断。在线阶段 MUST 只追加一次 Cargo advisories 检查，并保留 cargo-audit、pnpm 生产依赖审计、许可清单、忽略项和已有网络错误处理。
+
 #### Scenario: 过滤器未命中任何测试
 
 - **WHEN** 某条验证命令的过滤器因拼写错误或测试改名而未命中任何测试
@@ -142,6 +144,11 @@
 
 - **WHEN** 一次 Pull Request 运行依赖审计
 - **THEN** 离线半真实执行，在线公告扫描跳过，且日志打印显式 note 说明在线半未执行
+
+#### Scenario: 依赖审计在线时不重复执行本地策略
+
+- **WHEN** 依赖审计在线运行，且本地策略检查通过
+- **THEN** Cargo licenses、bans、sources 只执行一次，在线阶段仍执行 Cargo advisories、cargo-audit 和 pnpm 生产依赖审计
 
 #### Scenario: 在线扫描从 main 与定时任务同时消失
 
@@ -390,7 +397,7 @@ Windows / macOS 的全量 workspace 测试 MAY 按包分片执行；各分片所
 
 `clippy` MUST 在三平台以 workspace 形态执行，MUST NOT 收窄到单个 crate 或包子集：Linux 在 `rust` job 的 `workspace` 分片执行，macOS / Windows 在 main-only 的 `rust-desktop` job 执行。写入共享缓存的 rust 矩阵分片（`rust` 与 `rust-desktop` 两个 job 的分片），其最后一条构建型 cargo 调用 MUST 是该缓存 key 对应的固定 cargo 形态：Linux `workspace` 分片为 `cargo test --workspace --all-targets --all-features`，macOS / Windows 的 `desktop` 分片为 `cargo test --workspace --all-targets --all-features`；其后 MAY 执行同形态的 `-- --list`，MUST NOT 在缓存保存之前执行不同 feature、不同 target 选择或 check 形态的 cargo 调用，使缓存内容与后续读取者的构建形态不符。`governance-static` 的缓存 key 是 job 私有的：只有该 job 与定时依赖审计 workflow 读取它，其 coverage 插桩形态不会污染任何其他读者，因此不受上述 cargo 形态约束。缓存写入 MUST 只发生在 `main`；Pull Request 上的任何 job MUST NOT 保存缓存。
 
-性能场景 MUST 在 Pull Request 与 `main` 上真实执行，且 MUST 由结构门禁断言其执行位置：承载它的 job MUST 在两种事件上都运行，其步骤 MUST 执行 `pnpm verify:perf`。性能场景 MAY 与 task gate 共享一个 job；共享时该 job 的缓存步骤 MUST NOT 保存缓存，避免 `--release` 产物污染其他读者读取的缓存 key。
+性能场景的 job MUST 在 Pull Request 与 `main` 上都运行。每次在 `main` 上实际触发的 CI MUST 执行 `pnpm verify:perf`；Pull Request 只有在基于完整提交差异确认所有变更均为明确白名单内的路径修改时 MAY 跳过该步骤。空差异、无法比较、超出白名单或未知变更 MUST 执行。结构门禁 MUST 断言 job、筛选流程和性能命令，且独立的 task 12.5 benchmark 与其产物上传 MUST NOT 受筛选影响。性能场景 MAY 与 task gate 共享一个 job；共享时该 job 的缓存步骤 MUST NOT 保存缓存，避免 `--release` 产物污染其他读者读取的缓存 key。
 
 coverage 门禁 MAY 在 Pull Request 上跳过，但 MUST 在推送到 `main` 时真实执行；结构门禁 MUST 断言其 main-only 执行条件与命令。Pull Request 上 MUST 继续执行 registry 与 static 检查。
 
@@ -484,8 +491,18 @@ CI 的验证结构 MUST 可被静态校验：task 分片的并集 MUST 覆盖全
 
 #### Scenario: 性能场景从 PR 与 main 同时消失
 
-- **WHEN** 承载性能场景的步骤被删除、改写成不执行 `pnpm verify:perf`，或落到一个在 Pull Request 上不运行的 job
+- **WHEN** 承载性能场景的步骤被删除、改写成不执行 `pnpm verify:perf`，或落到一个在 Pull Request 上不运行的 job，或绕过了已审核的路径筛选
 - **THEN** 结构门禁失败并指出该缺口，而不是让 3 个委托场景失去执行位置
+
+#### Scenario: PR 仅修改已审核的样式或说明文档
+
+- **WHEN** Pull Request 的完整差异非空，且仅修改已审核的样式或说明文档路径
+- **THEN** 仅跳过重型性能步骤；task 12.5 benchmark 和产物上传仍执行
+
+#### Scenario: PR 性能相关性无法排除或触发 main CI
+
+- **WHEN** 发生混合修改、删除、重命名、空差异、无法完成差异比较，或任意变更触发了 `main` 的 CI
+- **THEN** 执行完整的 `pnpm verify:perf`，不依赖手工判断
 
 #### Scenario: 性能场景与 task gate 共享 job 时保存缓存
 

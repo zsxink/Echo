@@ -1,6 +1,6 @@
 # cargo-deny configuration for the Echo workspace.
 #
-# This is the single config file used by both `cargo deny check` and
+# This config is used by both `cargo deny check licenses bans sources` and
 # `cargo deny check advisories`. Run from the repo root.
 #
 # License policy: Echo itself is licensed under "Echo Personal Study License

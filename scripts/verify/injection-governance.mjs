@@ -114,8 +114,23 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "      - name: Run performance scenarios\n        run: pnpm verify:perf\n",
+          "      - name: Run performance scenarios\n        if: github.event_name != 'pull_request' || steps.perf-paths.outcome != 'success' || steps.perf-paths.outputs.skip != 'true'\n        run: pnpm verify:perf\n",
           "",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/perf-benchmark-narrowed",
+      guard: "the independent 50k benchmark artifact being skipped on pull requests",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: task-gates task 12\.5 and its 50k benchmark upload must remain unconditional/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "      - name: Upload 50k benchmark result\n        uses:",
+          "      - name: Upload 50k benchmark result\n        if: github.event_name != 'pull_request'\n        uses:",
         );
         return {};
       },
@@ -124,12 +139,12 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       id: "ci-structure/perf-step-narrowed",
       guard: "the performance-scenarios step being gated off pull requests, so the PR tier loses the perf gate",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: task-gates performance step must not be conditionally skipped/,
+      expect: /FAIL 1\.5: task-gates performance step must run unless a successful PR classifier explicitly skips/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "      - name: Run performance scenarios\n        run: pnpm verify:perf",
+          "      - name: Run performance scenarios\n        if: github.event_name != 'pull_request' || steps.perf-paths.outcome != 'success' || steps.perf-paths.outputs.skip != 'true'\n        run: pnpm verify:perf",
           "      - name: Run performance scenarios\n        if: github.event_name != 'pull_request'\n        run: pnpm verify:perf",
         );
         return {};

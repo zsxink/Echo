@@ -463,9 +463,9 @@ if (
 if (embedded.if !== undefined) fail("macOS embedded-frontend step must not be conditionally skipped");
 
 // The three performance scenarios share the task-gates core shard's toolchain
-// and `linux-workspace` cache. Both halves are pinned: the step must exist with
-// the exact run, and it must not be conditionally skipped (the single core shard
-// expands on every event), so a PR cannot lose the perf gate. The shard's cache
+// and `linux-workspace` cache. Only a successful classifier's explicit skip
+// may suppress the step on a PR. Verify its inputs, outcome and execution
+// location so a missing or uncertain diff still runs the gate. The shard's cache
 // step must stay read-only so the `--release` artifacts are never saved into a
 // key the Rust shards restore.
 // The injection proof suite is local-only. It proves the gates' own failure
@@ -484,7 +484,40 @@ if (embedded.if !== undefined) fail("macOS embedded-frontend step must not be co
 
 const perfStep = step(workflow, "task-gates", "Run performance scenarios");
 if (perfStep.run !== "pnpm verify:perf") fail("task-gates performance step run must be 'pnpm verify:perf'");
-if (perfStep.if !== undefined) fail("task-gates performance step must not be conditionally skipped");
+const perfIf = "github.event_name != 'pull_request' || steps.perf-paths.outcome != 'success' || steps.perf-paths.outputs.skip != 'true'";
+if (perfStep.if !== perfIf || perfStep["continue-on-error"] !== undefined) {
+  fail("task-gates performance step must run unless a successful PR classifier explicitly skips");
+}
+const perfPaths = step(workflow, "task-gates", "Classify performance scenario paths");
+if (
+  perfPaths.id !== "perf-paths" ||
+  perfPaths.if !== "github.event_name == 'pull_request'" ||
+  perfPaths["continue-on-error"] !== true ||
+  perfPaths.run !== "node scripts/verify/ci-perf-paths.mjs"
+) fail("task-gates classifier must be a fail-open PR-only perf-paths step");
+assertEnv(perfPaths, "ECHO_PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}", "task-gates classifier");
+assertEnv(perfPaths, "ECHO_PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}", "task-gates classifier");
+const perfSteps = workflow.jobs["task-gates"].steps;
+const perfCheckout = perfSteps[0];
+const taskGatesRun = step(workflow, "task-gates", "Verify task gates");
+const benchmarkUpload = step(workflow, "task-gates", "Upload 50k benchmark result");
+if (
+  taskGatesRun.if !== undefined ||
+  taskGatesRun.run !== "pnpm verify:task -- ${{ matrix.tasks }}" ||
+  benchmarkUpload.if !== undefined ||
+  benchmarkUpload.uses !== "actions/upload-artifact@v4" ||
+  benchmarkUpload.with?.name !== "benchmark-50k" ||
+  benchmarkUpload.with?.path !== "apps/desktop/benchmark-50k.json" ||
+  benchmarkUpload.with?.["if-no-files-found"] !== "error" ||
+  perfSteps.indexOf(taskGatesRun) >= perfSteps.indexOf(benchmarkUpload) ||
+  perfSteps.indexOf(benchmarkUpload) >= perfSteps.indexOf(perfPaths)
+) fail("task-gates task 12.5 and its 50k benchmark upload must remain unconditional before classification");
+if (
+  perfCheckout.uses !== "actions/checkout@v4" ||
+  perfCheckout.with?.["fetch-depth"] !== 0 ||
+  perfCheckout.if !== undefined ||
+  perfSteps.indexOf(perfPaths) >= perfSteps.indexOf(perfStep)
+) fail("task-gates classifier requires unconditional full-history checkout and must precede performance");
 if (workflow.jobs.perf) fail("ci.yml job 'perf' must not exist (folded into task-gates core)");
 const taskGatesCache = step(workflow, "task-gates", "Cache Rust build artifacts");
 if (String(taskGatesCache.with?.["save-if"] ?? "") !== "false") {

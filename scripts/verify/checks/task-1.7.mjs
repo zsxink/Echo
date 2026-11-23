@@ -6,8 +6,8 @@
 //   - Local, offline-safe parts gate the result (hard fail on nonzero):
 //       * `cargo deny check licenses bans sources` (no advisory DB needed)
 //       * LICENSES.md exists, is non-empty, and names every workspace member
-//   - Online parts (`cargo deny check` full advisory DB, `cargo deny check
-//     advisories`, `cargo audit`, `pnpm audit --prod`) FAIL if they run and
+//   - Online parts (`cargo deny check advisories`, `cargo audit`,
+//     `pnpm audit --prod`) FAIL if they run and
 //     report high/critical findings, but are skipped with a clear stderr note
 //     if the network/advisory DB is unavailable — the script still exits 0
 //     for the locally verifiable parts.
@@ -220,14 +220,11 @@ process.stderr.write(
 ensureTool("cargo-deny");
 if (!OFFLINE_ONLY) ensureTool("cargo-audit");
 
-// 1) Local, offline-safe gates. `cargo deny check licenses|bans|sources` do
-//    not need the advisory DB, so they hard-gate the result even when the
-//    machine is offline. They also validate deny.toml's syntax.
-for (const which of ["licenses", "bans", "sources"]) {
-  const r = spawn("cargo", ["deny", "check", which], { timeout: 120_000 });
-  if (r.status !== 0) {
-    fail(`\`cargo deny check ${which}\` exited ${r.status}:\n${output(r)}`);
-  }
+// 1) Run the local policy checks together so they share one crate graph.
+// None needs the advisory DB; any failure still blocks the result.
+const localDeny = spawn("cargo", ["deny", "check", "licenses", "bans", "sources"], { timeout: 180_000 });
+if (localDeny.status !== 0) {
+  fail(`\`cargo deny check licenses bans sources\` exited ${localDeny.status}:\n${output(localDeny)}`);
 }
 
 // 2) Licence inventory file must exist and be non-empty, and must list the
@@ -249,7 +246,6 @@ for (const member of ["echo-app", "echo-core", "echo-desktop"]) {
 // 3) Online advisory checks. These FAIL on real findings, but skip cleanly
 //    when the network / advisory DB is unreachable.
 if (!OFFLINE_ONLY) {
-  handleOnline("cargo deny check (advisories)", spawn("cargo", ["deny", "check"], { timeout: NET_TIMEOUT }));
   handleOnline("cargo deny check advisories", spawn("cargo", ["deny", "check", "advisories"], { timeout: NET_TIMEOUT }));
 
   const audit = spawn("cargo", ["audit", ...AUDIT_IGNORES.flatMap((id) => ["--ignore", id])], {
