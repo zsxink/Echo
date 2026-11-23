@@ -22,7 +22,7 @@ Issue #85 要求沉浸式播放器的进入/退出以及歌词专注阅读切换
 
 - 不追求逐帧物理模拟、液体形变、模糊半径动画或第二套材质系统。
 - 不在本 change 重写沉浸面视觉、歌词数据流或浮层栈。
-- 不引入截图基线作为唯一门禁；自动验证以真实 Chromium 的计算布局/样式与组件生命周期为主，三平台以人工视觉核对补足。
+- 不引入截图基线作为唯一门禁；自动验证以真实 Chromium 的计算布局/样式与组件生命周期为主，macOS 截图目检补足（Windows/Linux 人工复核经用户确认豁免）。
 
 ## Decisions
 
@@ -69,6 +69,7 @@ body 类在 `useLayoutEffect` 中根据 `phase` 更新，避免提交后一帧�
 - 入场时 `player-mode-entering` 把 `--player-tint` / `--player-background` / `--player-glow` / `--player-on` 的过渡时长从切歌用的 800ms 收到 `--motion-base`；表面淡入与取色落位同步。
 - 退场时保留当前 palette 进入 `closing`：`useArtworkTint` 写入的是 body 内联变量，内联值优先于类规则，因此已取色的表面会带着自己的颜色淡出，而不是在第一帧跳回主题色。`player-mode-closing` 的 `--motion-exit` 变量过渡覆盖无 palette 的降级路径（此时变量值与 `body.player-mode-open` 的兜底值一致，过渡不产生额外视觉变化）。
 - 取色清理从 `!ui.immersiveOpen` 移到 `phase === "closed"`；表面与 palette 在同一提交内移除，避免退场第一帧就退回主题色，也不会留下无表面的残留取色。
+- 由于 palette 是内联变量、退场期间保持不变，常驻播放栏的背景无法靠变量插值回到主题；`player-mode-closing .playerbar` 直接以 `--motion-exit` 把 `background-color` 过渡到 `var(--bg)`，避免表面卸载那一帧的底色跳变。文字/图标在两种方案下都接近深色，不做额外动画。
 - 不主动动画 `backdrop-filter`。常驻播放栏的玻璃观感由颜色变量与既有 CSS 承担，避免跨平台模糊过渡差异。
 - 切歌时继续使用 `useArtworkTint` 的已注册变量过渡；封面本身用“保留上一张、短交叉淡入”的方式更新，与入场 FLIP 解耦。
 
@@ -108,7 +109,7 @@ body 类在 `useLayoutEffect` 中根据 `phase` 更新，避免提交后一帧�
 - **组件测试**（jsdom）：`useImmersiveTransition.test.tsx` / `useImmersiveCoverFlip.test.tsx` 使用 fake timers、rAF stub、`matchMedia` stub 与 `getBoundingClientRect` stub，断言 phase 生命周期、FLIP 几何、退化、`aria-hidden`/`inert`、焦点恢复、中断收敛、减少动画零延迟；扩展 `ImmersivePlayer.test.tsx` 覆盖 body 类、切歌不重挂、专注冻结与残影；`immersiveTransitionStyles.test.ts` 静态校验样式契约。
 - **真实浏览器**：新增 `apps/desktop/e2e/a85-immersive-transition.mjs`，在现有 mock-bridge Chromium harness 中断言首帧存在 `data-phase="opening"`、封面初始矩形贴近 `.mini-cover`、settle 后 `data-phase="open"` 且 transform 归零；关闭后表面在退场窗口内仍在 DOM、`aria-hidden`/`inert` 生效、body 类保留，超时后全部移除；用 CDP `Emulation.setEmulatedMedia` 验证 reduce 下即时卸载；断言动画期间歌词容器高度/滚动位置不被逐帧改写。
 - **静态门禁**：`prototype-css-drift` 保证生成物与原型一致；测试读取 CSS 断言只对 `transform`/`opacity`/已注册变量设置过渡，且 `prefers-reduced-motion` 规则存在。
-- **人工视觉复核**：macOS WKWebView、Windows WebView2、Linux WebKitGTK 各执行一次展开/收起/专注/切歌/减少动画检查，在 PR 记录平台与结论；不把截图作为唯一证据。
+- **人工视觉复核**：在 macOS 的真实 Chromium 中执行一次展开/收起/专注/切歌/减少动画检查并截图目检，在 PR 记录浏览器版本与结论；Windows/Linux 由用户确认豁免；不把截图作为唯一证据。
 
 ## Risks / Trade-offs
 

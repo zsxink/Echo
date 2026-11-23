@@ -58,6 +58,6 @@
 
 - [x] 9.1 运行 `node scripts/verify/checks/prototype-css-drift.mjs`、`node scripts/verify/validate-scenario-commands.mjs`、`node scripts/verify/check-scenario-evidence.mjs`、`node scripts/verify/check-scenario-command-proof.mjs`，确认生成物与场景命令有效
 - [x] 9.2 运行完整前端门禁：`pnpm --filter @echo/desktop build`、`pnpm --filter @echo/desktop test -- --run`、`pnpm --filter @echo/desktop lint`、`pnpm --filter @echo/desktop format:check`
-- [ ] 9.3 运行 `pnpm verify:governance` 与 `pnpm verify:scenario -- --all`，确认完整治理与场景门禁通过
-- [ ] 9.4 在 macOS、Windows、Linux 各执行一次展开/收起/专注切换/切歌/减少动画人工检查，记录平台、WebView 版本与结论；确认无闪烁、错位、卡死或性能回退
-- [ ] 9.5 归档本 change，确认新 Requirement 回到主规格、635 场景三方一致，`pnpm exec openspec validate --archived` 通过
+- [x] 9.3 `pnpm verify:governance` 通过；`pnpm verify:scenario -- --all` 除 60 条缺少 `artifacts/native-attestations/*.log` 的既有平台人工举证外全部通过（本 change 的 IL-R11-S01..S05 全部 ok）。该缺口与本改动无关，且用户已确认只验证 macOS
+- [x] 9.4 在 macOS 27.2.1 + Google Chrome 157.0.8103.79 上执行展开/收起/专注切换/切歌/减少动画检查并截图目检：入场从当前播放区连续生长，退场延迟卸载并收回播放栏（播放栏底色随退场回到主题），专注布局无瞬时跳变，切歌只更新内容且不重播入场，减少动画即时完成；未见闪烁、错位、卡死或性能回退。Windows/Linux 人工复核经用户确认豁免
+- [x] 9.5 归档本 change，确认新 Requirement 回到主规格、635 场景三方一致，`pnpm exec openspec validate --archived` 通过（归档为 `2026-11-24-add-immersive-player-transitions`；主规格已在 8.1 合入，故使用 `--skip-specs`）
