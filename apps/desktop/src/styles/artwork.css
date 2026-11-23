@@ -84,6 +84,17 @@ body.player-mode-open.player-mode-closing {
     --player-on var(--motion-exit) var(--ease-standard);
 }
 
+/* The palette stays inline through the exit (reopening mid-exit must not lose
+ * it), so the variables cannot carry the 常驻播放栏 back to the theme. Paint the
+ * bar's own background directly against `--bg` instead: without this the bar
+ * stays tinted while the surface fades and snaps to the ordinary theme on the
+ * frame the surface unmounts. The text/icon colours are close enough between
+ * the two schemes that only the background needs the explicit hand-off. */
+body.player-mode-open.player-mode-closing .playerbar {
+  background: var(--bg);
+  transition: background-color var(--motion-exit) var(--ease-standard);
+}
+
 /* --- the three surfaces carrying the colour ------------------------------ */
 
 body.player-mode-open .now-playing-popover {

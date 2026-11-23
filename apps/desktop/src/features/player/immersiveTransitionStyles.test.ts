@@ -66,6 +66,16 @@ describe("immersive transition styles", () => {
     expect(reduce).toContain("body.player-mode-open.player-mode-closing");
   });
 
+  it("hands the 常驻播放栏 back to the theme over the exit", () => {
+    const artwork = read("artwork.css");
+    const rule =
+      artwork.match(
+        /body\.player-mode-open\.player-mode-closing \.playerbar \{([\s\S]*?)\}/,
+      )?.[1] ?? "";
+    expect(rule).toContain("background: var(--bg)");
+    expect(rule).toMatch(/transition: background-color var\(--motion-exit\)/);
+  });
+
   it("crossfades the record label without animating layout", () => {
     const extras = read("app-extras.css");
     expect(extras).toContain(".ring-art.is-crossfading-in");
