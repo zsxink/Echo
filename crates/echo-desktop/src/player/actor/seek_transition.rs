@@ -257,11 +257,16 @@ impl SeekTransition {
         if let Readiness::DirectSeek {
             target,
             settle_after: Some(after),
+            deadline,
             ..
-        } = self.readiness
+        } = &mut self.readiness
         {
-            if now >= after && backend.direct_seek_settled(target) {
-                self.readiness = Readiness::Ready;
+            if now >= *after && now < *deadline {
+                if backend.direct_seek_settled(*target) {
+                    self.readiness = Readiness::Ready;
+                } else {
+                    *after = now + DIRECT_QUIET;
+                }
             }
         }
     }

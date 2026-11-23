@@ -335,3 +335,28 @@ fn paused_scrub_rearms_after_latest_real_timeline_then_protects_audible_seek() {
         Some(7.0)
     );
 }
+
+#[test]
+fn direct_seek_confirmation_is_bounded_and_latest_request_falls_open() {
+    let now = Instant::now();
+    let mut probe = Probe::default();
+    let mut transition = ready(now, &mut probe);
+    assert_eq!(transition.request(now, 1.0, false, &mut probe), Some(1.0));
+    assert_eq!(transition.request(ms(now, 1), 2.0, true, &mut probe), None);
+    transition.started();
+    assert_eq!(transition.restarted(ms(now, 2), &mut probe), None);
+    // Even a matching native read is too late to re-arm this direct seek.
+    transition.backend_quiet(now + RESTART_LIMIT, &probe);
+    assert!(matches!(transition.readiness, Readiness::DirectSeek { .. }));
+    assert_eq!(
+        transition.tick(now + RESTART_LIMIT, true, &mut probe),
+        Some(2.0)
+    );
+    assert_eq!(
+        probe.writes,
+        [
+            Write::Property(BackendProperty::Seek(1.0)),
+            Write::Property(BackendProperty::Seek(2.0))
+        ]
+    );
+}
