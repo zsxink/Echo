@@ -142,6 +142,8 @@ pub mod event_id {
     pub const START_FILE: i32 = 6;
     pub const END_FILE: i32 = 7;
     pub const FILE_LOADED: i32 = 8;
+    pub const SEEK: i32 = 20;
+    pub const PLAYBACK_RESTART: i32 = 21;
     pub const PROPERTY_CHANGE: i32 = 22;
     pub const ERROR: i32 = 26;
 }
@@ -448,6 +450,22 @@ impl Handle {
             raw,
             terminated: false,
         })
+    }
+
+    /// Set a fixed runtime property using the native property API.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own the live handle on its actor thread.
+    pub(super) unsafe fn set_property_value(
+        &self,
+        sys: &MpvSys,
+        name: &CStr,
+        value: &CStr,
+    ) -> bool {
+        // SAFETY: both C strings and the actor-owned handle are live.
+        (unsafe { (sys.set_property_string)(self.raw, name.as_ptr(), value.as_ptr()) })
+            == err_::SUCCESS
     }
 
     /// An ABI sanity check: the client API version, exposed for the 1.10/8.12

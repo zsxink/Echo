@@ -51,6 +51,8 @@ pub(super) const OBSERVED_PROPERTIES: &[(&str, i32)] = &[
 pub enum BackendEvent {
     FileLoaded,
     AudioReconfigured,
+    SeekStarted,
+    PlaybackRestart,
     AudioEffectsFailed,
     Ended,
     PropertyChanged { name: String, value: f64 },
@@ -81,6 +83,11 @@ pub(super) trait Backend {
     /// Advance the backend; return the next pending event, if any.
     fn pump(&mut self) -> Option<BackendEvent>;
 
+    /// Backend-sized wait for the brief seek gain ramp.
+    fn pump_seek_fade(&mut self) -> Option<BackendEvent> {
+        self.pump()
+    }
+
     /// Request a file load. Implementations defer the actual FFI call to a
     /// pump so the command loop is never blocked on the backend.
     fn queue_load(&mut self, path: &Path);
@@ -98,6 +105,19 @@ pub(super) trait Backend {
     /// the snapshot immediately; a `false` means the write was rejected and the
     /// actor rolls back to the last authoritative snapshot.
     fn write_property(&mut self, prop: BackendProperty) -> bool;
+
+    /// Separate transient gain at the native mixer, not user volume or mute.
+    fn supports_seek_gain(&self) -> bool {
+        false
+    }
+
+    fn set_seek_gain_db(&mut self, _db: f64) -> bool {
+        false
+    }
+
+    fn reset_seek_gain(&mut self) -> bool {
+        self.set_seek_gain_db(0.0)
+    }
 
     /// Apply one configuration to the native graph. `combined_preamp_db` is
     /// the already-computed EQ protection + normalization gain; `gain_only`
