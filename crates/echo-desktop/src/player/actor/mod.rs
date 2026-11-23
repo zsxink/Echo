@@ -489,6 +489,9 @@ impl<B: Backend> ActorLoop<B> {
                 Some(BackendEvent::SeekStarted) => self.seek_transition.started(),
                 Some(BackendEvent::PlaybackRestart) => self.restart_seek_transition(),
                 Some(BackendEvent::FileLoaded) => {
+                    if self.seek_transition.restoration_fault() {
+                        continue;
+                    }
                     self.load_completed = true;
                     self.seek_transition.file_loaded();
                     // A loaded file is the first moment `time-pos`/`duration`
@@ -656,6 +659,9 @@ impl<B: Backend> ActorLoop<B> {
     /// Handle a command; returns false to exit the loop (Shutdown).
     #[allow(clippy::too_many_lines)] // Command variants share one state-transition boundary; task 5 splits the actor module.
     fn handle_command(&mut self, cmd: PlayerCommand) -> bool {
+        if !self.allow_seek_transport_command(&cmd) {
+            return true;
+        }
         match cmd {
             PlayerCommand::Shutdown => {
                 self.seek_transition.cancel(&mut self.backend);

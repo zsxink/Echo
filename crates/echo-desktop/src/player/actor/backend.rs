@@ -115,6 +115,12 @@ pub(super) trait Backend {
         false
     }
 
+    /// True only when the native timeline has settled at the latest direct
+    /// target (a command receipt alone is not sufficient).
+    fn direct_seek_settled(&self, _target: f64) -> bool {
+        false
+    }
+
     fn reset_seek_gain(&mut self) -> bool {
         self.set_seek_gain_db(0.0)
     }

@@ -333,6 +333,11 @@ impl Backend for MpvBackend {
         .is_ok()
     }
 
+    fn direct_seek_settled(&self, target: f64) -> bool {
+        // SAFETY: actor owns the live handle.
+        unsafe { self.handle.seek_settled_at(&self.sys, target) }
+    }
+
     fn reset_seek_gain(&mut self) -> bool {
         // Recovery falls back to the native property API if the generic
         // command path rejected restoring unity.

@@ -10,12 +10,14 @@ enum Write {
 }
 
 #[derive(Default)]
+#[allow(clippy::struct_excessive_bools)] // Independently injected command failures.
 struct Probe {
     writes: Vec<Write>,
     reject_seek: bool,
     reject_gain: bool,
     reject_unity: bool,
     reject_reset: bool,
+    unsettled_target: Option<f64>,
 }
 
 impl Backend for Probe {
@@ -39,6 +41,10 @@ impl Backend for Probe {
     fn set_seek_gain_db(&mut self, db: f64) -> bool {
         self.writes.push(Write::Gain(db));
         !self.reject_gain && (!self.reject_unity || db < 0.0)
+    }
+
+    fn direct_seek_settled(&self, target: f64) -> bool {
+        self.unsettled_target != Some(target)
     }
 
     fn reset_seek_gain(&mut self) -> bool {
@@ -182,11 +188,15 @@ fn paused_seek_is_immediate_and_ignores_unrelated_restart_before_seek_start() {
     assert_eq!(transition.restarted(now, &mut probe), None);
     assert!(matches!(
         transition.readiness,
-        Readiness::DirectSeek { started: false }
+        Readiness::DirectSeek { started: false, .. }
     ));
     transition.started();
     assert_eq!(transition.restarted(now, &mut probe), None);
-    assert_eq!(transition.request(now, 2.0, true, &mut probe), None);
+    transition.backend_quiet(now + DIRECT_QUIET, &probe);
+    assert_eq!(
+        transition.request(now + DIRECT_QUIET, 2.0, true, &mut probe),
+        None
+    );
     assert!(transition.fading());
 }
 
@@ -270,4 +280,58 @@ fn unrecoverable_native_gain_reports_failure_instead_of_silent_playback() {
         Some(&Write::Property(BackendProperty::Pause(true)))
     );
     assert!(actor.seek_transition.gain_may_be_lowered);
+    let generation = actor.generation;
+    actor.handle_command(PlayerCommand::Play);
+    actor.handle_command(PlayerCommand::LoadTemporary {
+        display_name: "next".into(),
+        path: "/tmp/next.flac".into(),
+        session_id: echo_core::domain::ids::PlaybackSessionId::new(),
+    });
+    assert_eq!(
+        actor.generation, generation,
+        "unrestored gain blocks a new load"
+    );
+    assert_eq!(actor.state, PlaybackState::Failed);
+    assert!(!actor
+        .backend
+        .writes
+        .contains(&Write::Property(BackendProperty::Pause(false))));
+    actor.backend.reject_reset = false;
+    actor.handle_command(PlayerCommand::LoadTemporary {
+        display_name: "next".into(),
+        path: "/tmp/next.flac".into(),
+        session_id: echo_core::domain::ids::PlaybackSessionId::new(),
+    });
+    assert_eq!(actor.generation, generation + 1);
+    assert!(!actor.seek_transition.gain_may_be_lowered);
+}
+
+#[test]
+fn paused_scrub_rearms_after_latest_real_timeline_then_protects_audible_seek() {
+    let now = Instant::now();
+    let mut probe = Probe::default();
+    let mut transition = ready(now, &mut probe);
+    assert_eq!(transition.request(now, 1.0, false, &mut probe), Some(1.0));
+    assert_eq!(
+        transition.request(ms(now, 1), 5.0, false, &mut probe),
+        Some(5.0)
+    );
+    // Resume then seek while old direct commands may still be acknowledged.
+    assert_eq!(transition.request(ms(now, 2), 7.0, true, &mut probe), None);
+    probe.unsettled_target = Some(5.0);
+    transition.started();
+    assert_eq!(transition.restarted(ms(now, 3), &mut probe), None);
+    transition.backend_quiet(ms(now, 20), &probe);
+    assert_eq!(transition.tick(ms(now, 21), true, &mut probe), None);
+    assert!(!transition.fading(), "old restart cannot arm latest intent");
+    probe.unsettled_target = None;
+    transition.started();
+    assert_eq!(transition.restarted(ms(now, 22), &mut probe), None);
+    transition.backend_quiet(ms(now, 38), &probe);
+    assert_eq!(transition.tick(ms(now, 39), true, &mut probe), None);
+    assert!(transition.fading());
+    assert_eq!(
+        fade_out(&mut transition, ms(now, 39), &mut probe),
+        Some(7.0)
+    );
 }

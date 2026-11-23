@@ -3,10 +3,11 @@
 
 use std::time::{Duration, Instant};
 
-use super::{ActorLoop, Backend, BackendEvent, BackendProperty, PlaybackState};
+use super::{ActorLoop, Backend, BackendEvent, BackendProperty, PlaybackState, PlayerCommand};
 
 const FADE: Duration = Duration::from_millis(12);
 const TICK_INTERVAL: Duration = Duration::from_millis(3);
+const DIRECT_QUIET: Duration = Duration::from_millis(15);
 const FLOOR_HOLD: Duration = Duration::from_millis(5);
 const GAIN_FLOOR_DB: f64 = -96.0;
 const RESTART_LIMIT: Duration = Duration::from_millis(500);
@@ -35,7 +36,9 @@ enum Stage {
     Restore {
         attempts: u8,
     },
-    RestoreFailed,
+    RestoreFailed {
+        reported: bool,
+    },
 }
 
 #[derive(Default)]
@@ -44,7 +47,10 @@ enum Readiness {
     BeforeFileLoaded,
     LoadRestart,
     DirectSeek {
+        target: f64,
         started: bool,
+        settle_after: Option<Instant>,
+        deadline: Instant,
     },
     Ready,
 }
@@ -65,7 +71,7 @@ pub(super) struct SeekTransition {
 }
 
 impl SeekTransition {
-    pub(super) fn fading(&self) -> bool {
+    pub(super) const fn fading(&self) -> bool {
         matches!(
             self.stage,
             Stage::FadeOut { .. } | Stage::FadeIn { .. } | Stage::Floor { .. }
@@ -82,13 +88,21 @@ impl SeekTransition {
         if !backend.supports_seek_gain() {
             return seek(backend, target);
         }
+        if audible
+            && !self.abandoned_fence
+            && !self.gain_disabled
+            && matches!(self.readiness, Readiness::DirectSeek { .. })
+        {
+            self.later = Some(target);
+            return None;
+        }
         if !audible
             || !matches!(self.readiness, Readiness::Ready)
             || self.abandoned_fence
             || self.gain_disabled
         {
             self.cancel(backend);
-            return self.direct_seek(backend, target);
+            return self.direct_seek(now, backend, target);
         }
         match &mut self.stage {
             Stage::Idle => {
@@ -101,7 +115,7 @@ impl SeekTransition {
             Stage::AwaitRestart { latest, .. } => *latest = Some(target),
             // Once a ramp back begins, finish its short envelope first. A
             // new fade starts at unity, rather than jumping up then back down.
-            Stage::FadeIn { .. } | Stage::Restore { .. } | Stage::RestoreFailed => {
+            Stage::FadeIn { .. } | Stage::Restore { .. } | Stage::RestoreFailed { .. } => {
                 // Store the last target separately from the current fence.
                 self.later = Some(target);
             }
@@ -169,7 +183,7 @@ impl SeekTransition {
                     } else {
                         tracing::error!("mpv actor: native seek gain could not be restored");
                         self.later = None;
-                        self.stage = Stage::RestoreFailed;
+                        self.stage = Stage::RestoreFailed { reported: false };
                     }
                 } else {
                     self.stage = Stage::Restore {
@@ -180,17 +194,33 @@ impl SeekTransition {
             _ => {}
         }
         if matches!(self.stage, Stage::Idle) {
-            if let Some(target) = self.later.take() {
+            if let Readiness::DirectSeek { deadline, .. } = self.readiness {
+                if now < deadline {
+                    return None;
+                }
+                if let Some(target) = self.later.take() {
+                    return self.direct_seek(now, backend, target);
+                }
+            } else if let Some(target) = self.later.take() {
                 return self.request(now, target, audible, backend);
             }
         }
         None
     }
 
-    pub(super) fn started(&mut self) {
+    pub(super) const fn started(&mut self) {
         match (&mut self.stage, &mut self.readiness) {
-            (Stage::AwaitRestart { started, .. }, _) | (_, Readiness::DirectSeek { started }) => {
+            (Stage::AwaitRestart { started, .. }, _) => *started = true,
+            (
+                _,
+                Readiness::DirectSeek {
+                    started,
+                    settle_after,
+                    ..
+                },
+            ) => {
                 *started = true;
+                *settle_after = None;
             }
             _ => {}
         }
@@ -208,16 +238,32 @@ impl SeekTransition {
                 }
                 self.stage = Stage::FadeIn { start: now };
             }
-            _ if matches!(
-                self.readiness,
-                Readiness::LoadRestart | Readiness::DirectSeek { started: true }
-            ) =>
-            {
-                self.readiness = Readiness::Ready;
-            }
-            _ => {}
+            _ => match &mut self.readiness {
+                Readiness::LoadRestart => self.readiness = Readiness::Ready,
+                Readiness::DirectSeek {
+                    started: true,
+                    settle_after,
+                    ..
+                } => {
+                    *settle_after = Some(now + DIRECT_QUIET);
+                }
+                _ => {}
+            },
         }
         None
+    }
+
+    pub(super) fn backend_quiet(&mut self, now: Instant, backend: &impl Backend) {
+        if let Readiness::DirectSeek {
+            target,
+            settle_after: Some(after),
+            ..
+        } = self.readiness
+        {
+            if now >= after && backend.direct_seek_settled(target) {
+                self.readiness = Readiness::Ready;
+            }
+        }
     }
 
     pub(super) fn new_file(&mut self, backend: &mut impl Backend) {
@@ -225,7 +271,7 @@ impl SeekTransition {
         self.readiness = Readiness::BeforeFileLoaded;
     }
 
-    pub(super) fn file_loaded(&mut self) {
+    pub(super) const fn file_loaded(&mut self) {
         // Events from the superseded file precede FILE_LOADED in libmpv's
         // ordered queue. A restart from before this boundary cannot arm us.
         self.readiness = Readiness::LoadRestart;
@@ -241,18 +287,41 @@ impl SeekTransition {
         self.later = None;
         // Don't replenish the retry budget if several commands are drained
         // before the loop gets a chance to perform recovery.
-        if !matches!(self.stage, Stage::Restore { .. }) {
+        if !matches!(
+            self.stage,
+            Stage::Restore { .. } | Stage::RestoreFailed { .. }
+        ) {
             self.restore(backend);
         }
     }
 
-    fn take_restore_failure(&mut self) -> bool {
-        if matches!(self.stage, Stage::RestoreFailed) {
-            self.stage = Stage::Idle;
-            true
+    pub(super) const fn restoration_fault(&self) -> bool {
+        matches!(
+            self.stage,
+            Stage::Restore { .. } | Stage::RestoreFailed { .. }
+        )
+    }
+
+    const fn take_restore_failure(&mut self) -> bool {
+        if let Stage::RestoreFailed { reported } = &mut self.stage {
+            let first_report = !*reported;
+            *reported = true;
+            first_report
         } else {
             false
         }
+    }
+
+    fn confirm_playable(&mut self, backend: &mut impl Backend) -> bool {
+        if !self.restoration_fault() {
+            return true;
+        }
+        if backend.reset_seek_gain() {
+            self.gain_may_be_lowered = false;
+            self.stage = Stage::Idle;
+            return true;
+        }
+        false
     }
 
     fn gain_tick_due(&self, now: Instant) -> bool {
@@ -260,15 +329,20 @@ impl SeekTransition {
             .is_none_or(|last| now.saturating_duration_since(last) >= TICK_INTERVAL)
     }
 
-    fn direct_seek(&mut self, backend: &mut impl Backend, target: f64) -> Option<f64> {
+    fn direct_seek(
+        &mut self,
+        now: Instant,
+        backend: &mut impl Backend,
+        target: f64,
+    ) -> Option<f64> {
         let position = seek(backend, target);
         if position.is_some() {
-            if matches!(self.readiness, Readiness::DirectSeek { .. }) {
-                // mpv may combine multiple direct commands into one native
-                // seek. It cannot tell us which of the starts was for which.
-                self.abandoned_fence = true;
-            }
-            self.readiness = Readiness::DirectSeek { started: false };
+            self.readiness = Readiness::DirectSeek {
+                target,
+                started: false,
+                settle_after: None,
+                deadline: now + RESTART_LIMIT,
+            };
         }
         position
     }
@@ -334,6 +408,23 @@ impl<B: Backend> ActorLoop<B> {
         self.publish(self.generation);
     }
 
+    pub(super) fn allow_seek_transport_command(&mut self, command: &PlayerCommand) -> bool {
+        let loads_file = matches!(
+            command,
+            PlayerCommand::LoadLibrarySong { .. }
+                | PlayerCommand::LoadLibrarySongPaused { .. }
+                | PlayerCommand::LoadTemporary { .. }
+        );
+        if loads_file {
+            self.seek_transition.cancel(&mut self.backend);
+        }
+        let may_resume = loads_file
+            || matches!(command, PlayerCommand::Play)
+            || (matches!(command, PlayerCommand::TogglePlayPause)
+                && self.state == PlaybackState::Paused);
+        !may_resume || self.seek_transition.confirm_playable(&mut self.backend)
+    }
+
     pub(super) fn request_seek(&mut self, position: f64) {
         if self.state == PlaybackState::Loading {
             self.pending_seek = Some(position);
@@ -381,7 +472,12 @@ impl<B: Backend> ActorLoop<B> {
         if self.seek_transition.fading() {
             self.backend.pump_seek_fade()
         } else {
-            self.backend.pump()
+            let event = self.backend.pump();
+            if event.is_none() {
+                self.seek_transition
+                    .backend_quiet(Instant::now(), &self.backend);
+            }
+            event
         }
     }
 }

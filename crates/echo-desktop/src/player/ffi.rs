@@ -468,6 +468,52 @@ impl Handle {
             == err_::SUCCESS
     }
 
+    /// Read native seek state / current media position.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own the live handle on its actor thread.
+    pub(super) unsafe fn seek_settled_at(&self, sys: &MpvSys, target: f64) -> bool {
+        let mut seeking = 1_i32;
+        let mut position = 0.0_f64;
+        let mut duration = 0.0_f64;
+        // SAFETY: FLAG writes an int; DOUBLE writes a double. All C strings
+        // are static and each result buffer has the corresponding ABI type.
+        unsafe {
+            if (sys.get_property)(
+                self.raw,
+                c"seeking".as_ptr(),
+                format_::FLAG,
+                std::ptr::from_mut(&mut seeking).cast(),
+            ) != err_::SUCCESS
+                || seeking != 0
+            {
+                return false;
+            }
+            if (sys.get_property)(
+                self.raw,
+                c"time-pos".as_ptr(),
+                format_::DOUBLE,
+                std::ptr::from_mut(&mut position).cast(),
+            ) != err_::SUCCESS
+            {
+                return false;
+            }
+            let target = if (sys.get_property)(
+                self.raw,
+                c"duration".as_ptr(),
+                format_::DOUBLE,
+                std::ptr::from_mut(&mut duration).cast(),
+            ) == err_::SUCCESS
+            {
+                target.max(0.0).min(duration)
+            } else {
+                target.max(0.0)
+            };
+            (position - target).abs() <= 0.125
+        }
+    }
+
     /// An ABI sanity check: the client API version, exposed for the 1.10/8.12
     /// smoke to assert the loaded library is a compatible mpv build.
     #[must_use]
