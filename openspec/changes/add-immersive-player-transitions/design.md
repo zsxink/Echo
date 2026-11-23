@@ -67,8 +67,8 @@ body 类在 `useLayoutEffect` 中根据 `phase` 更新，避免提交后一帧�
 ### 4. 颜色、材质与取色连续
 
 - 入场时 `player-mode-entering` 把 `--player-tint` / `--player-background` / `--player-glow` / `--player-on` 的过渡时长从切歌用的 800ms 收到 `--motion-base`；表面淡入与取色落位同步。
-- 退场时保留当前 palette 进入 `closing`，`player-mode-closing` 把这些变量按 `--motion-exit` 过渡回普通主题值（`--player-background: var(--bg)` 等）。已注册颜色变量会在 body 上插值，播放栏背景、表面底色、文字层级随表面淡出同时收敛，不会出现“表面先消失、播放栏后跳色”。
-- 取色清理从 `!ui.immersiveOpen` 移到 `phase === "closed"`；否则退场第一帧就会退回主题色。
+- 退场时保留当前 palette 进入 `closing`：`useArtworkTint` 写入的是 body 内联变量，内联值优先于类规则，因此已取色的表面会带着自己的颜色淡出，而不是在第一帧跳回主题色。`player-mode-closing` 的 `--motion-exit` 变量过渡覆盖无 palette 的降级路径（此时变量值与 `body.player-mode-open` 的兜底值一致，过渡不产生额外视觉变化）。
+- 取色清理从 `!ui.immersiveOpen` 移到 `phase === "closed"`；表面与 palette 在同一提交内移除，避免退场第一帧就退回主题色，也不会留下无表面的残留取色。
 - 不主动动画 `backdrop-filter`。常驻播放栏的玻璃观感由颜色变量与既有 CSS 承担，避免跨平台模糊过渡差异。
 - 切歌时继续使用 `useArtworkTint` 的已注册变量过渡；封面本身用“保留上一张、短交叉淡入”的方式更新，与入场 FLIP 解耦。
 
@@ -95,7 +95,7 @@ body 类在 `useLayoutEffect` 中根据 `phase` 更新，避免提交后一帧�
 - CSS 侧继续依赖现有全局 1ms clamp，并新增针对 `data-phase` 的 `transition: none`，确保即使媒体查询在过渡中变化也不会留下半程状态。
 - 中断路径：
   - `opening + close`：清除 `opening → open` 的 rAF，进入 `closing`；CSS 从当前 computed transform 继续；
-  - `closing + open`：清除卸载计时器，重新进入 `opening` 并保留当前表面节点；
+  - `closing + open`：清除卸载计时器，直接回到 `open`，保留当前表面节点与当前计算外观；不重放 `opening`，否则封面会先跳回源矩形再展开；
   - 退场中切歌：只更新数据，不改变 phase；`data-phase="closing"` 继续；
   - 任何路径结束时都只允许一个 `closed`，body 类与计时器由同一个 effect 清理。
 
@@ -105,7 +105,7 @@ body 类在 `useLayoutEffect` 中根据 `phase` 更新，避免提交后一帧�
 
 ### 9. 验证策略
 
-- **组件测试**（jsdom）：`ImmersiveTransition.test.tsx` 使用 fake timers、rAF stub、`matchMedia` stub 与 `getBoundingClientRect` stub，断言 phase 生命周期、body 类、`aria-hidden`/`inert`、焦点恢复、中断收敛、减少动画零延迟；扩展 `ImmersivePlayer.test.tsx` 覆盖切歌不重挂、专注切换类与残影。
+- **组件测试**（jsdom）：`useImmersiveTransition.test.tsx` / `useImmersiveCoverFlip.test.tsx` 使用 fake timers、rAF stub、`matchMedia` stub 与 `getBoundingClientRect` stub，断言 phase 生命周期、FLIP 几何、退化、`aria-hidden`/`inert`、焦点恢复、中断收敛、减少动画零延迟；扩展 `ImmersivePlayer.test.tsx` 覆盖 body 类、切歌不重挂、专注冻结与残影；`immersiveTransitionStyles.test.ts` 静态校验样式契约。
 - **真实浏览器**：新增 `apps/desktop/e2e/a85-immersive-transition.mjs`，在现有 mock-bridge Chromium harness 中断言首帧存在 `data-phase="opening"`、封面初始矩形贴近 `.mini-cover`、settle 后 `data-phase="open"` 且 transform 归零；关闭后表面在退场窗口内仍在 DOM、`aria-hidden`/`inert` 生效、body 类保留，超时后全部移除；用 CDP `Emulation.setEmulatedMedia` 验证 reduce 下即时卸载；断言动画期间歌词容器高度/滚动位置不被逐帧改写。
 - **静态门禁**：`prototype-css-drift` 保证生成物与原型一致；测试读取 CSS 断言只对 `transform`/`opacity`/已注册变量设置过渡，且 `prefers-reduced-motion` 规则存在。
 - **人工视觉复核**：macOS WKWebView、Windows WebView2、Linux WebKitGTK 各执行一次展开/收起/专注/切歌/减少动画检查，在 PR 记录平台与结论；不把截图作为唯一证据。
@@ -122,8 +122,8 @@ body 类在 `useLayoutEffect` 中根据 `phase` 更新，避免提交后一帧�
 
 ## Migration Plan
 
-1. 本 change 只落规划产物；主规格、追踪表与 manifest 保持当前 153 / 630 基线。
+1. 本 change 只落规划产物；主规格、追踪表与 manifest 保持当时的 153 / 630 基线。
 2. 实现阶段先改原型并重生成 CSS，再落 React 阶段机与 FLIP，最后补测试与文档。
-3. 实现完成后把 delta 的 5 个场景登记到 `scripts/verify/scenario-commands.mjs`，运行 `gen-scenario-manifests.mjs --write` 与 `docs/traceability.md` 同步，使三方集合在 154 / 635 上一致。
+3. 实现完成后把 delta 的 5 个场景登记到 `scripts/verify/scenario-commands.mjs`，运行 `gen-scenario-manifests.mjs --write` 与 `docs/traceability.md` 同步，使三方集合在 155 个 Requirement / 635 个 Scenario 上一致（Requirement 计数仅审计用）。
 4. 归档：`openspec archive` 把新 Requirement 合并回 `openspec/specs/immersive-lyrics/spec.md`，再运行 `openspec validate --archived` 与 `pnpm verify:governance`。
 5. 回滚：改动集中在前端样式、原型与测试，无持久化/IPC 迁移；`git revert` 单个实现提交即可恢复硬切换行为。
