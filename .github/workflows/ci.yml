@@ -39,6 +39,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Isolate Linux Rustup home
+        run: bash scripts/verify/isolate-linux-rustup-home.sh
+
       - name: Install Rust toolchain (pinned, rustfmt + clippy)
         uses: dtolnay/rust-toolchain@master
         with:
@@ -247,6 +250,11 @@ jobs:
             tasks: "1.1 1.3 12.5 13.3"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Isolate Linux Rustup home
+        run: bash scripts/verify/isolate-linux-rustup-home.sh
 
       - name: Install Rust toolchain (pinned, rustfmt + clippy)
         uses: dtolnay/rust-toolchain@master
@@ -302,7 +310,16 @@ jobs:
       # `--release` artifacts the scenarios compile never land in a key the
       # Rust shards restore. Placed after the benchmark upload so a perf
       # failure cannot cost task-12.5 its required artifact.
+      - name: Classify performance scenario paths
+        id: perf-paths
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          ECHO_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          ECHO_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/verify/ci-perf-paths.mjs
       - name: Run performance scenarios
+        if: github.event_name != 'pull_request' || steps.perf-paths.outcome != 'success' || steps.perf-paths.outputs.skip != 'true'
         run: pnpm verify:perf
 
   macos-platform-gate:
@@ -451,6 +468,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Isolate Linux Rustup home
+        run: bash scripts/verify/isolate-linux-rustup-home.sh
 
       - name: Install Rust toolchain (pinned, rustfmt + clippy)
         uses: dtolnay/rust-toolchain@master

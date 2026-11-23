@@ -15,6 +15,8 @@ const checks = [
   ["scenario reconciliation", "node", ["scripts/verify/reconcile-scenarios.mjs"], "registry"],
   ["scenario command validity", "node", ["scripts/verify/validate-scenario-commands.mjs"], "rust-static"],
   ["scenario registry drift", "node", ["scripts/verify/gen-scenario-manifests.mjs"], "registry"],
+  ["CI workflow structure", "node", ["scripts/verify/checks/task-1.5.mjs"], "static"],
+  ["CI workflow regression tests", "node", ["--test", "scripts/verify/ci-perf-paths.test.mjs", "scripts/verify/checks/task-1.7.test.mjs", "scripts/verify/isolate-linux-rustup-home.test.mjs"], "static"],
   ["scale limits", "node", ["scripts/verify/check-scale.mjs"], "static"],
   // The fixture gate was previously registered in the manifest but wired into
   // no CI job and no scenario, so it could go red for months unnoticed. It runs

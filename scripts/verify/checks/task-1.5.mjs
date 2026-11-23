@@ -180,6 +180,45 @@ try {
     readFileSync(resolve(ROOT, ".github", "workflows", "dependency-audit.yml"), "utf8"),
     "dependency-audit.yml",
   );
+  // Normalize Rustup before it contributes its ambient toolchain executables
+  // to the cache key. Do not let normalization mask dependency/env inputs or
+  // accidentally apply the Linux-only setup to a platform-specific cache.
+  const rustupStepName = "Isolate Linux Rustup home";
+  const rustupCommand = "bash scripts/verify/isolate-linux-rustup-home.sh";
+  for (const [file, jobs, participants] of [
+    ["ci.yml", workflow.jobs, ["rust", "task-gates", "governance-static"]],
+    ["dependency-audit.yml", auditWorkflow.jobs, ["audit"]],
+  ]) {
+    for (const id of new Set([...Object.keys(jobs), ...participants])) {
+      const steps = jobs[id]?.steps || [];
+      const candidates = steps.filter((s) => s.name === rustupStepName || String(s.run || "").includes("isolate-linux-rustup-home.sh"));
+      const label = `${file} job '${id}'`;
+      if (!participants.includes(id)) {
+        if (candidates.length) fail(`${label} must not isolate Linux Rustup home`);
+        continue;
+      }
+      if (candidates.length !== 1) fail(`${label} must configure exactly one Linux Rustup home isolation step`);
+      const [isolation] = candidates;
+      const checkout = steps.findIndex((s) => String(s.uses || "").startsWith("actions/checkout@"));
+      const install = steps.findIndex((s) => String(s.uses || "").startsWith("dtolnay/rust-toolchain@"));
+      const cache = steps.findIndex((s) => s.name === CACHE_STEP);
+      const isolationIndex = steps.indexOf(isolation);
+      if (!(checkout >= 0 && checkout < isolationIndex && isolationIndex < install && install < cache)) {
+        fail(`${label} must isolate Linux Rustup home after checkout and before toolchain installation and cache`);
+      }
+      if (isolation.name !== rustupStepName || isolation.run !== rustupCommand ||
+          isolation.if !== undefined || isolation["continue-on-error"] !== undefined) {
+        fail(`${label} must execute unconditional Linux Rustup home isolation using '${rustupCommand}'`);
+      }
+      const restore = steps[cache];
+      if (restore.uses !== "Swatinem/rust-cache@v2" ||
+          restore.with?.["env-vars"] !== undefined ||
+          (restore.with?.["add-rust-environment-hash-key"] !== undefined &&
+            String(restore.with?.["add-rust-environment-hash-key"]) !== "true")) {
+        fail(`${label} must preserve the Rust cache action's environment key inputs`);
+      }
+    }
+  }
   const auditKeys = Object.values(auditWorkflow.jobs).flatMap((job) =>
     (job.steps || []).filter((s) => s.name === CACHE_STEP).map((s) => String(s.with?.["shared-key"] || "")),
   );
@@ -463,9 +502,9 @@ if (
 if (embedded.if !== undefined) fail("macOS embedded-frontend step must not be conditionally skipped");
 
 // The three performance scenarios share the task-gates core shard's toolchain
-// and `linux-workspace` cache. Both halves are pinned: the step must exist with
-// the exact run, and it must not be conditionally skipped (the single core shard
-// expands on every event), so a PR cannot lose the perf gate. The shard's cache
+// and `linux-workspace` cache. Only a successful classifier's explicit skip
+// may suppress the step on a PR. Verify its inputs, outcome and execution
+// location so a missing or uncertain diff still runs the gate. The shard's cache
 // step must stay read-only so the `--release` artifacts are never saved into a
 // key the Rust shards restore.
 // The injection proof suite is local-only. It proves the gates' own failure
@@ -484,7 +523,40 @@ if (embedded.if !== undefined) fail("macOS embedded-frontend step must not be co
 
 const perfStep = step(workflow, "task-gates", "Run performance scenarios");
 if (perfStep.run !== "pnpm verify:perf") fail("task-gates performance step run must be 'pnpm verify:perf'");
-if (perfStep.if !== undefined) fail("task-gates performance step must not be conditionally skipped");
+const perfIf = "github.event_name != 'pull_request' || steps.perf-paths.outcome != 'success' || steps.perf-paths.outputs.skip != 'true'";
+if (perfStep.if !== perfIf || perfStep["continue-on-error"] !== undefined) {
+  fail("task-gates performance step must run unless a successful PR classifier explicitly skips");
+}
+const perfPaths = step(workflow, "task-gates", "Classify performance scenario paths");
+if (
+  perfPaths.id !== "perf-paths" ||
+  perfPaths.if !== "github.event_name == 'pull_request'" ||
+  perfPaths["continue-on-error"] !== true ||
+  perfPaths.run !== "node scripts/verify/ci-perf-paths.mjs"
+) fail("task-gates classifier must be a fail-open PR-only perf-paths step");
+assertEnv(perfPaths, "ECHO_PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}", "task-gates classifier");
+assertEnv(perfPaths, "ECHO_PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}", "task-gates classifier");
+const perfSteps = workflow.jobs["task-gates"].steps;
+const perfCheckout = perfSteps[0];
+const taskGatesRun = step(workflow, "task-gates", "Verify task gates");
+const benchmarkUpload = step(workflow, "task-gates", "Upload 50k benchmark result");
+if (
+  taskGatesRun.if !== undefined ||
+  taskGatesRun.run !== "pnpm verify:task -- ${{ matrix.tasks }}" ||
+  benchmarkUpload.if !== undefined ||
+  benchmarkUpload.uses !== "actions/upload-artifact@v4" ||
+  benchmarkUpload.with?.name !== "benchmark-50k" ||
+  benchmarkUpload.with?.path !== "apps/desktop/benchmark-50k.json" ||
+  benchmarkUpload.with?.["if-no-files-found"] !== "error" ||
+  perfSteps.indexOf(taskGatesRun) >= perfSteps.indexOf(benchmarkUpload) ||
+  perfSteps.indexOf(benchmarkUpload) >= perfSteps.indexOf(perfPaths)
+) fail("task-gates task 12.5 and its 50k benchmark upload must remain unconditional before classification");
+if (
+  perfCheckout.uses !== "actions/checkout@v4" ||
+  perfCheckout.with?.["fetch-depth"] !== 0 ||
+  perfCheckout.if !== undefined ||
+  perfSteps.indexOf(perfPaths) >= perfSteps.indexOf(perfStep)
+) fail("task-gates classifier requires unconditional full-history checkout and must precede performance");
 if (workflow.jobs.perf) fail("ci.yml job 'perf' must not exist (folded into task-gates core)");
 const taskGatesCache = step(workflow, "task-gates", "Cache Rust build artifacts");
 if (String(taskGatesCache.with?.["save-if"] ?? "") !== "false") {
