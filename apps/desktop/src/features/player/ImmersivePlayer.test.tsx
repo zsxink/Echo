@@ -15,7 +15,7 @@
  *        the 收起 button exit focus without closing the player.
  */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { playerStore, type UiPlayerSnapshot } from "../../player/playerStore";
@@ -41,11 +41,17 @@ vi.mock("../../bridge", () => {
 
 vi.mock("./useArtworkTint", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./useArtworkTint")>();
-  return { ...actual, useArtworkTint: vi.fn(actual.useArtworkTint) };
+  return {
+    ...actual,
+    useArtworkTint: vi.fn(actual.useArtworkTint),
+    // Spied so the exit tests can prove the palette is only dropped when the
+    // surface is really gone (issue #85).
+    clearArtworkTint: vi.fn(actual.clearArtworkTint),
+  };
 });
 
 import { bridge } from "../../bridge";
-import { useArtworkTint } from "./useArtworkTint";
+import { clearArtworkTint, useArtworkTint } from "./useArtworkTint";
 
 const call = vi.mocked(bridge.call);
 
@@ -110,7 +116,13 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
   beforeEach(() => {
     playerStore.setImmersiveOpen(false);
     playerStore.setFocusOpen(false);
-    document.body.classList.remove("player-mode-open", "lyrics-focus-open");
+    document.body.classList.remove(
+      "player-mode-open",
+      "lyrics-focus-open",
+      "player-mode-entering",
+      "player-mode-closing",
+    );
+    vi.mocked(clearArtworkTint).mockClear();
   });
 
   // ---- 11.3 ----
@@ -636,7 +648,8 @@ describe("ImmersivePlayer artist/album links (issue #118)", () => {
     // The surface and its focus layout are gone before the new view appears.
     expect(playerStore.getUi().immersiveOpen).toBe(false);
     expect(playerStore.getUi().focusOpen).toBe(false);
-    expect(screen.queryByTestId("immersive")).not.toBeInTheDocument();
+    // The surface stays for the 180ms exit and then unmounts (issue #85).
+    await waitFor(() => expect(screen.queryByTestId("immersive")).not.toBeInTheDocument());
   });
 
   it("closes the immersive surface before navigating to the album", async () => {
@@ -656,7 +669,7 @@ describe("ImmersivePlayer artist/album links (issue #118)", () => {
 
     expect(openAlbum).toHaveBeenCalledWith("猩红");
     expect(playerStore.getUi().immersiveOpen).toBe(false);
-    expect(screen.queryByTestId("immersive")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByTestId("immersive")).not.toBeInTheDocument());
   });
 
   it("leaves playback and the queue untouched", async () => {
@@ -717,5 +730,204 @@ describe("ImmersivePlayer artist/album links (issue #118)", () => {
 
     expect(await screen.findByText(/未知歌手/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /打开歌手/ })).toBeNull();
+  });
+});
+
+/**
+ * Issue #85 — the immersive surface is a four-phase state machine, not a
+ * boolean mount. These cover the lifecycle the browser e2e cannot see in jsdom:
+ * delayed unmount, inert/aria-hidden during exit, focus restore, palette
+ * lifetime, frozen focus layout, and track changes that never remount.
+ */
+describe("ImmersivePlayer transitions (issue #85)", () => {
+  function Opener() {
+    return (
+      <button
+        type="button"
+        data-testid="open-immersive"
+        onClick={() => playerStore.setImmersiveOpen(true)}
+      >
+        展开播放器
+      </button>
+    );
+  }
+
+  function publishSong(songId = "s1", entry = "e1") {
+    playerStore.publish(
+      makeSnapshot({ currentQueueEntryId: entry, currentSongId: songId, queueRevision: 0 }),
+    );
+  }
+
+  it("mounts in opening, settles to open, and exposes data-phase", async () => {
+    mockService();
+    const { container } = render(
+      <>
+        <Opener />
+        <ImmersivePlayer />
+      </>,
+    );
+    fireEvent.click(screen.getByTestId("open-immersive"));
+    const surface = await screen.findByTestId("immersive");
+    expect(surface).toHaveAttribute("data-phase", "opening");
+    expect(document.body.classList.contains("player-mode-entering")).toBe(true);
+
+    await waitFor(() => expect(surface).toHaveAttribute("data-phase", "open"));
+    expect(document.body.classList.contains("player-mode-entering")).toBe(false);
+    expect(document.body.classList.contains("player-mode-open")).toBe(true);
+    expect(container.querySelector(".now-playing-popover")).not.toBeNull();
+  });
+
+  it("keeps the surface mounted during the exit, then unmounts and restores focus", async () => {
+    mockService({}, { source: "embedded", timed: true, lines: [{ seconds: 0, text: "X" }] });
+    publishSong();
+    render(
+      <>
+        <Opener />
+        <ImmersivePlayer />
+      </>,
+    );
+    const opener = screen.getByTestId("open-immersive");
+    opener.focus();
+    fireEvent.click(opener);
+    const surface = await screen.findByTestId("immersive");
+    await waitFor(() => expect(surface).toHaveAttribute("data-phase", "open"));
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(surface).toHaveAttribute("data-phase", "closing");
+    expect(surface).toHaveAttribute("aria-hidden", "true");
+    expect(surface).toHaveAttribute("inert");
+    expect(document.body.classList.contains("player-mode-open")).toBe(true);
+    expect(document.body.classList.contains("player-mode-closing")).toBe(true);
+    expect(document.activeElement).toBe(opener);
+
+    // Escape no longer targets the layer that already left the stack: the
+    // pending close must not be reset or double-fired.
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(surface).toHaveAttribute("data-phase", "closing");
+
+    await waitFor(() => expect(screen.queryByTestId("immersive")).not.toBeInTheDocument());
+    expect(document.body.classList.contains("player-mode-open")).toBe(false);
+    expect(document.body.classList.contains("player-mode-closing")).toBe(false);
+  });
+
+  it("keeps the artwork palette until the exit has finished", async () => {
+    mockService();
+    publishSong();
+    act(() => playerStore.setImmersiveOpen(true));
+    render(<ImmersivePlayer />);
+    await screen.findByTestId("immersive");
+    vi.mocked(clearArtworkTint).mockClear();
+
+    act(() => playerStore.setImmersiveOpen(false));
+    expect(screen.getByTestId("immersive")).toHaveAttribute("data-phase", "closing");
+    expect(clearArtworkTint).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(screen.queryByTestId("immersive")).not.toBeInTheDocument());
+    expect(clearArtworkTint).toHaveBeenCalled();
+  });
+
+  it("freezes 歌词专注阅读 until the exiting surface is gone", async () => {
+    mockService({}, { source: "embedded", timed: true, lines: [{ seconds: 0, text: "X" }] });
+    publishSong();
+    act(() => playerStore.setImmersiveOpen(true));
+    render(<ImmersivePlayer />);
+    await screen.findByTestId("immersive");
+    await waitFor(() =>
+      expect(screen.getByTestId("immersive")).toHaveAttribute("data-phase", "open"),
+    );
+    act(() => playerStore.setFocusOpen(true));
+    await waitFor(() => expect(document.body.classList.contains("lyrics-focus-open")).toBe(true));
+
+    // Closing clears `focusOpen` in the store, but the collapse must animate
+    // out of the focused arrangement rather than restore the cover first.
+    act(() => playerStore.setImmersiveOpen(false));
+    const surface = screen.getByTestId("immersive");
+    expect(surface).toHaveAttribute("data-phase", "closing");
+    expect(surface).toHaveAttribute("data-focus", "true");
+    expect(document.body.classList.contains("lyrics-focus-open")).toBe(true);
+
+    await waitFor(() => expect(screen.queryByTestId("immersive")).not.toBeInTheDocument());
+    expect(document.body.classList.contains("lyrics-focus-open")).toBe(false);
+  });
+
+  it("converges to one closed when a track changes during the exit", async () => {
+    call.mockReset();
+    call.mockImplementation((async (cmd: string, ...rest: unknown[]) => {
+      if (cmd === "song_detail") {
+        const songId = (rest[0] as Record<string, unknown>)?.songId;
+        return { songId, title: songId === "s1" ? "One" : "Two", hasCover: true };
+      }
+      if (cmd === "get_lyrics")
+        return { source: null, timed: false, lines: [], plainText: "", parseError: null };
+      if (cmd === "song_cover_keys") return {};
+      return undefined;
+    }) as never);
+
+    publishSong("s1", "e1");
+    act(() => playerStore.setImmersiveOpen(true));
+    render(<ImmersivePlayer />);
+    const surface = await screen.findByTestId("immersive");
+    await waitFor(() => expect(surface).toHaveAttribute("data-phase", "open"));
+
+    act(() => playerStore.setImmersiveOpen(false));
+    expect(surface).toHaveAttribute("data-phase", "closing");
+
+    // The queued track change is data only: no remount, no second entry, and
+    // the exit continues to its single `closed`.
+    playerStore.publish(
+      makeSnapshot({ currentQueueEntryId: "e2", currentSongId: "s2", queueRevision: 0 }),
+    );
+    expect(screen.getByTestId("immersive")).toBe(surface);
+    expect(surface).toHaveAttribute("data-phase", "closing");
+    expect(await screen.findByText("Two")).toBeInTheDocument();
+    expect(surface).toHaveAttribute("data-phase", "closing");
+
+    await waitFor(() => expect(screen.queryByTestId("immersive")).not.toBeInTheDocument());
+    expect(document.body.classList.contains("player-mode-open")).toBe(false);
+    expect(document.body.classList.contains("player-mode-closing")).toBe(false);
+  });
+
+  it("updates the cover in place on a track change without replaying the entry", async () => {
+    call.mockReset();
+    call.mockImplementation((async (cmd: string, ...rest: unknown[]) => {
+      if (cmd === "song_detail") {
+        const songId = (rest[0] as Record<string, unknown>)?.songId;
+        return { songId, title: songId === "s1" ? "One" : "Two", hasCover: true };
+      }
+      if (cmd === "get_lyrics")
+        return { source: null, timed: false, lines: [], plainText: "", parseError: null };
+      if (cmd === "song_cover_keys") return { s1: "cv1", s2: "cv2" };
+      return undefined;
+    }) as never);
+
+    publishSong("s1", "e1");
+    act(() => playerStore.setImmersiveOpen(true));
+    render(<ImmersivePlayer />);
+    const surface = await screen.findByTestId("immersive");
+    await waitFor(() => expect(surface).toHaveAttribute("data-phase", "open"));
+    await waitFor(() =>
+      expect(surface.querySelector('.ring-art[src="cover://cv1?s=original"]')).not.toBeNull(),
+    );
+    call.mockClear();
+
+    playerStore.publish(
+      makeSnapshot({ currentQueueEntryId: "e2", currentSongId: "s2", queueRevision: 0 }),
+    );
+
+    // No remount: the node, its phase and the surface identity survive.
+    expect(screen.getByTestId("immersive")).toBe(surface);
+    expect(surface).toHaveAttribute("data-phase", "open");
+    expect(await screen.findByText("Two")).toBeInTheDocument();
+    expect(screen.queryByText("One")).toBeNull();
+
+    // Both labels are painted for the 180ms crossfade; the old one is dropped.
+    await waitFor(() => expect(surface.querySelectorAll(".ring-art")).toHaveLength(2));
+    expect(surface.querySelector(".ring-art.is-crossfading-in")).not.toBeNull();
+    await waitFor(() => expect(surface.querySelectorAll(".ring-art")).toHaveLength(1));
+    expect(surface.querySelector('.ring-art[src="cover://cv2?s=original"]')).not.toBeNull();
+
+    // A track change is data only: never a transport command.
+    expect(call).not.toHaveBeenCalledWith("player_control", expect.anything());
+    expect(call).not.toHaveBeenCalledWith("queue_command", expect.anything());
   });
 });

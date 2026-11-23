@@ -246,6 +246,29 @@
   border-radius: 50%;
 }
 
+/* Issue #85 — 切歌 continuity: the outgoing label stays painted underneath the
+ * incoming one for one short crossfade instead of blinking through the drawn
+ * placeholder. Only opacity animates; the old <img> is unmounted by the
+ * surface after `--motion-exit`. */
+.playing-cover .ring-art.is-crossfading-out {
+  opacity: 1;
+  z-index: 0;
+}
+.playing-cover .ring-art.is-crossfading-in {
+  z-index: 1;
+  animation: ring-art-in var(--motion-exit) var(--ease-standard);
+}
+@keyframes ring-art-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .playing-cover .ring-art.is-crossfading-in {
+    animation: none;
+  }
+}
+
 /* --- immersive player: React-only lyric behaviour -------------------------
  *
  * The prototype renders lyric rows as spans, while the app uses buttons so a

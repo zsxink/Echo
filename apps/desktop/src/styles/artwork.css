@@ -53,6 +53,37 @@ body.player-mode-open {
     --player-on 800ms ease-out;
 }
 
+/* Issue #85 — the two entrance/exit body classes drive the *same* registered
+ * colour variables at the surface's own rhythm. Entering reuses `--motion-base`
+ * so the palette settles with the fade-in; exiting uses the shorter
+ * `--motion-exit` so the persistent bar is back on the ordinary theme by the
+ * time the surface unmounts.
+ *
+ * These are duration/value declarations for the case where no cover palette is
+ * present. While `useArtworkTint` has written an inline palette it wins (inline
+ * beats both), and that is deliberate: the tint is kept through the exit, so
+ * the surface fades with the colours it has instead of snapping to the theme on
+ * the first frame. The hand-off happens when the surface and its palette are
+ * removed together. */
+body.player-mode-open.player-mode-entering {
+  transition:
+    --player-tint var(--motion-base) var(--ease-standard),
+    --player-background var(--motion-base) var(--ease-standard),
+    --player-glow var(--motion-base) var(--ease-standard),
+    --player-on var(--motion-base) var(--ease-standard);
+}
+body.player-mode-open.player-mode-closing {
+  --player-tint: var(--accent);
+  --player-background: color-mix(in oklab, var(--accent), var(--bg) 88%);
+  --player-glow: color-mix(in oklab, var(--accent), var(--bg) 78%);
+  --player-on: var(--fg);
+  transition:
+    --player-tint var(--motion-exit) var(--ease-standard),
+    --player-background var(--motion-exit) var(--ease-standard),
+    --player-glow var(--motion-exit) var(--ease-standard),
+    --player-on var(--motion-exit) var(--ease-standard);
+}
+
 /* --- the three surfaces carrying the colour ------------------------------ */
 
 body.player-mode-open .now-playing-popover {
@@ -209,7 +240,9 @@ body.player-mode-open .tonearm .cartridge-detail {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body.player-mode-open {
+  body.player-mode-open,
+  body.player-mode-open.player-mode-entering,
+  body.player-mode-open.player-mode-closing {
     transition: none;
   }
 }

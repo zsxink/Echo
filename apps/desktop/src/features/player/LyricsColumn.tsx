@@ -1,9 +1,10 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 
 import { bridge } from "../../bridge";
 import type { LyricsLine, SongLyrics } from "./useLyrics";
 import { isWideLayout } from "./useLyricsStartOffset";
+import { IMMERSIVE_OPEN_MS, prefersReducedMotion } from "./useImmersiveTransition";
 
 /**
  * The lyrics area of the immersive surface — the prototype's `.lyrics` block:
@@ -39,6 +40,32 @@ export function LyricsColumn(props: {
 }) {
   const { lyrics, focusOpen, autoScroll, currentPosition, onResume, onToggleFocus } = props;
   const trackRef = useRef<HTMLDivElement>(null);
+
+  // 歌词专注切换 is a reflow of the same grid; the one-shot settle hides that
+  // single-frame change behind a short opacity/4px move. It is added a frame
+  // after the layout switch so a rapid toggle restarts it rather than reusing a
+  // finished animation, and it is absent under reduced motion (the CSS also
+  // guards, in case the preference changes mid-flight).
+  const [refocusing, setRefocusing] = useState(false);
+  const lastFocusRef = useRef(focusOpen);
+  useLayoutEffect(() => {
+    if (lastFocusRef.current === focusOpen) return;
+    lastFocusRef.current = focusOpen;
+    if (prefersReducedMotion()) {
+      setRefocusing(false);
+      return;
+    }
+    setRefocusing(false);
+    let timer = 0;
+    const frame = requestAnimationFrame(() => {
+      setRefocusing(true);
+      timer = window.setTimeout(() => setRefocusing(false), IMMERSIVE_OPEN_MS);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [focusOpen]);
 
   const currentLineIdx = lyrics?.timed ? findCurrentLine(lyrics.lines, currentPosition) : -1;
 
@@ -130,7 +157,7 @@ export function LyricsColumn(props: {
 
   return (
     <div
-      className={`lyrics${focusOpen ? " is-focus" : ""}`}
+      className={`lyrics${focusOpen ? " is-focus" : ""}${refocusing ? " is-refocusing" : ""}`}
       data-testid="lyrics"
       // Named like the prototype's card so the reading toggle is announced
       // without ever being labelled a button it is not.

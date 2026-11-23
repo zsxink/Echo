@@ -62,6 +62,13 @@ import { useLyrics } from "./useLyrics";
 import { useLyricsFollow } from "./useLyricsFollow";
 import { useLyricsStartOffset } from "./useLyricsStartOffset";
 import { LyricsColumn } from "./LyricsColumn";
+import {
+  IMMERSIVE_EXIT_MS,
+  prefersReducedMotion,
+  useImmersiveTransition,
+  type ImmersivePhase,
+} from "./useImmersiveTransition";
+import { useImmersiveCoverFlip } from "./useImmersiveCoverFlip";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -70,10 +77,49 @@ import { LyricsColumn } from "./LyricsColumn";
 export function ImmersivePlayer() {
   const snapshot = usePlayerSnapshot();
   const ui = usePlayerUi();
+
+  // Issue #85: the surface outlives `ui.immersiveOpen` by one short exit so the
+  // close is continuous. `phase` is the only mount authority; the overlay stack
+  // and focus trap keep reading the authoritative flag, so Escape/pointer/focus
+  // semantics end the moment the user closes, not when the animation ends.
+  const { phase } = useImmersiveTransition(ui.immersiveOpen);
+
+  // 歌词专注阅读 is cleared together with `immersiveOpen`, but the exiting
+  // surface must not reflow into the ordinary layout first: remember whether the
+  // *last stable* frame was focused and keep that layout until unmount.
+  const closingFocusRef = useRef(false);
+  if (phase === "closed") closingFocusRef.current = false;
+  // While a close is already requested `ui.focusOpen` has been cleared in the
+  // same store update, but `phase` has not caught up yet. Remember the last
+  // frame in which the surface was still authoritative instead of adopting that
+  // interim false.
+  else if (phase !== "closing" && ui.immersiveOpen) closingFocusRef.current = ui.focusOpen;
+  const focusLayout =
+    phase === "closed" ? false : phase === "closing" ? closingFocusRef.current : ui.focusOpen;
+
   useLayoutEffect(() => {
-    if (!ui.immersiveOpen) clearArtworkTint();
-    return clearArtworkTint;
-  }, [ui.immersiveOpen]);
+    const body = document.body;
+    body.classList.toggle("player-mode-open", phase !== "closed");
+    body.classList.toggle("player-mode-entering", phase === "opening");
+    body.classList.toggle("player-mode-closing", phase === "closing");
+    body.classList.toggle("lyrics-focus-open", focusLayout);
+    return () => {
+      body.classList.remove(
+        "player-mode-open",
+        "player-mode-entering",
+        "player-mode-closing",
+        "lyrics-focus-open",
+      );
+    };
+  }, [phase, focusLayout]);
+
+  // Keep the cover's colour through the exit: clearing it at close time would
+  // snap the surface and the 常驻播放栏 back to the theme on the first frame of
+  // the fade. Cleanup happens only when the surface is actually gone.
+  useLayoutEffect(() => {
+    if (phase === "closed") clearArtworkTint();
+  }, [phase]);
+  useLayoutEffect(() => () => clearArtworkTint(), []);
 
   // The immersive player is the `Immersive`-tier layer. 歌词专注阅读 is *not* a
   // separate layer — it is a state of this same surface (see below) — but it
@@ -81,6 +127,7 @@ export function ImmersivePlayer() {
   // (`… → 菜单/队列 → 歌词专注 → 沉浸式播放器 → 窄屏侧边栏`).
   // Hooks are hoisted and no-op while the player is closed (Rules of Hooks).
   const shellRef = useRef<HTMLDivElement>(null);
+  useImmersiveCoverFlip(shellRef, phase);
   useOverlay({
     tier: OverlayTier.Immersive,
     onClose: () => playerStore.setImmersiveOpen(false),
@@ -91,7 +138,11 @@ export function ImmersivePlayer() {
     tier: OverlayTier.LyricsFocus,
     onClose: () => playerStore.setFocusOpen(false),
     containerRef: shellRef,
-    enabled: ui.immersiveOpen,
+    // 歌词专注阅读 is a *state* of the immersive surface, so it only counts as a
+    // higher Escape layer while it is actually active. Registering it for the
+    // whole lifetime of the surface made Escape in the ordinary layout close a
+    // no-op focus layer first instead of the player.
+    enabled: ui.immersiveOpen && ui.focusOpen,
   });
   // 收起按钮 portal 到 body（桌面平台要与窗口控件同排，必须跳出沉浸层的
   // stacking context，见 ImmersiveBody 内注释）——陷阱把这一额外区域一并圈住，
@@ -99,31 +150,17 @@ export function ImmersivePlayer() {
   const dismissSlotRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(shellRef, ui.immersiveOpen, dismissSlotRef);
 
-  // Two body-level switches, both taken verbatim from the prototype:
-  //  - `player-mode-open` paints the dark immersion surface and turns the
-  //    常驻播放栏 to glass;
-  //  - `lyrics-focus-open` is 歌词专注阅读 — the lyrics take the whole surface
-  //    and the cover/meta hide, while the 常驻播放栏 below keeps the minimal
-  //    playback controls. One surface rearranged, not a second surface stacked.
-  useEffect(() => {
-    document.body.classList.toggle("player-mode-open", ui.immersiveOpen);
-    document.body.classList.toggle("lyrics-focus-open", ui.immersiveOpen && ui.focusOpen);
-    return () => {
-      document.body.classList.remove("player-mode-open");
-      document.body.classList.remove("lyrics-focus-open");
-    };
-  }, [ui.immersiveOpen, ui.focusOpen]);
-
-  if (!ui.immersiveOpen) {
+  if (phase === "closed") {
     return null;
   }
 
   return (
     <ImmersiveBody
-      key={snapshot.currentQueueEntryId ?? "empty"}
       snapshot={snapshot}
       shellRef={shellRef}
       dismissSlotRef={dismissSlotRef}
+      phase={phase}
+      focusLayout={focusLayout}
       onClose={() => playerStore.setImmersiveOpen(false)}
     />
   );
@@ -137,9 +174,11 @@ function ImmersiveBody(props: {
   snapshot: ReturnType<typeof usePlayerSnapshot>;
   shellRef: RefObject<HTMLDivElement>;
   dismissSlotRef: MutableRefObject<HTMLDivElement | null>;
+  phase: ImmersivePhase;
+  focusLayout: boolean;
   onClose: () => void;
 }) {
-  const { snapshot, onClose, shellRef, dismissSlotRef } = props;
+  const { snapshot, onClose, shellRef, dismissSlotRef, phase, focusLayout } = props;
   const ui = usePlayerUi();
   const hasCurrent = snapshot.currentQueueEntryId !== null;
 
@@ -158,8 +197,27 @@ function ImmersiveBody(props: {
     };
   }, [dismissSlot, dismissSlotRef]);
 
-  // Metadata for the current library song. The `key` remounts this body with
-  // the new currentSongId, so a track change always re-reads the detail.
+  // Once the exit starts the surface is visually present but no longer an
+  // interactive layer: the overlay stack already dropped it, and this makes the
+  // same fact true for pointer, Tab and assistive technology. `inert` is
+  // written as an attribute (React 18 does not type it); `aria-hidden` and the
+  // stylesheet's `pointer-events: none` are the cross-WebView fallbacks.
+  useLayoutEffect(() => {
+    const surface = shellRef.current;
+    if (!surface) return;
+    if (phase === "closing") {
+      surface.setAttribute("aria-hidden", "true");
+      surface.setAttribute("inert", "");
+    } else {
+      surface.removeAttribute("aria-hidden");
+      surface.removeAttribute("inert");
+    }
+  }, [phase, shellRef]);
+
+  // Metadata for the current library song. The body no longer remounts per
+  // queue entry (issue #85): `useSongDetail` / `useLyrics` reset on `songId`, so
+  // the surface keeps its node, scroll container, focus state and entry
+  // animation across a track change.
   const detail = useSongDetail(snapshot.currentSongId);
   // Issue #118: the overlay covers the workspace, so its links ask the shell
   // through the same optional context the list rows use.
@@ -196,6 +254,45 @@ function ImmersiveBody(props: {
   const artwork: string | null =
     coverKey && failedCoverId !== (songId ?? coverKey) ? assetUrl(coverKey, "original") : null;
   useArtworkTint(coverKey, artwork, !!coverKey && failedCoverId !== (songId ?? coverKey));
+
+  // 切歌连续性: keep the previous label for one short crossfade instead of
+  // blinking through the drawn placeholder. A reduced-motion switch drops it
+  // immediately — the spec's exception list has no crossfade. The old image is
+  // only remembered within this surface, so no stale cover can outlive the
+  // queue entry it belongs to.
+  const [previousArtwork, setPreviousArtwork] = useState<string | null>(null);
+  const lastArtworkRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!artwork) {
+      // A track change passes through "no artwork yet" while the new keys are
+      // in flight. Hold the last label for the same short window instead of
+      // blinking through the drawn placeholder; a song that really has no cover
+      // lands on the placeholder when that window closes.
+      if (lastArtworkRef.current && !prefersReducedMotion()) {
+        setPreviousArtwork(lastArtworkRef.current);
+        const timer = window.setTimeout(() => {
+          setPreviousArtwork(null);
+          lastArtworkRef.current = null;
+        }, IMMERSIVE_EXIT_MS);
+        return () => window.clearTimeout(timer);
+      }
+      setPreviousArtwork(null);
+      lastArtworkRef.current = null;
+      return;
+    }
+    const before = lastArtworkRef.current;
+    lastArtworkRef.current = artwork;
+    if (prefersReducedMotion() || !before || before === artwork) {
+      setPreviousArtwork(null);
+      return;
+    }
+    // 切歌 crossfade: the outgoing label stays painted underneath while the
+    // incoming one fades in over `--motion-exit`. Only opacity animates.
+    setPreviousArtwork(before);
+    const timer = window.setTimeout(() => setPreviousArtwork(null), IMMERSIVE_EXIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [artwork]);
+
   const duration = snapshot.duration ?? detail?.durationS ?? 0;
 
   // Everything that changes the *rendered height* of the metadata block: the
@@ -204,7 +301,7 @@ function ImmersiveBody(props: {
   // lyrics the whole surface and owns their margin itself, so the measurement
   // has to be told to stand down and re-run on the way back.
   const infoSignature = `${title}|${artist ?? ""}|${album ?? ""}|${duration}`;
-  useLyricsStartOffset(shellRef, infoSignature, ui.focusOpen);
+  useLyricsStartOffset(shellRef, infoSignature, focusLayout);
 
   // Leaving 歌词专注阅读 through 收起 returns focus to the lyrics area — the
   // prototype does the same (`lyricsCard.focus()`,
@@ -219,8 +316,9 @@ function ImmersiveBody(props: {
     <div
       className="now-playing-popover"
       data-testid="immersive"
+      data-phase={phase}
       data-playing={snapshot.state === "playing"}
-      data-focus={ui.focusOpen}
+      data-focus={focusLayout}
       role="dialog"
       aria-labelledby="now-title"
       ref={shellRef}
@@ -277,9 +375,18 @@ function ImmersiveBody(props: {
               </svg>
             </span>
             <span className="ring">
+              {previousArtwork ? (
+                <img
+                  className="ring-art is-crossfading-out"
+                  src={previousArtwork}
+                  alt=""
+                  aria-hidden="true"
+                />
+              ) : null}
               {artwork ? (
                 <img
-                  className="ring-art"
+                  key={artwork}
+                  className={`ring-art${previousArtwork ? " is-crossfading-in" : ""}`}
                   src={artwork}
                   alt=""
                   onError={() => setFailedCoverId(songId ?? coverKey)}
@@ -343,7 +450,7 @@ function ImmersiveBody(props: {
 
           <SmoothLyricsColumn
             lyrics={lyrics}
-            focusOpen={ui.focusOpen}
+            focusOpen={focusLayout}
             autoScroll={autoScroll}
             onResume={resumeFollow}
             onToggleFocus={() => playerStore.setFocusOpen(!ui.focusOpen)}

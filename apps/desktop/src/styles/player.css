@@ -217,6 +217,102 @@
 .now-playing-popover::-webkit-scrollbar, .now-playing-popover .lyrics::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .now-playing-popover .lyrics { grid-area: lyrics; min-width: 0; max-width: 620px; height: calc(2.25em * 5); align-self: start; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--space-3) 0 0; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; scrollbar-width: none; }
 .now-playing-popover .lyrics:focus-visible { outline: none; border-radius: var(--radius-sm); box-shadow: var(--focus-ring); }
+/* Issue #85 — the immersive surface grows out of the 常驻播放栏's 当前播放区 and
+ * collapses back into it. The explicit `data-phase` state machine lives in
+ * React (`useImmersiveTransition`) and in the prototype script below; the
+ * stylesheet only owns the visual half. Only `transform` / `opacity` animate,
+ * and the cover FLIP offsets are measured once per transition (never per
+ * frame) by the controller. `data-measuring` is the one-shot pre-paint pass
+ * that reads the settled geometry before the first FLIP frame is painted. */
+.now-playing-popover {
+  --transition-origin-x: 50%;
+  --transition-origin-y: 50%;
+  transform-origin: var(--transition-origin-x) var(--transition-origin-y);
+  transition:
+    opacity var(--motion-base) var(--ease-standard),
+    transform var(--motion-base) var(--ease-standard);
+}
+.now-playing-popover[data-phase="opening"] {
+  opacity: 0;
+  transform: translateY(10px) scale(.985);
+  transition: none;
+}
+.now-playing-popover[data-phase="open"] {
+  opacity: 1;
+  transform: none;
+}
+.now-playing-popover[data-phase="closing"] {
+  opacity: 0;
+  transform: translateY(10px) scale(.985);
+  pointer-events: none;
+  transition:
+    opacity var(--motion-exit) var(--ease-standard),
+    transform var(--motion-exit) var(--ease-standard);
+}
+.now-playing-popover[data-measuring] {
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+.now-playing-popover .playing-cover {
+  transform: none;
+  transform-origin: center;
+  transition:
+    transform var(--motion-base) var(--ease-standard),
+    opacity var(--motion-base) var(--ease-standard),
+    visibility 0s linear 0s;
+}
+.now-playing-popover[data-phase="opening"] .playing-cover {
+  transform: translate(var(--flip-x, 0px), var(--flip-y, 0px)) scale(var(--flip-scale, 1));
+  transition: none;
+}
+.now-playing-popover[data-phase="open"] .playing-cover {
+  transform: none;
+}
+.now-playing-popover[data-phase="closing"] .playing-cover {
+  transform: translate(var(--flip-exit-x, 0px), var(--flip-exit-y, 0px)) scale(var(--flip-exit-scale, 1));
+  transition: transform var(--motion-exit) var(--ease-standard);
+}
+.now-playing-popover[data-measuring] .playing-cover {
+  transform: none;
+  transition: none;
+}
+.now-playing-popover .now-playing-info {
+  transition:
+    opacity var(--motion-base) var(--ease-standard),
+    transform var(--motion-base) var(--ease-standard),
+    visibility 0s linear 0s;
+}
+.now-playing-popover[data-phase="opening"] .now-playing-info {
+  opacity: 0;
+  transition: none;
+}
+.now-playing-popover[data-phase="open"] .now-playing-info {
+  opacity: 1;
+}
+/* 歌词专注阅读 owns the same surface: the cover/meta are taken out of the grid
+ * flow and faded, never `display:none`. `visibility` is the discrete switch at
+ * the end of the fade, so keyboard focus cannot land on the hidden links. */
+body.player-mode-open.lyrics-focus-open .now-playing-popover .playing-cover,
+body.player-mode-open.lyrics-focus-open .now-playing-info {
+  position: absolute;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--motion-base) var(--ease-standard),
+    visibility 0s linear var(--motion-base);
+}
+/* The one-shot settle after the lyrics column takes or gives up the surface.
+ * It hides the one-frame reflow in the same rhythm as the fade; it never
+ * animates height, font size or padding. */
+.now-playing-popover .lyrics.is-refocusing {
+  animation: lyrics-refocus var(--motion-base) var(--ease-standard);
+}
+@keyframes lyrics-refocus {
+  from { opacity: .72; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .lyrics-track { display: block; min-width: 0; max-width: 100%; min-height: 0; padding: var(--lyrics-edge-top, 0px) 0 var(--lyrics-edge-bottom, 0px); }
 .lyric-line { display: block; min-width: 0; max-width: 100%; min-height: 2.25em; overflow-wrap: anywhere; word-break: break-word; white-space: normal; color: color-mix(in oklab, var(--accent-on), transparent 46%); font-size: var(--text-base); line-height: 2.25; transition: color var(--motion-fast) var(--ease-standard); }
 .lyric-line.is-current { color: var(--accent-on); font-weight: 650; }
