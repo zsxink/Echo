@@ -4731,6 +4731,101 @@
       "delegatedTo": "frontend-test"
     },
     {
+      "id": "IL-R12-S01",
+      "title": "宽屏展开后定位当前行",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/player/LyricsColumn.test.tsx",
+          "name": "does not write scroll while opening and aligns the current line with the record centre after settle"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/features/player/LyricsColumn.test.tsx",
+          "name": "realigns when the start-offset margin lands after the entry settles"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/features/player/LyricsColumn.test.tsx",
+          "name": "realigns when a throttled entry transform finishes after the settle timer"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/features/player/useImmersiveTransition.test.tsx",
+          "name": "settles only after the entry transition duration"
+        }
+      ],
+      "delegatedTo": "frontend-test"
+    },
+    {
+      "id": "IL-R12-S02",
+      "title": "暂停状态下展开同样定位",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/player/LyricsColumn.test.tsx",
+          "name": "aligns when expanded while playback is paused and needs no later line change"
+        }
+      ],
+      "delegatedTo": "frontend-test"
+    },
+    {
+      "id": "IL-R12-S03",
+      "title": "入场期间歌词到达",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/player/LyricsColumn.test.tsx",
+          "name": "ignores lyrics that arrive during the entry and aligns them once geometry settles"
+        }
+      ],
+      "delegatedTo": "frontend-test"
+    },
+    {
+      "id": "IL-R12-S04",
+      "title": "切歌、重新展开与退出专注后重新对齐",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/player/LyricsColumn.test.tsx",
+          "name": "realigns after a track change without keeping the old scroll"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/features/player/LyricsColumn.test.tsx",
+          "name": "realigns when returning from 歌词专注阅读"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/features/player/LyricsColumn.test.tsx",
+          "name": "writes nothing while closing and realigns after an interrupted exit settles"
+        }
+      ],
+      "delegatedTo": "frontend-test"
+    },
+    {
+      "id": "IL-R12-S05",
+      "title": "减少动画下立即定位",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/player/LyricsColumn.test.tsx",
+          "name": "aligns on the first frame under prefers-reduced-motion"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/features/player/useImmersiveTransition.test.tsx",
+          "name": "settles immediately under prefers-reduced-motion"
+        }
+      ],
+      "delegatedTo": "frontend-test"
+    },
+    {
       "id": "LD-R01-S01",
       "title": "本地写入失败",
       "command": "cargo test -p echo-core --all-features",

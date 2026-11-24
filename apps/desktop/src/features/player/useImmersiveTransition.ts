@@ -48,11 +48,25 @@ export function prefersReducedMotion(): boolean {
  *  - opening → closed cancels the `opening → open` frame and starts `closing`;
  *  - every timer/frame is cleared by the effect that owns it.
  */
-export function useImmersiveTransition(open: boolean): { phase: ImmersivePhase } {
+export function useImmersiveTransition(open: boolean): {
+  phase: ImmersivePhase;
+  settled: boolean;
+} {
   const [phase, setPhase] = useState<ImmersivePhase>(() => {
     if (!open) return "closed";
     return prefersReducedMotion() ? "open" : "opening";
   });
+
+  // `settled` answers a narrower question than `phase`: are the entry/exit
+  // transforms done, so that `getBoundingClientRect()` reflects final layout?
+  // `open` only means the state machine advanced; the CSS transition still runs
+  // for `IMMERSIVE_OPEN_MS`. Consumers that measure geometry (the lyrics column)
+  // must wait for this flag. It is false for every phase except `open`, so a
+  // closing surface can never be measured with stale `true`; re-entering `open`
+  // after an interrupted exit starts a fresh wait because the reset ran while
+  // the surface was in `closing`.
+  const [openSettled, setOpenSettled] = useState(() => phase === "open");
+  const settled = phase === "open" && openSettled;
 
   const openRef = useRef(open);
   openRef.current = open;
@@ -102,5 +116,22 @@ export function useImmersiveTransition(open: boolean): { phase: ImmersivePhase }
     return undefined;
   }, [phase]);
 
-  return { phase };
+  // Mark the geometry stable once the entry transition has had time to finish.
+  // A timer mirrors the stylesheet exactly as the exit edge already does; a
+  // `transitionend` listener would need target filtering, bubbling and
+  // `transitioncancel` handling for no extra accuracy here.
+  useEffect(() => {
+    if (phase !== "open") {
+      setOpenSettled(false);
+      return undefined;
+    }
+    if (prefersReducedMotion()) {
+      setOpenSettled(true);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setOpenSettled(true), IMMERSIVE_OPEN_MS);
+    return () => window.clearTimeout(timer);
+  }, [phase]);
+
+  return { phase, settled };
 }

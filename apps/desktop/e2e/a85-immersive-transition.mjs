@@ -13,6 +13,83 @@ const OPEN_MS = 220;
 const EXIT_MS = 180;
 
 /**
+ * Issue #168: read the settled current lyric line against the lyrics viewport
+ * and the record. At the widths this scenario uses (≥981px) the column targets
+ * the record centre; the line must be fully visible and within one line height
+ * of that centre.
+ */
+async function readLyricAlignment(evalJs) {
+  return evalJs(`(() => {
+    const surface = document.querySelector('[data-testid="immersive"]');
+    const viewport = surface?.querySelector('.lyrics');
+    const current = surface?.querySelector('.lyric-line.is-current');
+    const cover = surface?.querySelector('.playing-cover');
+    if (!surface || !viewport || !current || !cover) return null;
+    const v = viewport.getBoundingClientRect();
+    const l = current.getBoundingClientRect();
+    const c = cover.getBoundingClientRect();
+    return {
+      phase: surface.getAttribute('data-phase'),
+      text: current.textContent ?? '',
+      scrollTop: viewport.scrollTop,
+      viewport: { top: v.top, bottom: v.bottom, height: v.height },
+      line: { top: l.top, bottom: l.bottom, height: l.height, centre: l.top + l.height / 2 },
+      coverCentre: c.top + c.height / 2,
+    };
+  })()`);
+}
+
+function checkLyricAlignment(alignment, label, fail) {
+  if (!alignment) {
+    fail(`A85: ${label} — the current lyric line, lyrics viewport or cover is missing`);
+    return;
+  }
+  if (alignment.scrollTop <= 0)
+    fail(`A85: ${label} — the lyrics column stayed at the top (scrollTop ${alignment.scrollTop})`);
+  if (
+    alignment.line.top < alignment.viewport.top - 1 ||
+    alignment.line.bottom > alignment.viewport.bottom + 1
+  )
+    fail(
+      `A85: ${label} — the current line [${Math.round(alignment.line.top)}, ${Math.round(alignment.line.bottom)}] is outside the lyrics viewport [${Math.round(alignment.viewport.top)}, ${Math.round(alignment.viewport.bottom)}]`,
+    );
+  const drift = Math.abs(alignment.line.centre - alignment.coverCentre);
+  if (drift > alignment.line.height)
+    fail(
+      `A85: ${label} — the current line centre is ${Math.round(drift)}px from the record centre, more than one line (${Math.round(alignment.line.height)}px)`,
+    );
+}
+
+/**
+ * Wait for the column to converge on the record centre.
+ *
+ * The wide-layout start-offset margin is *measured* (`fonts.ready`, a double-rAF
+ * settle) and can land after the first aligned frame; the column realigns on
+ * that write. A fixed sleep raced that write on a slow first paint, so poll for
+ * the converged geometry instead of pinning a frame count.
+ */
+function waitForAlignedLyrics(evalJs, waitFor, timeout = 2000) {
+  return waitFor(
+    `(() => {
+      const surface = document.querySelector('[data-testid="immersive"]');
+      const viewport = surface?.querySelector('.lyrics');
+      const current = surface?.querySelector('.lyric-line.is-current');
+      const cover = surface?.querySelector('.playing-cover');
+      if (!surface || !viewport || !current || !cover) return null;
+      const v = viewport.getBoundingClientRect();
+      const l = current.getBoundingClientRect();
+      const c = cover.getBoundingClientRect();
+      const drift = Math.abs(l.top + l.height / 2 - (c.top + c.height / 2));
+      const inside = l.top >= v.top - 1 && l.bottom <= v.bottom + 1;
+      // The column scrolls smoothly (scroll-behavior: smooth), so the final
+      // position is reached over a few frames; 2px is the convergence bound.
+      return inside && drift <= 2 ? true : null;
+    })()`,
+    timeout,
+  );
+}
+
+/**
  * @param {{
  *   cdp: { call: (method: string, params?: object) => Promise<any> },
  *   goto: (seed: string, platform?: string) => Promise<void>,
@@ -54,6 +131,12 @@ export async function assertImmersiveTransitionScenarios({
     "A85: clicking a row did not start playback",
   );
   await waitFor(`!!document.querySelector('[data-testid="playerbar"] .mini-cover')`);
+
+  // Issue #168: start mid-song. If the entry-time alignment still used the
+  // FLIP-distorted cover, the column would land near the player bar (or stay
+  // at the top); a first-line start would hide both failures.
+  await evalJs(`window.__echoE2E__.invoke("seek", { position: 65 })`);
+  await sleep(100);
 
   // Record every phase / body-class / lyric-style mutation from before the
   // first click: the opening frame lasts less than one polling interval.
@@ -130,6 +213,18 @@ export async function assertImmersiveTransitionScenarios({
   if (!opened) fail("A85: the immersive surface never settled to data-phase=open");
   // Let the 220ms entry transition finish before reading the settled cover.
   await sleep(OPEN_MS + 100);
+  await waitFor(`!!document.querySelector('[data-testid="immersive"] .lyric-line.is-current')`);
+
+  // Issue #168: after the entry transform has finished, the current line must
+  // be aligned to the record and fully inside the lyrics viewport.
+  if (!(await waitForAlignedLyrics(evalJs, waitFor)))
+    fail("A85: expand while playing — the current line never converged on the record centre");
+  const settledAlignment = await readLyricAlignment(evalJs);
+  checkLyricAlignment(settledAlignment, "expand while playing", fail);
+  if (!settledAlignment?.text.includes("歌词第7行"))
+    fail(
+      `A85: the seek to 65s did not select the 7th lyric line (current: "${settledAlignment?.text ?? "none"}")`,
+    );
 
   const opening = await evalJs(`(() => {
     const phases = window.__echoPhaseLog;
@@ -325,6 +420,39 @@ export async function assertImmersiveTransitionScenarios({
   if (lastPhase !== "closed" && lastPhase !== "closing")
     fail(`A85: the phase log did not converge to closed (${after.phases.join(" → ")})`);
 
+  // ---- issue #168: paused expand still aligns -----------------------------
+  // With playback paused the current line never changes, so nothing can mask a
+  // missed alignment after the entry — this is the bug's worst case.
+  await evalJs(`document.querySelector('[data-testid="playerbar"] [aria-label="暂停"]')?.click()`);
+  if (!(await waitFor(`!!document.querySelector('[data-testid="playerbar"] [aria-label="播放"]')`)))
+    fail("A85: the player did not pause before the paused-expand step");
+  await evalJs(`window.__echoE2E__.invoke("seek", { position: 65 })`);
+  await evalJs(`(() => { const el = ${trigger}; el.focus(); el.click(); })()`);
+  const pausedOpen = await waitFor(
+    `(() => {
+      const el = document.querySelector('[data-testid="immersive"]');
+      const current = el?.querySelector('.lyric-line.is-current');
+      return el?.getAttribute('data-phase') === 'open' && current ? true : null;
+    })()`,
+    OPEN_MS * 8,
+  );
+  if (!pausedOpen) fail("A85: the immersive surface did not open while paused");
+  await sleep(OPEN_MS + 100);
+  if (!(await waitForAlignedLyrics(evalJs, waitFor)))
+    fail("A85: paused expand — the current line never converged on the record centre");
+  const pausedAlignment = await readLyricAlignment(evalJs);
+  checkLyricAlignment(pausedAlignment, "paused expand", fail);
+  if (!pausedAlignment?.text.includes("歌词第7行"))
+    fail(
+      `A85: paused expand lost the seek position (current: "${pausedAlignment?.text ?? "none"}")`,
+    );
+  await evalJs(`document.querySelector('[data-testid="close-player-mode"]').click()`);
+  await waitFor(`!document.querySelector('[data-testid="immersive"]')`, EXIT_MS * 10);
+  // Resume: the reduced-motion assertion below expects a playing record.
+  await evalJs(`document.querySelector('[data-testid="playerbar"] [aria-label="播放"]')?.click()`);
+  if (!(await waitFor(`!!document.querySelector('[data-testid="playerbar"] [aria-label="暂停"]')`)))
+    fail("A85: the player did not resume after the paused-expand step");
+
   // ---- prefers-reduced-motion: immediate, no delayed unmount --------------
   await cdp.call("Emulation.setEmulatedMedia", {
     features: [{ name: "prefers-reduced-motion", value: "reduce" }],
@@ -335,13 +463,23 @@ export async function assertImmersiveTransitionScenarios({
   const reducedOpen = await waitFor(
     `(() => {
       const el = document.querySelector('[data-testid="immersive"]');
-      return el?.getAttribute('data-phase') === 'open' ? true : null;
+      const current = el?.querySelector('.lyric-line.is-current');
+      return el?.getAttribute('data-phase') === 'open' && current ? true : null;
     })()`,
     1000,
   );
   if (!reducedOpen) fail("A85: reduced motion never reached an open surface");
   const reducedPhases = await evalJs(`window.__echoPhaseLog`);
   if (reducedPhases.includes("opening")) fail("A85: reduced motion still painted an opening phase");
+
+  // Issue #168: reduced motion settles synchronously, so the column aligns on
+  // its first frame instead of waiting out a transition. The start-offset
+  // margin is still measured after that frame, so wait for the converged
+  // geometry rather than pinning a frame count.
+  if (!(await waitForAlignedLyrics(evalJs, waitFor)))
+    fail("A85: reduced-motion expand — the current line never converged on the record centre");
+  const reducedAlignment = await readLyricAlignment(evalJs);
+  checkLyricAlignment(reducedAlignment, "reduced-motion expand", fail);
 
   const spin = await evalJs(`(() => {
     const ring = document.querySelector('[data-testid="immersive"] .playing-cover.is-playing .ring');
