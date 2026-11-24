@@ -8,8 +8,8 @@
 //    viewport slice. That assertion (`SongList.test.tsx`, < 100 DOM rows for
 //    50,000) is carried by the Frontend job's full Vitest run, not repeated
 //    here.
-//  - The benchmark results are saved as a CI artifact (written to a stable
-//    .benchmark.json under apps/desktop, uploaded by the workflow).
+//  - The benchmark writes benchmark-50k.json under apps/desktop; only the
+//    manual GitHub workflow uploads it.
 //
 // This runs the `#[ignore]`d bench test explicitly (cargo test -- --ignored
 // picks it up) so normal `cargo test` stays fast, and writes the artifact.
@@ -68,4 +68,4 @@ writeFileSync(
 );
 process.stdout.write(`  artifact: ${artifact} (search p95 ${searchP95Ms} ms, view p95 ${viewP95Ms} ms)\n`);
 
-process.stdout.write("ok 12.5: 50k benchmark within PRD budgets; virtual DOM bounded to viewport; result saved as CI artifact\n");
+process.stdout.write("ok 12.5: 50k benchmark within PRD budgets; JSON result generated\n");

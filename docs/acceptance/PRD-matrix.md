@@ -1543,3 +1543,8 @@
 | A9 | `IL-R12-S05` | 沉浸式播放器展开后的歌词定位必须基于稳定几何 |
 | A9 | `IL-R01-S04` | 常驻播放栏必须始终提供当前播放与基础控制 |
 | A9 | `IL-R03-S04` | 沉浸式播放器必须展示封面、元信息并保持基础控制 |
+
+50k SQLite 延迟基准独立于默认 PR / main CI：本地运行
+`pnpm verify:task -- 12.5`，或在 GitHub Actions 中手动运行 **Benchmark 50k**
+并下载 `benchmark-50k` 产物。默认 release gate 会标明 LE-R07-S01 未运行；
+日常前端测试仍覆盖虚拟列表的视口渲染。

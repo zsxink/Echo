@@ -385,13 +385,13 @@
 
 ### Requirement: CI 执行分层与结构完整性
 
-持续集成 MUST 按事件类型分层执行验证，且分层 MUST NOT 使任何检查从 Pull Request 与 `main` 同时消失。Pull Request MUST 执行 Linux 的 `fmt` / `clippy`、Linux 全量 workspace 测试与各平台 Gate。Windows / macOS 的全量 workspace 测试、`fmt` 与 `clippy` MUST 在推送到 `main` 时执行；在 Pull Request 上 MAY 被跳过。任何在 Pull Request 上被跳过的检查 MUST 在 `main` 上真实执行，并由结构门禁断言。平台 Gate 在 Pull Request 上 MUST 编译并测试该平台相关代码，因此 macOS / Windows 的 `fmt` / `clippy` 虽不在 PR 上执行，平台相关的编译覆盖 MUST NOT 从 PR 上消失。
+持续集成 MUST 按事件类型分层执行验证，且分层 MUST NOT 使任何默认检查从 Pull Request 与 `main` 同时消失。唯一的按需例外为本规范明示的 task 12.5 及其产物；其手动入口 MUST 保留。Pull Request MUST 执行 Linux 的 `fmt` / `clippy`、Linux 全量 workspace 测试与各平台 Gate。Windows / macOS 的全量 workspace 测试、`fmt` 与 `clippy` MUST 在推送到 `main` 时执行；在 Pull Request 上 MAY 被跳过。除已明示为按需执行的 task 12.5 外，任何在 Pull Request 上被跳过的默认检查 MUST 在 `main` 上真实执行，并由结构门禁断言。平台 Gate 在 Pull Request 上 MUST 编译并测试该平台相关代码，因此 macOS / Windows 的 `fmt` / `clippy` 虽不在 PR 上执行，平台相关的编译覆盖 MUST NOT 从 PR 上消失。
 
 同一检查 MUST NOT 在多个 job 中重复执行，除非第二次执行覆盖了第一次无法覆盖的条件（不同平台、不同 feature 形态、不同运行环境）。重复执行 MUST 由结构门禁反向锁定：把一个已被其他 job 覆盖的步骤重新加回时，结构门禁 MUST 失败并指出该重复。
 
 作为其他检查的前置输入而执行的构建 MUST NOT 被视为重复门禁：它的失败会阻断该 job 的真实检查，而不是独立宣告某个质量维度（例如 Rust 分片为 `generate_context!` 构建的 `apps/desktop/dist`，与前端 job 的 `Build` 步骤目的不同）。
 
-场景的验收命令 MAY 显式委托给另一个在持续集成中真实执行的 gate，但委托 MUST 由场景登记项声明，MUST NOT 由命令形态推断。被委托的 gate MUST 在 `ci.yml` 中有一条可定位的执行命令：`workspace-test` 对应 Linux `rust` job 的 `cargo test --workspace --all-targets --all-features`，`frontend-test` 对应 `frontend` job 的完整 Vitest 套件。结构门禁 MUST 校验每个委托 gate 的执行命令真实存在，且该命令 MUST 与场景登记的域一致。
+场景的验收命令 MAY 显式委托给另一个在持续集成中真实执行的 gate，但委托 MUST 由场景登记项声明，MUST NOT 由命令形态推断。默认执行的委托 gate MUST 在 `ci.yml` 中有一条可定位的执行命令：`workspace-test` 对应 Linux `rust` job 的 `cargo test --workspace --all-targets --all-features`，`frontend-test` 对应 `frontend` job 的完整 Vitest 套件。结构门禁 MUST 校验每个委托 gate 的执行命令真实存在，且该命令 MUST 与场景登记的域一致。
 
 Windows / macOS 的全量 workspace 测试 MAY 按包分片执行；各分片所覆盖包的并集 MUST 等于全部 workspace 包，MUST NOT 因分片遗漏或删除任何包。分片引入的跳过 MUST 遵守与整段测试相同的分层规则：分片 MAY 仅在 Pull Request 上跳过，在 `main` 上 MUST 全部真实执行，且结构门禁 MUST 断言分片并集与各分片在 `main` 上的执行条件。将 macOS / Windows 的多个分片合并为一个 `--workspace` 分片 MUST NOT 改变包并集。
 
@@ -399,13 +399,13 @@ Windows / macOS 的全量 workspace 测试 MAY 按包分片执行；各分片所
 
 Linux 的 `linux-workspace` 与 `governance-static` Rust 缓存组 MUST 使用只包含项目钉住工具链的专用 Rustup home。每组读写方 MUST 在安装工具链和恢复缓存之前使用同一配置；runner 预装工具链不参与缓存身份。缓存 MUST 继续区分真实的工具链、编译环境及依赖变化，且 MUST 仅由 `main` 写入。结构门禁 MUST 验证共享配置与步骤顺序。
 
-性能场景的 job MUST 在 Pull Request 与 `main` 上都运行。每次在 `main` 上实际触发的 CI MUST 执行 `pnpm verify:perf`；Pull Request 只有在基于完整提交差异确认所有变更均为明确白名单内的路径修改时 MAY 跳过该步骤。空差异、无法比较、超出白名单或未知变更 MUST 执行。结构门禁 MUST 断言 job、筛选流程和性能命令，且独立的 task 12.5 benchmark 与其产物上传 MUST NOT 受筛选影响。性能场景 MAY 与 task gate 共享一个 job；共享时该 job 的缓存步骤 MUST NOT 保存缓存，避免 `--release` 产物污染其他读者读取的缓存 key。
+性能场景的 job MUST 在 Pull Request 与 `main` 上都运行。每次在 `main` 上实际触发的 CI MUST 执行 `pnpm verify:perf`；Pull Request 只有在基于完整提交差异确认所有变更均为明确白名单内的路径修改时 MAY 跳过该步骤。空差异、无法比较、超出白名单或未知变更 MUST 执行。结构门禁 MUST 断言 job、筛选流程和性能命令，且独立的 task 12.5 benchmark 与其产物上传 MUST 从 PR / main 默认 CI 移至按需入口。性能场景 MAY 与 task gate 共享一个 job；共享时该 job 的缓存步骤 MUST NOT 保存缓存，避免 `--release` 产物污染其他读者读取的缓存 key。
 
 coverage 门禁 MAY 在 Pull Request 上跳过，但 MUST 在推送到 `main` 时真实执行；结构门禁 MUST 断言其 main-only 执行条件与命令。Pull Request 上 MUST 继续执行 registry 与 static 检查。
 
 治理门禁的注入证明套件（mutation-test 各门禁在违规时确实失败）MAY 作为本地命令维护，MUST NOT 作为 Pull Request 的 job 执行；结构门禁 MUST 断言 `ci.yml` 中没有任何 job 执行该套件，同时 MUST 保留对 proof 登记的静态校验。
 
-CI 的验证结构 MUST 可被静态校验：task 分片的并集 MUST 覆盖全部未被标记 `archived: true` 且声明了 CI 执行位置的 task，且无重复；`archived: true` 的 task MUST NOT 被要求出现在 task 分片中，其断言 MUST 由真实执行的 workspace test、frontend test 或平台 Gate 承载，且 manifest 的归档理由 MUST 指出承载 gate。governance 的每个 section MUST 在 `ci.yml` 中有执行位置；场景委托 MUST 指向真实执行的 gate；删除、重命名或移动 job / step 导致上述结构不成立时，结构门禁 MUST 失败。
+CI 的验证结构 MUST 可被静态校验：task 分片的并集 MUST 覆盖全部未被标记 `archived: true` 且声明了 CI 执行位置的 task，且无重复；`archived: true` 的 task MUST NOT 被要求出现在 task 分片中，其断言 MUST 由真实执行的 workspace test、frontend test 或平台 Gate 承载，且 manifest 的归档理由 MUST 指出承载 gate。governance 的每个 section MUST 在 `ci.yml` 中有执行位置；场景委托或显式手动递延 MUST 指向真实执行的 gate，并区分默认自动执行与仅可手动执行；删除、重命名或移动 job / step 导致上述结构不成立时，结构门禁 MUST 失败。
 
 纯文档变更 MAY 通过 `paths-ignore` 跳过 CI，但忽略清单 MUST NOT 包含任何门禁输入（例如 `docs/traceability.md`、`docs/acceptance/PRD-matrix.md`、`docs/LOGGING.md`、`docs/native-attestation-playbook.md`，以及被 gate 读取的 `README.md`、归档 OpenSpec 证据与 `artifacts/` 记录）。结构门禁 MUST 把忽略清单固定为已审计的集合，新增或删除条目 MUST 失败。
 
@@ -418,7 +418,7 @@ CI 的验证结构 MUST 可被静态校验：task 分片的并集 MUST 覆盖全
 
 #### Scenario: 检查从 PR 与 main 同时消失
 
-- **WHEN** 某个检查在 Pull Request 上被跳过，且 `main` 上也没有执行它的 job 或 step
+- **WHEN** 某个默认检查（不包括明示按需的 task 12.5）在 Pull Request 上被跳过，且 `main` 上也没有执行它的 job 或 step
 - **THEN** 结构门禁失败并指出该检查，而不是把分层当作删除检查的通道
 
 #### Scenario: 已被其他 job 覆盖的检查被重复执行
@@ -504,7 +504,7 @@ CI 的验证结构 MUST 可被静态校验：task 分片的并集 MUST 覆盖全
 #### Scenario: PR 仅修改已审核的样式或说明文档
 
 - **WHEN** Pull Request 的完整差异非空，且仅修改已审核的样式或说明文档路径
-- **THEN** 仅跳过重型性能步骤；task 12.5 benchmark 和产物上传仍执行
+- **THEN** 仅按规则跳过重型性能步骤；独立 task 12.5 benchmark 和产物上传在默认 CI 不执行，与分类结果无关
 
 #### Scenario: PR 性能相关性无法排除或触发 main CI
 
@@ -525,6 +525,17 @@ CI 的验证结构 MUST 可被静态校验：task 分片的并集 MUST 覆盖全
 
 - **WHEN** `paths-ignore` 清单新增或删除了条目，或包含一个门禁输入文件
 - **THEN** 结构门禁失败并指出该条目，而不是让文档提交继续消耗全量 CI 或让门禁输入被跳过
+
+#### Scenario: 50k 基准仅按需执行
+
+- **WHEN** 默认 PR 或 main CI 运行
+- **THEN** 不执行 task 12.5 或同等 50k 基准、不上传其产物；release gate 将 LE-R07-S01 精确记为未运行的手动递延，不计入通过或由默认 job 覆盖
+
+- **WHEN** 用户手动触发 50k benchmark 流程或显式运行本地 task 12.5
+- **THEN** 运行原真实 50k 测量并检查原预算，生成同格式 JSON；手动 GitHub 流程在缺失产物时失败并在成功时上传
+
+- **WHEN** 删除手动入口、增加非手动触发、删掉命令或上传，或将 benchmark 重新加入默认 CI
+- **THEN** 治理结构门禁失败
 
 ### Requirement: 公开错误类型可进入错误链
 

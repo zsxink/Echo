@@ -165,15 +165,15 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
     },
     {
       id: "ci-structure/perf-benchmark-narrowed",
-      guard: "the independent 50k benchmark artifact being skipped on pull requests",
+      guard: "the manual 50k workflow silently skipping its artifact upload",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: task-gates task 12\.5 and its 50k benchmark upload must remain unconditional/,
+      expect: /FAIL 1\.5: benchmark-50k\.yml must upload the 50k result/,
       baseline: true,
       inject() {
         replaceIn(
-          join(ROOT, ".github", "workflows", "ci.yml"),
+          join(ROOT, ".github", "workflows", "benchmark-50k.yml"),
           "      - name: Upload 50k benchmark result\n        uses:",
-          "      - name: Upload 50k benchmark result\n        if: github.event_name != 'pull_request'\n        uses:",
+          "      - name: Upload 50k benchmark result\n        if: false\n        uses:",
         );
         return {};
       },
@@ -270,16 +270,40 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
     },
     {
       id: "ci-structure/benchmark-carrier-dropped",
-      guard: "the 50k benchmark leaving task-12.5 in `task-gates`, leaving the `benchmark` delegation pointing at a gate nothing executes",
-      check: ["node", ["scripts/verify/check-scenario-evidence.mjs"]],
-      expect: /FAIL scenario evidence[\s\S]*delegated gate 'benchmark' has no matching command/,
+      guard: "the manual workflow mentioning but not actually running the benchmark command",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: benchmark-50k\.yml must run .+ unconditionally/,
       baseline: true,
       inject() {
         replaceIn(
-          join(ROOT, ".github", "workflows", "ci.yml"),
-          'tasks: "1.1 1.3 12.5 13.3"',
-          'tasks: "1.1 1.3 13.3"',
+          join(ROOT, ".github", "workflows", "benchmark-50k.yml"),
+          "run: node scripts/verify/checks/task-12.5.mjs",
+          "run: echo node scripts/verify/checks/task-12.5.mjs",
         );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/benchmark-readded-to-default",
+      guard: "placing 50k benchmark back in the default core tasks",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: default CI job 'task-gates' must not run or upload the manual 50k benchmark/,
+      baseline: true,
+      inject() {
+        replaceIn(join(ROOT, ".github", "workflows", "ci.yml"),
+          'tasks: "1.1 1.3 13.3"', 'tasks: "1.1 1.3 12.5 13.3"');
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/benchmark-trigger-expanded",
+      guard: "making the benchmark automatic without touching the default CI workflow",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: benchmark-50k\.yml must trigger on workflow_dispatch only/,
+      baseline: true,
+      inject() {
+        replaceIn(join(ROOT, ".github", "workflows", "benchmark-50k.yml"),
+          "  workflow_dispatch:", "  workflow_dispatch:\n  push:");
         return {};
       },
     },
