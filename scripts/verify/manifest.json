@@ -6629,12 +6629,12 @@
     },
     {
       "id": "LE-R21-S02",
-      "title": "正常投影仍在后台时已保存反馈",
-      "command": "cargo test -p echo-desktop --all-features --release --test local_edit_performance -- --ignored --nocapture",
+      "title": "收藏命令低延迟验收",
+      "command": "node scripts/verify/run-release-edit-latency.mjs",
       "evidence": [
         {
-          "kind": "rust",
-          "target": "completed_local_edit_latency"
+          "kind": "node",
+          "target": "scripts/verify/run-release-edit-latency.mjs"
         }
       ],
       "delegatedTo": "perf"
@@ -6688,6 +6688,18 @@
         }
       ],
       "delegatedTo": "frontend-test"
+    },
+    {
+      "id": "LE-R21-S07",
+      "title": "收藏保存与即时读模型一致",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "favorite_success_has_a_durable_after_image_and_visible_new_value"
+        }
+      ],
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "LE-R22-S01",
@@ -8085,11 +8097,11 @@
     {
       "id": "PM-R13-S05",
       "title": "歌单命令低延迟验收",
-      "command": "cargo test -p echo-desktop --all-features --release --test local_edit_performance -- --ignored --nocapture",
+      "command": "node scripts/verify/run-release-edit-latency.mjs",
       "evidence": [
         {
-          "kind": "rust",
-          "target": "completed_local_edit_latency"
+          "kind": "node",
+          "target": "scripts/verify/run-release-edit-latency.mjs"
         }
       ],
       "delegatedTo": "perf"
@@ -8102,6 +8114,18 @@
         {
           "kind": "rust",
           "target": "final_tombstone_is_never_recovered_but_history_can_be_dismissed"
+        }
+      ],
+      "delegatedTo": "workspace-test"
+    },
+    {
+      "id": "PM-R13-S07",
+      "title": "歌单成员增删投影后保持持久结果",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "playlist_membership_is_durable_and_projected"
         }
       ],
       "delegatedTo": "workspace-test"
@@ -8672,14 +8696,14 @@
     {
       "id": "SFI-R05-S03",
       "title": "导入后无需重新扫描",
-      "command": "cargo test -p echo-desktop --all-features --release --test local_edit_performance -- --ignored --nocapture",
+      "command": "cargo test -p echo-desktop --all-features",
       "evidence": [
         {
           "kind": "rust",
-          "target": "completed_local_edit_latency"
+          "target": "import_is_visible_without_rescan"
         }
       ],
-      "delegatedTo": "perf"
+      "delegatedTo": "workspace-test"
     },
     {
       "id": "SFI-R05-S04",

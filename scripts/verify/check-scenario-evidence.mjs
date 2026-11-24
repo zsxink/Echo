@@ -30,6 +30,7 @@ import { fileURLToPath } from "node:url";
 import { scenarioCommands } from "./scenario-commands.mjs";
 import { workspaceTestLists } from "./cargo-test-lists.mjs";
 import { matrixEntries, parseWorkflow } from "./workflow-matrix.mjs";
+import { assertReleaseLatencyCarrier, RELEASE_LATENCY_WORKFLOW, RELEASE_LATENCY_SCENARIOS, RELEASE_LATENCY_RUN, RELEASE_LATENCY_ENTRY } from "./release-edit-latency.mjs";
 import { assertManualBenchmark, MANUAL_BENCHMARK_WORKFLOW, MANUAL_BENCHMARK_SCENARIO } from "./manual-50k-benchmark.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
@@ -62,7 +63,6 @@ try {
   const frontendTest = (workflow.jobs?.frontend?.steps || []).find((s) => s.name === "Test");
   CI_GATES = new Map([
     ["governance", /\bpnpm\s+verify:governance\b/.test(ciWorkflow)],
-    ["perf", /\bpnpm\s+verify:perf\b/.test(ciWorkflow)],
     [
       "workspace-test",
       linux?.packages === "--workspace" &&
@@ -87,6 +87,20 @@ try {
 const benchmarkScenarios = scenarios.filter((s) => s.delegatedTo === "benchmark").map((s) => s.id);
 if (JSON.stringify(benchmarkScenarios) !== JSON.stringify([MANUAL_BENCHMARK_SCENARIO])) {
   fail(`only '${MANUAL_BENCHMARK_SCENARIO}' must point to the manual 50k benchmark`);
+}
+try {
+  assertReleaseLatencyCarrier(parseWorkflow(
+    readFileSync(resolve(ROOT, ".github", "workflows", RELEASE_LATENCY_WORKFLOW), "utf8"),
+    RELEASE_LATENCY_WORKFLOW,
+  ));
+} catch (error) {
+  fail(`Release latency carrier: ${error.message}`);
+}
+const perfScenarios = scenarios.filter((s) => s.delegatedTo === "perf");
+if (JSON.stringify(perfScenarios.map((s) => s.id).sort()) !== JSON.stringify(RELEASE_LATENCY_SCENARIOS) ||
+    perfScenarios.some((s) => s.command !== RELEASE_LATENCY_RUN ||
+      !s.evidence.some((entry) => entry.kind === "node" && entry.target === RELEASE_LATENCY_ENTRY))) {
+  fail("only the explicit favorite and playlist timing scenarios may use the Release latency carrier");
 }
 let delegatedCount = 0;
 

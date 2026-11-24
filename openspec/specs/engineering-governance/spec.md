@@ -399,7 +399,7 @@ Windows / macOS 的全量 workspace 测试 MAY 按包分片执行；各分片所
 
 Linux 的 `linux-workspace` 与 `governance-static` Rust 缓存组 MUST 使用只包含项目钉住工具链的专用 Rustup home。每组读写方 MUST 在安装工具链和恢复缓存之前使用同一配置；runner 预装工具链不参与缓存身份。缓存 MUST 继续区分真实的工具链、编译环境及依赖变化，且 MUST 仅由 `main` 写入。结构门禁 MUST 验证共享配置与步骤顺序。
 
-性能场景的 job MUST 在 Pull Request 与 `main` 上都运行。每次在 `main` 上实际触发的 CI MUST 执行 `pnpm verify:perf`；Pull Request 只有在基于完整提交差异确认所有变更均为明确白名单内的路径修改时 MAY 跳过该步骤。空差异、无法比较、超出白名单或未知变更 MUST 执行。结构门禁 MUST 断言 job、筛选流程和性能命令，且独立的 task 12.5 benchmark 与其产物上传 MUST 从 PR / main 默认 CI 移至按需入口。性能场景 MAY 与 task gate 共享一个 job；共享时该 job 的缓存步骤 MUST NOT 保存缓存，避免 `--release` 产物污染其他读者读取的缓存 key。
+导入可见性、持久化保存确认和歌单维护的快速正确性测试 MUST 在 Pull Request 与 main 的 workspace 测试执行。默认 CI MUST NOT 运行重型本地编辑计时。独立定时及手动入口 MUST 在 Release 下运行 1,000 与 10,000 首规模，分别记录收藏、创建歌单、添加及移除成员的命令与目录提交耗时，并区分收藏同步投影和歌单后台投影；无后台阶段的命令 MUST 明确记为不适用。四类命令 p95 在两种规模 MUST 严格小于 50 ms。默认 Release 报告 MUST 显式递延未执行的本地编辑计时且不得将其计为通过；结构门禁 MUST 验证执行入口与报告选项。独立的 task 12.5 benchmark 及其产物上传 MUST 保持既有按需入口。
 
 coverage 门禁 MAY 在 Pull Request 上跳过，但 MUST 在推送到 `main` 时真实执行；结构门禁 MUST 断言其 main-only 执行条件与命令。Pull Request 上 MUST 继续执行 registry 与 static 检查。
 
@@ -498,23 +498,23 @@ CI 的验证结构 MUST 可被静态校验：task 分片的并集 MUST 覆盖全
 
 #### Scenario: 性能场景从 PR 与 main 同时消失
 
-- **WHEN** 承载性能场景的步骤被删除、改写成不执行 `pnpm verify:perf`，或落到一个在 Pull Request 上不运行的 job，或绕过了已审核的路径筛选
-- **THEN** 结构门禁失败并指出该缺口，而不是让 3 个委托场景失去执行位置
+- **WHEN** 默认 CI 执行，或有人删掉定时/手动入口的实际计时命令
+- **THEN** 默认 workspace 保留导入、收藏与歌单行为测试；独立入口遗漏命令会被结构门禁阻断
 
 #### Scenario: PR 仅修改已审核的样式或说明文档
 
-- **WHEN** Pull Request 的完整差异非空，且仅修改已审核的样式或说明文档路径
-- **THEN** 仅按规则跳过重型性能步骤；独立 task 12.5 benchmark 和产物上传在默认 CI 不执行，与分类结果无关
+- **WHEN** 一次已触发的默认 CI 处理只改样式的 PR
+- **THEN** 仍运行 workspace 正确性；重型计时与 task 12.5 不进入默认 CI，文档路径仍按原规则处理
 
 #### Scenario: PR 性能相关性无法排除或触发 main CI
 
-- **WHEN** 发生混合修改、删除、重命名、空差异、无法完成差异比较，或任意变更触发了 `main` 的 CI
-- **THEN** 执行完整的 `pnpm verify:perf`，不依赖手工判断
+- **WHEN** 默认 Release gate 运行而未执行独立计时
+- **THEN** 两条本地编辑时延场景明确记为未运行，并从通过分母扣除；不得由默认性能 job 虚报通过
 
 #### Scenario: 性能场景与 task gate 共享 job 时保存缓存
 
-- **WHEN** 承载性能场景的 job 的缓存步骤允许保存缓存，使 `--release` 产物写入其他读者读取的 key
-- **THEN** 结构门禁失败并指出该 job
+- **WHEN** 重型本地编辑计时被重新加入默认 job 或独立计时写入共享 Rust 缓存
+- **THEN** 结构门禁失败并指出该配置
 
 #### Scenario: 注入证明套件被重新加回 PR
 

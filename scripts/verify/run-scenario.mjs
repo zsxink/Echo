@@ -28,6 +28,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { RELEASE_LATENCY_FLAG, RELEASE_LATENCY_SCENARIOS } from "./release-edit-latency.mjs";
 import { MANUAL_BENCHMARK_FLAG, MANUAL_BENCHMARK_SCENARIO } from "./manual-50k-benchmark.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
@@ -193,7 +194,7 @@ function commandLabel(command) {
   return command.length > 120 ? `${command.slice(0, 117)}...` : command;
 }
 
-async function executeScenarios(requested, delegatedGates, deferManualBenchmark) {
+async function executeScenarios(requested, delegatedGates, deferManualBenchmark, deferReleaseLatency) {
   const resultByCommand = new Map();
   const commands = [];
   const seenCommands = new Set();
@@ -202,7 +203,8 @@ async function executeScenarios(requested, delegatedGates, deferManualBenchmark)
   const deferred = new Set();
   for (const id of requested) {
     const scenario = scenarios.find((entry) => entry.id === id);
-    if (deferManualBenchmark && id === MANUAL_BENCHMARK_SCENARIO && scenario?.delegatedTo === "benchmark") {
+    if ((deferManualBenchmark && id === MANUAL_BENCHMARK_SCENARIO && scenario?.delegatedTo === "benchmark") ||
+        (deferReleaseLatency && RELEASE_LATENCY_SCENARIOS.includes(id) && scenario?.delegatedTo === "perf")) {
       deferred.add(id);
       continue;
     }
@@ -274,7 +276,10 @@ async function executeScenarios(requested, delegatedGates, deferManualBenchmark)
   for (const id of requested) {
     if (deferred.has(id)) {
       const scenario = scenarios.find((entry) => entry.id === id);
-      process.stdout.write(`deferred: scenario ${id} (${scenario.title}) — not run; use the manual Benchmark 50k workflow or task 12.5\n`);
+      const carrier = id === MANUAL_BENCHMARK_SCENARIO
+        ? "the manual Benchmark 50k workflow or task 12.5"
+        : "the scheduled/manual Release edit latency workflow (pnpm verify:perf)";
+      process.stdout.write(`deferred: scenario ${id} (${scenario.title}) — not run; use ${carrier}\n`);
     } else if (covered.has(id)) {
       const scenario = scenarios.find((entry) => entry.id === id);
       process.stdout.write(`ok: scenario ${id} (${scenario.title}) — covered by the ${scenario.delegatedTo} job\n`);
@@ -282,7 +287,7 @@ async function executeScenarios(requested, delegatedGates, deferManualBenchmark)
       ok = false;
     }
   }
-  process.stdout.write(`scenario batches: ${commands.length} commands for ${requested.length} scenarios (${covered.size} delegated${deferred.size ? `, ${deferred.size} manual not run` : ""})\n`);
+  process.stdout.write(`scenario batches: ${commands.length} commands for ${requested.length} scenarios (${covered.size} delegated${deferred.size ? `, ${deferred.size} deferred, not run` : ""})\n`);
   return ok;
 }
 
@@ -300,15 +305,20 @@ if (delegatedGates?.has("benchmark")) {
   fail(`benchmark has no default CI carrier; use ${MANUAL_BENCHMARK_FLAG}`);
   process.exit(1);
 }
+if (delegatedGates?.has("perf")) {
+  fail(`perf has no default CI carrier; use ${RELEASE_LATENCY_FLAG}`);
+  process.exit(1);
+}
 const deferManualBenchmark = rawArgv.includes(MANUAL_BENCHMARK_FLAG);
+const deferReleaseLatency = rawArgv.includes(RELEASE_LATENCY_FLAG);
 const argv = rawArgv.filter(
-  (arg) => !arg.startsWith("--delegated=") && arg !== MANUAL_BENCHMARK_FLAG,
+  (arg) => !arg.startsWith("--delegated=") && arg !== MANUAL_BENCHMARK_FLAG && arg !== RELEASE_LATENCY_FLAG,
 );
 
-if (deferManualBenchmark) {
+for (const flag of [deferManualBenchmark && MANUAL_BENCHMARK_FLAG, deferReleaseLatency && RELEASE_LATENCY_FLAG].filter(Boolean)) {
   const mode = argv.filter((arg) => arg !== "--");
   if (mode.length !== 1 || mode[0] !== "--automated") {
-    fail(`${MANUAL_BENCHMARK_FLAG} requires --automated and cannot skip explicit or full local runs`);
+    fail(`${flag} requires --automated and cannot skip explicit or full local runs`);
     process.exit(1);
   }
 }
@@ -334,7 +344,7 @@ if (!requested.length) {
   process.exit(1);
 }
 
-executeScenarios(requested, delegatedGates, deferManualBenchmark).then((passed) => {
+executeScenarios(requested, delegatedGates, deferManualBenchmark, deferReleaseLatency).then((passed) => {
   process.exitCode = passed ? 0 : 1;
 }).catch((error) => {
   process.stderr.write(`error: scenario runner failed unexpectedly: ${error.message}\n`);

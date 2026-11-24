@@ -1,0 +1,40 @@
+name: Release edit latency
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  latency:
+    name: Release edit latency (1k + 10k)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Isolate Linux Rustup home
+        run: bash scripts/verify/isolate-linux-rustup-home.sh
+
+      - name: Install Rust toolchain (pinned)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Measure release edit latency
+        run: node scripts/verify/run-release-edit-latency.mjs
+
+      - name: Upload latency evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-edit-latency
+          path: artifacts/release-edit-latency.json
+          if-no-files-found: error

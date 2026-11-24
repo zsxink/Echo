@@ -33,7 +33,7 @@
 // loopback server URL is reported as a skip, named for what it is.
 //
 // Usage:
-//   node scripts/verify/checks/check-embedded-frontend.mjs [--bin <path>]
+//   node scripts/verify/checks/check-embedded-frontend.mjs [--bin <path>] [--dist-index <path>] [--strict]
 //
 // Exits 0 when the binary matches the dist, 1 when it is stale. A missing
 // binary, and a `tauri dev` build, are reported as skips (not failures) so the
@@ -45,7 +45,22 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
-const DIST_INDEX = resolve(ROOT, "apps", "desktop", "dist", "index.html");
+const args = process.argv.slice(2);
+const strict = args.includes("--strict");
+function argument(name) {
+  const index = args.indexOf(name);
+  const value = index === -1 ? undefined : args[index + 1];
+  if (index !== -1 && (!value || value.startsWith("--"))) {
+    process.stderr.write(`FAIL embedded-frontend: ${name} requires a path\n`);
+    process.exit(1);
+  }
+  return value;
+}
+const explicitBinary = argument("--bin");
+const explicitDist = argument("--dist-index");
+const DIST_INDEX = explicitDist
+  ? resolve(explicitDist)
+  : resolve(ROOT, "apps", "desktop", "dist", "index.html");
 
 const CANDIDATE_BINARIES = [
   resolve(ROOT, "target", "debug", "Echo"),
@@ -77,8 +92,8 @@ function findDevServerUrl(buffer) {
 }
 
 function resolveBinary() {
-  const flag = process.argv.indexOf("--bin");
-  if (flag !== -1 && process.argv[flag + 1]) return resolve(process.argv[flag + 1]);
+  if (explicitBinary) return resolve(explicitBinary);
+  if (strict) return null;
   const existing = CANDIDATE_BINARIES.filter((candidate) => existsSync(candidate));
   if (!existing.length) return null;
   // The newest binary is the one a developer most plausibly just ran.
@@ -97,6 +112,10 @@ function referencedAssets() {
 }
 
 const binary = resolveBinary();
+if (strict && (!binary || !existsSync(binary))) {
+  process.stderr.write("FAIL embedded-frontend: strict mode requires an explicit existing --bin\n");
+  process.exit(1);
+}
 if (!binary) {
   process.stdout.write(
     "SKIP embedded-frontend: no built binary found — build one (`cargo build -p echo-app`) to check that it matches apps/desktop/dist\n",
@@ -139,6 +158,10 @@ if (missing.length && embedded) {
 // devUrl and serves the frontend from its own server instead.
 if (missing.length) {
   const devServer = findDevServerUrl(haystack);
+  if (devServer && strict) {
+    process.stderr.write(`FAIL embedded-frontend: strict release checks do not accept dev-server bundle ${binary}\n`);
+    process.exit(1);
+  }
   if (devServer) {
     process.stdout.write(
       [

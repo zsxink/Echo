@@ -20,7 +20,9 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { assertPlatformMatrix, assertPlatformName, assertShardMatrix, matrixEntries, parseWorkflow } from "../workflow-matrix.mjs";
+import { assertNoDefaultReleaseLatency, assertReleaseLatencyCarrier, RELEASE_LATENCY_WORKFLOW, RELEASE_LATENCY_FLAG } from "../release-edit-latency.mjs";
 import { assertManualBenchmark, assertNoDefaultBenchmark, MANUAL_BENCHMARK_WORKFLOW, MANUAL_BENCHMARK_FLAG } from "../manual-50k-benchmark.mjs";
+import { assertMacosPackaging } from "../ci-macos-packaging-structure.mjs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -455,10 +457,15 @@ if (JSON.stringify(auditTriggers) !== JSON.stringify(["schedule", "workflow_disp
 }
 
 const release = step(workflow, "release-gate", "Run release gate without external artifacts");
-const releaseCommand = `node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf,workspace-test,frontend-test ${MANUAL_BENCHMARK_FLAG}`;
+const releaseCommand = `node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,workspace-test,frontend-test ${MANUAL_BENCHMARK_FLAG} ${RELEASE_LATENCY_FLAG}`;
 if (release.run !== releaseCommand) fail(`release-gate run must be '${releaseCommand}'`);
 try {
   assertNoDefaultBenchmark(workflow);
+  assertNoDefaultReleaseLatency(workflow);
+  assertReleaseLatencyCarrier(parseWorkflow(
+    readFileSync(resolve(ROOT, ".github", "workflows", RELEASE_LATENCY_WORKFLOW), "utf8"),
+    RELEASE_LATENCY_WORKFLOW,
+  ));
   assertManualBenchmark(parseWorkflow(
     readFileSync(resolve(ROOT, ".github", "workflows", MANUAL_BENCHMARK_WORKFLOW), "utf8"),
     MANUAL_BENCHMARK_WORKFLOW,
@@ -497,18 +504,14 @@ if (nativeGate.run !== "pnpm verify:task -- 8.12") {
 }
 if (String(nativeGate.if || "").trim() !== "") fail("macos-native-gate must not be conditionally skipped");
 
-// The embedded-frontend check moved from the deleted injection-proofs job to the
-// macOS platform Gate, which already builds both the bundle and the dist it
-// embeds. Pin the exact command so a "convenient" default-binary invocation
-// cannot silently compare the wrong file.
-const embedded = step(workflow, "macos-platform-gate", "Verify embedded frontend freshness");
-if (
-  embedded.run !==
-  "node scripts/verify/checks/check-embedded-frontend.mjs --bin target/aarch64-apple-darwin/release/bundle/macos/Echo.app/Contents/MacOS/Echo"
-) {
-  fail("macOS embedded-frontend step must run check-embedded-frontend.mjs against the built Echo.app binary");
+try {
+  assertMacosPackaging(workflow, parseWorkflow(
+    readFileSync(resolve(ROOT, ".github", "workflows", "release.yml"), "utf8"),
+    "release.yml",
+  ));
+} catch (error) {
+  fail(error.message);
 }
-if (embedded.if !== undefined) fail("macOS embedded-frontend step must not be conditionally skipped");
 
 // The three performance scenarios share the task-gates core shard's toolchain
 // and `linux-workspace` cache. Only a successful classifier's explicit skip
@@ -530,39 +533,22 @@ if (embedded.if !== undefined) fail("macOS embedded-frontend step must not be co
   }
 }
 
-const perfStep = step(workflow, "task-gates", "Run performance scenarios");
-if (perfStep.run !== "pnpm verify:perf") fail("task-gates performance step run must be 'pnpm verify:perf'");
-const perfIf = "github.event_name != 'pull_request' || steps.perf-paths.outcome != 'success' || steps.perf-paths.outputs.skip != 'true'";
-if (perfStep.if !== perfIf || perfStep["continue-on-error"] !== undefined) {
-  fail("task-gates performance step must run unless a successful PR classifier explicitly skips");
+// Real small acceptance stays in the default workspace, not an ignored test.
+const smallCorrectness = readFileSync(resolve(ROOT, "crates", "echo-desktop", "tests", "local_edit_correctness.rs"), "utf8");
+for (const test of ["import_is_visible_without_rescan", "favorite_success_has_a_durable_after_image_and_visible_new_value", "playlist_membership_is_durable_and_projected"]) {
+  const declaration = new RegExp(`^#\\[test\\]\\s*^fn ${test}\\(\\)`, "m");
+  if (!declaration.test(smallCorrectness)) fail(`default workspace correctness test '${test}' must remain unconditional and nonignored`);
 }
-const perfPaths = step(workflow, "task-gates", "Classify performance scenario paths");
-if (
-  perfPaths.id !== "perf-paths" ||
-  perfPaths.if !== "github.event_name == 'pull_request'" ||
-  perfPaths["continue-on-error"] !== true ||
-  perfPaths.run !== "node scripts/verify/ci-perf-paths.mjs"
-) fail("task-gates classifier must be a fail-open PR-only perf-paths step");
-assertEnv(perfPaths, "ECHO_PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}", "task-gates classifier");
-assertEnv(perfPaths, "ECHO_PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}", "task-gates classifier");
-const perfSteps = workflow.jobs["task-gates"].steps;
-const perfCheckout = perfSteps[0];
+if (/#!?\[(?:ignore|cfg(?:_attr)?)\b/.test(smallCorrectness)) {
+  fail("default workspace correctness file must not conditionally skip tests");
+}
+
 const taskGatesRun = step(workflow, "task-gates", "Verify task gates");
-if (
-  taskGatesRun.if !== undefined ||
-  taskGatesRun.run !== "pnpm verify:task -- ${{ matrix.tasks }}" ||
-  perfSteps.indexOf(taskGatesRun) >= perfSteps.indexOf(perfPaths)
-) fail("task-gates tasks must remain unconditional before performance classification");
-if (
-  perfCheckout.uses !== "actions/checkout@v4" ||
-  perfCheckout.with?.["fetch-depth"] !== 0 ||
-  perfCheckout.if !== undefined ||
-  perfSteps.indexOf(perfPaths) >= perfSteps.indexOf(perfStep)
-) fail("task-gates classifier requires unconditional full-history checkout and must precede performance");
-if (workflow.jobs.perf) fail("ci.yml job 'perf' must not exist (folded into task-gates core)");
-const taskGatesCache = step(workflow, "task-gates", "Cache Rust build artifacts");
-if (String(taskGatesCache.with?.["save-if"] ?? "") !== "false") {
-  fail("task-gates cache step must keep save-if: false so --release perf artifacts are never saved");
+if (taskGatesRun.if !== undefined || taskGatesRun.run !== "pnpm verify:task -- ${{ matrix.tasks }}") {
+  fail("task-gates tasks must remain unconditional");
+}
+if (String(step(workflow, "task-gates", "Cache Rust build artifacts").with?.["save-if"] ?? "") !== "false") {
+  fail("task-gates cache step must remain a read-only cache consumer");
 }
 
 // ---------------------------------------------------------------------------
@@ -586,13 +572,6 @@ function jobsRunning(command) {
   const jobs = jobsRunning("cargo fmt --all -- --check");
   if (JSON.stringify(jobs) !== JSON.stringify(["rust", "rust-desktop"])) {
     fail(`'cargo fmt --all -- --check' must run in exactly ['rust', 'rust-desktop'] (Linux + main-only macOS/Windows), got [${jobs.join(", ")}]`);
-  }
-}
-// The perf gate has exactly one execution location now.
-{
-  const jobs = jobsRunning("pnpm verify:perf");
-  if (JSON.stringify(jobs) !== JSON.stringify(["task-gates"])) {
-    fail(`'pnpm verify:perf' must run in exactly ['task-gates'], got [${jobs.join(", ")}]`);
   }
 }
 // task-8.12 is the authoritative real-libmpv run: it stages the dylibs and fails

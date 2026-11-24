@@ -27,6 +27,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { allScenarioIds } from "../spec-scenarios.mjs";
+import { RELEASE_LATENCY_FLAG, RELEASE_LATENCY_SCENARIOS } from "../release-edit-latency.mjs";
 import { MANUAL_BENCHMARK_FLAG, MANUAL_BENCHMARK_SCENARIO } from "../manual-50k-benchmark.mjs";
 
 // `new URL(".", import.meta.url)` is already this file's directory
@@ -40,7 +41,11 @@ const skipStatic = argv.includes("--skip-static");
 const delegated = argv.find((arg) => arg.startsWith("--delegated="));
 const delegatedArgs = delegated ? [delegated] : [];
 const deferManualBenchmark = argv.includes(MANUAL_BENCHMARK_FLAG);
-const scenarioFlags = [...delegatedArgs, ...(deferManualBenchmark ? [MANUAL_BENCHMARK_FLAG] : [])];
+const deferReleaseLatency = argv.includes(RELEASE_LATENCY_FLAG);
+const scenarioFlags = [...delegatedArgs, ...(deferManualBenchmark ? [MANUAL_BENCHMARK_FLAG] : []),
+  ...(deferReleaseLatency ? [RELEASE_LATENCY_FLAG] : [])];
+const deferredScenarios = new Set([...(deferManualBenchmark ? [MANUAL_BENCHMARK_SCENARIO] : []),
+  ...(deferReleaseLatency ? RELEASE_LATENCY_SCENARIOS : [])]);
 // Derived from the spec set, not from reconcile: the PRD matrix and the
 // scenario-suite count still need it when the static half runs elsewhere.
 const expectedScenarioCount = allScenarioIds().length;
@@ -121,11 +126,9 @@ const report = resolve(ARTIFACTS, "verify:scenario-report.txt");
 const expectedResults = new Map(JSON.parse(readFileSync(resolve(ROOT, "scripts", "verify", "manifest.json"), "utf8"))
   .scenarios
   .filter((scenario) => !(scenario.evidence ?? []).some((e) => e.kind === "attestation"))
-  .map((scenario) => [scenario.id, deferManualBenchmark && scenario.id === MANUAL_BENCHMARK_SCENARIO ? "deferred" : "ok"]));
-if (deferManualBenchmark && !expectedResults.has(MANUAL_BENCHMARK_SCENARIO)) {
-  fail(`manual benchmark scenario ${MANUAL_BENCHMARK_SCENARIO} is missing from the manifest`);
-}
-const expectedAutomatedCount = expectedResults.size - (deferManualBenchmark ? 1 : 0);
+  .map((scenario) => [scenario.id, deferredScenarios.has(scenario.id) ? "deferred" : "ok"]));
+for (const id of deferredScenarios) if (!expectedResults.has(id)) fail(`deferred scenario ${id} is missing from the manifest`);
+const expectedAutomatedCount = expectedResults.size - deferredScenarios.size;
 let scenarioOut;
 try {
   const scenarioResult = await runStreaming(
@@ -155,7 +158,9 @@ if (expectedResults.size) fail(`missing scenario result(s): ${[...expectedResult
 //    gate cannot dirty the worktree and a stale matrix fails loudly.
 run("node", ["scripts/verify/prd-matrix.mjs"]);
 
-const manualSummary = deferredLines ? `; ${deferredLines} manual benchmark scenario not run` : "";
+const manualSummary = deferredLines ? `; ${deferredLines} timing scenarios not run (` +
+  [deferManualBenchmark && "1 manual 50k", deferReleaseLatency && `${RELEASE_LATENCY_SCENARIOS.length} scheduled/manual Release latency`]
+    .filter(Boolean).join(", ") + ")" : "";
 const summary = skipStatic
   ? `ok 13.9: static checks skipped (delegated); automated scenario suite ${okLines}/${expectedAutomatedCount}${manualSummary}; PRD A1–A14 matrix verified`
   : `ok 13.9: specs == traceability == manifest (${expectedScenarioCount} scenarios); automated scenario suite ${okLines}/${expectedAutomatedCount}${manualSummary}; PRD A1–A14 matrix verified`;

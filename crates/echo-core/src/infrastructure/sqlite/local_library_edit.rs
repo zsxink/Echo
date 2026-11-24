@@ -399,7 +399,24 @@ impl SqliteDatabase {
     }
 }
 
-fn trace_local_edit_stage(root: LibraryRootId, stage: &str, started: std::time::Instant) {
+pub(super) fn trace_local_edit_stage(
+    root: LibraryRootId,
+    stage: &str,
+    started: std::time::Instant,
+) {
+    if matches!(
+        stage,
+        "directory_commit" | "sqlite_project_commit" | "background_projection"
+    ) && tracing::enabled!(target: "echo::local_edit_performance", tracing::Level::DEBUG)
+    {
+        tracing::debug!(
+            target: "echo::local_edit_performance",
+            root = %root,
+            stage,
+            elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0,
+            "local library edit phase"
+        );
+    }
     if std::env::var_os("ECHO_EDIT_TRACE").is_some() {
         eprintln!(
             "ECHO_EDIT_TRACE root={root} stage={stage} elapsed_ms={:.3}",
