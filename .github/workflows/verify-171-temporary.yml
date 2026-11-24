@@ -1,0 +1,62 @@
+name: Verify 50k scheduling change
+
+on:
+  push:
+    branches: [ci/171-manual-50k-benchmark]
+    paths:
+      - .github/workflows/verify-171-temporary.yml
+
+permissions:
+  contents: read
+
+jobs:
+  release-contract:
+    name: Default CI 50k exclusion
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/verify/checks/task-1.5.mjs
+      - name: Run default Release gate and assert the benchmark is not run
+        run: |
+          set -o pipefail
+          node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf,workspace-test,frontend-test --defer-manual-benchmark | tee "${RUNNER_TEMP}/echo-release-gate.log"
+          grep -F '1 manual benchmark scenario not run' "${RUNNER_TEMP}/echo-release-gate.log"
+          grep -F 'deferred: scenario LE-R07-S01' "${RUNNER_TEMP}/echo-release-gate.log"
+          test ! -e apps/desktop/benchmark-50k.json
+
+  benchmark:
+    name: 50k library benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Isolate Linux Rustup home
+        run: bash scripts/verify/isolate-linux-rustup-home.sh
+
+      - name: Install Rust toolchain (pinned)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Run 50k benchmark
+        run: node scripts/verify/checks/task-12.5.mjs
+
+      - name: Upload 50k benchmark result
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-50k
+          path: apps/desktop/benchmark-50k.json
+          if-no-files-found: error
