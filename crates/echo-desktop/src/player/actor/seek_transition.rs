@@ -5,10 +5,25 @@ use std::time::{Duration, Instant};
 
 use super::{ActorLoop, Backend, BackendEvent, BackendProperty, PlaybackState, PlayerCommand};
 
-const FADE: Duration = Duration::from_millis(12);
+/// One side of the seek envelope, in wall-clock request time.
+///
+/// libmpv's independent soft gain (`replaygain-fallback`) is *not*
+/// sample-accurate: the vendored 0.36.0 build applies it once per rendered
+/// audio frame (~10 ms at 48 kHz), so a short ramp collapses into one large
+/// step whose discontinuity is itself a click. Measured on the bundled dylib
+/// through a `CoreAudio` tap: a 12 ms cosine fade produced a single ~-49 dB step
+/// (max adjacent-sample delta 0.10 / 40 % of a 25 % FS sine) — worse than the
+/// unfixed seek. A linear-amplitude ramp spread over ~120 ms keeps every gain
+/// step at ~1/12 of full scale, giving ~0.023 (≈9 % of full scale, 1.5× the
+/// tone's natural slew) while staying short enough for a seek. See
+/// `docs/verification/desktop-seek-transition-2026-11-24.md`.
+const FADE: Duration = Duration::from_millis(120);
 const TICK_INTERVAL: Duration = Duration::from_millis(3);
 const DIRECT_QUIET: Duration = Duration::from_millis(15);
-const FLOOR_HOLD: Duration = Duration::from_millis(5);
+/// Keeps the output at the floor until the *already scheduled* near-silence
+/// has reached the device (measured command→audible latency ≈40 ms) before the
+/// seek flushes the output buffer.
+const FLOOR_HOLD: Duration = Duration::from_millis(50);
 const GAIN_FLOOR_DB: f64 = -96.0;
 const RESTART_LIMIT: Duration = Duration::from_millis(500);
 const UNITY_RETRIES: u8 = 2;
@@ -389,7 +404,11 @@ fn fraction(now: Instant, start: Instant) -> f64 {
 }
 
 fn fade_db(fraction: f64) -> f64 {
-    let factor = (1.0 - (fraction * std::f64::consts::PI).cos()) * 0.5;
+    // Linear in *amplitude*, not in dB or equal-power: with frame-quantized
+    // gain writes every step then has the same absolute size (1 / step count),
+    // minimising the largest discontinuity. A cosine or dB ramp puts a much
+    // larger step at the start, where the signal is still at full level.
+    let factor = fraction.max(1e-5);
     (20.0 * factor.log10()).max(GAIN_FLOOR_DB)
 }
 

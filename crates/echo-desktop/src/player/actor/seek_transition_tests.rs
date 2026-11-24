@@ -66,11 +66,31 @@ fn ms(now: Instant, offset: u64) -> Instant {
     now + Duration::from_millis(offset)
 }
 
+fn millis(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).expect("test durations fit in u64")
+}
+
+/// Drives the whole fade-out, the floor hold and the seek dispatch; returns
+/// the position committed by the seek (if the backend accepted it).
 fn fade_out(transition: &mut SeekTransition, now: Instant, probe: &mut Probe) -> Option<f64> {
-    for offset in [0, 3, 6, 9, 12, 15] {
-        assert_eq!(transition.tick(ms(now, offset), true, probe), None);
+    let fade = millis(FADE);
+    let hold = millis(FLOOR_HOLD);
+    for offset in (0..=fade + hold + 6).step_by(3) {
+        if let Some(position) = transition.tick(ms(now, offset), true, probe) {
+            return Some(position);
+        }
     }
-    transition.tick(ms(now, 17), true, probe)
+    None
+}
+
+/// Drives a fade-in that started at `start` until unity is restored.
+fn fade_in(transition: &mut SeekTransition, start: Instant, probe: &mut Probe) {
+    let fade = millis(FADE);
+    for offset in (0..=fade + 6).step_by(3) {
+        assert_eq!(transition.tick(ms(start, offset), true, probe), None);
+    }
+    assert_eq!(probe.writes.last(), Some(&Write::Gain(0.0)));
+    assert!(!transition.fading());
 }
 
 #[test]
@@ -85,25 +105,27 @@ fn keeps_gain_low_until_the_started_seek_restarts_and_coalesces_latest() {
         pair,
         [Write::Gain(db), Write::Property(BackendProperty::Seek(2.0))] if *db <= -90.0
     )));
-    assert_eq!(transition.request(ms(now, 18), 3.0, true, &mut probe), None);
-    assert_eq!(transition.request(ms(now, 19), 4.0, true, &mut probe), None);
+    assert_eq!(
+        transition.request(ms(now, 172), 3.0, true, &mut probe),
+        None
+    );
+    assert_eq!(
+        transition.request(ms(now, 173), 4.0, true, &mut probe),
+        None
+    );
 
     let writes = probe.writes.len();
-    assert_eq!(transition.restarted(ms(now, 20), &mut probe), None);
+    assert_eq!(transition.restarted(ms(now, 175), &mut probe), None);
     assert_eq!(probe.writes.len(), writes, "stray restart must not fade in");
     transition.started();
-    assert_eq!(transition.restarted(ms(now, 21), &mut probe), Some(4.0));
+    assert_eq!(transition.restarted(ms(now, 176), &mut probe), Some(4.0));
     assert_eq!(
         probe.writes.last(),
         Some(&Write::Property(BackendProperty::Seek(4.0)))
     );
     transition.started();
-    assert_eq!(transition.restarted(ms(now, 22), &mut probe), None);
-    for offset in [25, 28, 31, 34] {
-        assert_eq!(transition.tick(ms(now, offset), true, &mut probe), None);
-    }
-    assert_eq!(probe.writes.last(), Some(&Write::Gain(0.0)));
-    assert!(!transition.fading());
+    assert_eq!(transition.restarted(ms(now, 177), &mut probe), None);
+    fade_in(&mut transition, ms(now, 177), &mut probe);
 }
 
 #[test]
@@ -115,9 +137,12 @@ fn failed_seek_does_not_commit_position_and_recovers_gain() {
     };
     let mut transition = ready(now, &mut probe);
     assert_eq!(transition.request(now, 2.0, true, &mut probe), None);
+    let dispatched = millis(FADE) + millis(FLOOR_HOLD);
     assert_eq!(fade_out(&mut transition, now, &mut probe), None);
-    assert_eq!(transition.tick(ms(now, 29), true, &mut probe), None);
-    assert_eq!(probe.writes.last(), Some(&Write::Gain(0.0)));
+    assert!(probe
+        .writes
+        .contains(&Write::Property(BackendProperty::Seek(2.0))));
+    fade_in(&mut transition, ms(now, dispatched), &mut probe);
 }
 
 #[test]
@@ -151,8 +176,8 @@ fn lost_restart_falls_open_until_an_ordered_new_file_fence() {
     let mut transition = ready(now, &mut probe);
     transition.request(now, 1.0, true, &mut probe);
     assert_eq!(fade_out(&mut transition, now, &mut probe), Some(1.0));
-    transition.request(ms(now, 18), 2.0, true, &mut probe);
-    assert_eq!(transition.tick(ms(now, 517), true, &mut probe), Some(2.0));
+    transition.request(ms(now, 172), 2.0, true, &mut probe);
+    assert_eq!(transition.tick(ms(now, 700), true, &mut probe), Some(2.0));
     assert_eq!(
         probe.writes[probe.writes.len() - 2..],
         [
@@ -161,18 +186,18 @@ fn lost_restart_falls_open_until_an_ordered_new_file_fence() {
         ]
     );
     transition.started();
-    assert_eq!(transition.restarted(ms(now, 518), &mut probe), None);
+    assert_eq!(transition.restarted(ms(now, 701), &mut probe), None);
     assert_eq!(
-        transition.request(ms(now, 519), 3.0, true, &mut probe),
+        transition.request(ms(now, 702), 3.0, true, &mut probe),
         Some(3.0)
     );
     transition.new_file(&mut probe);
-    assert_eq!(transition.restarted(ms(now, 520), &mut probe), None);
+    assert_eq!(transition.restarted(ms(now, 703), &mut probe), None);
     assert!(matches!(transition.readiness, Readiness::BeforeFileLoaded));
     transition.file_loaded();
-    assert_eq!(transition.restarted(ms(now, 521), &mut probe), None);
+    assert_eq!(transition.restarted(ms(now, 704), &mut probe), None);
     assert_eq!(
-        transition.request(ms(now, 522), 4.0, true, &mut probe),
+        transition.request(ms(now, 705), 4.0, true, &mut probe),
         None
     );
     assert!(transition.fading());
@@ -207,7 +232,7 @@ fn cancellation_bounds_unity_retries_and_drops_queued_seek() {
     let mut transition = ready(now, &mut probe);
     transition.request(now, 1.0, true, &mut probe);
     assert_eq!(fade_out(&mut transition, now, &mut probe), Some(1.0));
-    transition.request(ms(now, 18), 2.0, true, &mut probe);
+    transition.request(ms(now, 172), 2.0, true, &mut probe);
     probe.reject_unity = true;
     transition.cancel(&mut probe);
     for offset in 20..26 {
