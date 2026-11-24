@@ -4646,6 +4646,91 @@
       "delegatedTo": "frontend-test"
     },
     {
+      "id": "IL-R11-S01",
+      "title": "展开时从当前播放区连续入场",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/player/ImmersivePlayer.test.tsx",
+          "name": "mounts in opening, settles to open, and exposes data-phase"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/features/player/useImmersiveCoverFlip.test.tsx",
+          "name": "publishes entry offsets and the surface origin once, never per frame"
+        }
+      ],
+      "delegatedTo": "frontend-test"
+    },
+    {
+      "id": "IL-R11-S02",
+      "title": "收起时延迟卸载并恢复触发点",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/player/ImmersivePlayer.test.tsx",
+          "name": "keeps the surface mounted during the exit, then unmounts and restores focus"
+        }
+      ],
+      "delegatedTo": "frontend-test"
+    },
+    {
+      "id": "IL-R11-S03",
+      "title": "歌词专注阅读连续切换",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/player/ImmersivePlayer.test.tsx",
+          "name": "freezes 歌词专注阅读 until the exiting surface is gone"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/features/player/immersiveTransitionStyles.test.ts",
+          "name": "hides the focused metadata by visibility/opacity, never display:none"
+        }
+      ],
+      "delegatedTo": "frontend-test"
+    },
+    {
+      "id": "IL-R11-S04",
+      "title": "减少动画下即时显隐",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/player/useImmersiveTransition.test.tsx",
+          "name": "completes immediately under prefers-reduced-motion"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/features/player/useImmersiveCoverFlip.test.tsx",
+          "name": "skips measurement entirely under reduced motion"
+        }
+      ],
+      "delegatedTo": "frontend-test"
+    },
+    {
+      "id": "IL-R11-S05",
+      "title": "过渡中切歌或反向操作",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/player/useImmersiveTransition.test.tsx",
+          "name": "resumes straight to open when reopened mid-exit"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/features/player/ImmersivePlayer.test.tsx",
+          "name": "converges to one closed when a track changes during the exit"
+        }
+      ],
+      "delegatedTo": "frontend-test"
+    },
+    {
       "id": "LD-R01-S01",
       "title": "本地写入失败",
       "command": "cargo test -p echo-core --all-features",

@@ -25,7 +25,14 @@ export interface SongLyrics {
  * of fetch logic (CODE_STANDARDS §6).
  */
 export function useLyrics(songId: string | null): SongLyrics | null {
-  const [lyrics, setLyrics] = useState<SongLyrics | null>(null);
+  // The id travels with the payload so a track change can never render the
+  // previous song's lines: the surface no longer remounts per queue entry
+  // (issue #85), and the effect that clears the state runs only after the
+  // commit that already changed `songId`.
+  const [state, setState] = useState<{ songId: string | null; lyrics: SongLyrics | null }>({
+    songId: null,
+    lyrics: null,
+  });
   const [libraryRevision, setLibraryRevision] = useState(0);
 
   useEffect(() => {
@@ -36,13 +43,13 @@ export function useLyrics(songId: string | null): SongLyrics | null {
 
   useEffect(() => {
     let cancelled = false;
-    setLyrics(null);
+    setState({ songId, lyrics: null });
     if (songId) {
       bridge
         .call("get_lyrics", { songId })
         .then((dto) => {
           if (cancelled) return;
-          setLyrics(dto);
+          setState({ songId, lyrics: dto });
         })
         .catch(() => {
           // Lyrics failure degrades to the no-lyrics state.
@@ -52,5 +59,5 @@ export function useLyrics(songId: string | null): SongLyrics | null {
       cancelled = true;
     };
   }, [songId, libraryRevision]);
-  return lyrics;
+  return state.songId === songId ? state.lyrics : null;
 }

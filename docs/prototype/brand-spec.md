@@ -98,7 +98,7 @@ Echo 是本地优先、自用优先的音乐播放器。视觉基调是**克制�
 
 ## 5. 动效
 
-- 时长：`--motion-fast 140ms`（悬停/状态确认）、`--motion-base 220ms`（浮层入场/侧边栏）。
+- 时长：`--motion-fast 140ms`（悬停/状态确认）、`--motion-base 220ms`（浮层入场/侧边栏）、`--motion-exit 180ms`（沉浸式播放器退场：比入场短，先让开阅读区）。
 - 缓动：`--ease-standard cubic-bezier(0.2, 0, 0, 1)`（前端加载）。
 - 唱片旋转 `record-spin 12s linear infinite`；唱臂抬起 `480ms cubic-bezier(.2,.72,.2,1)`（类弹性而非纯曲线）。
 - 尊重 `@media (prefers-reduced-motion: reduce)`：将 transition/animation 降为 1ms 且动画只执行一次。

@@ -74,6 +74,9 @@
   --focus-ring: 0 0 0 4px color-mix(in oklab, var(--accent-strong), transparent 76%);
   --motion-fast: 140ms;
   --motion-base: 220ms;
+  /* Issue #85: exiting is shorter than entering, so the surface lets go of the
+     reading area faster than it grew into it. */
+  --motion-exit: 180ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --container-max: 1200px;
   --container-gutter-desktop: 36px;

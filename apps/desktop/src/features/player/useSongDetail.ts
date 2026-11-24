@@ -84,5 +84,9 @@ export function useSongDetail(songId: string | null): SongDetail | null {
     });
   }, [songId]);
 
-  return detail;
+  // The clear effect above runs after commit; without this guard the render
+  // that first observes a new `songId` still holds the previous song's detail.
+  // The immersive surface no longer remounts on every queue entry (issue #85),
+  // so that one frame would be visible instead of hidden by a remount.
+  return detail && detail.songId === songId ? detail : null;
 }

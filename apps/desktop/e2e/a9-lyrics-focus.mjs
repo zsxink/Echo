@@ -49,7 +49,12 @@ export async function assertLyricsFocusRoundTrip({
     const popover = document.querySelector('[data-testid="immersive"]');
     const info = document.querySelector('[data-testid="immersive"] .now-playing-info');
     if (!popover || !info) return null;
-    if (getComputedStyle(info).display !== 'none') return null;
+    // Issue #85: focus hides the metadata with opacity/visibility (so it can
+    // fade), never with a discrete display:none. "Hidden" therefore means the
+    // computed paint, not the element's absence from layout.
+    const cs = getComputedStyle(info);
+    if (cs.display !== 'none' && (cs.visibility !== 'hidden' || parseFloat(cs.opacity) > 0.05))
+      return null;
     if (parseFloat(getComputedStyle(popover).paddingBottom) < 100) return null;
     return true;
   })()`);
@@ -63,7 +68,12 @@ export async function assertLyricsFocusRoundTrip({
       const el = document.querySelector(sel);
       if (!el) return false;
       const cs = getComputedStyle(el);
-      return cs.display !== 'none' && el.getBoundingClientRect().height > 0;
+      return (
+        cs.display !== 'none' &&
+        cs.visibility !== 'hidden' &&
+        parseFloat(cs.opacity) > 0.01 &&
+        el.getBoundingClientRect().height > 0
+      );
     };
     const popover = document.querySelector('[data-testid="immersive"]');
     const lyrics = document.querySelector('[data-testid="immersive"] .lyrics');

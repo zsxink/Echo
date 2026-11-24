@@ -348,6 +348,11 @@ export const SCENARIOS = {
 "IL-R10-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/useLyricsStartOffset.test.tsx", "re-measures when the info block resizes (ResizeObserver)")], },
 "IL-R10-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/useLyricsStartOffset.test.tsx", "re-measures on window resize")], },
 "IL-R10-S04": { command: VITEST_ALL, evidence: [vitest("src/features/player/useLyricsStartOffset.test.tsx", "measures the metadata's height while the previous offset is still laid out")], },
+"IL-R11-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx", "mounts in opening, settles to open, and exposes data-phase"), vitest("src/features/player/useImmersiveCoverFlip.test.tsx", "publishes entry offsets and the surface origin once, never per frame")], },
+"IL-R11-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx", "keeps the surface mounted during the exit, then unmounts and restores focus")], },
+"IL-R11-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx", "freezes 歌词专注阅读 until the exiting surface is gone"), vitest("src/features/player/immersiveTransitionStyles.test.ts", "hides the focused metadata by visibility/opacity, never display:none")], },
+"IL-R11-S04": { command: VITEST_ALL, evidence: [vitest("src/features/player/useImmersiveTransition.test.tsx", "completes immediately under prefers-reduced-motion"), vitest("src/features/player/useImmersiveCoverFlip.test.tsx", "skips measurement entirely under reduced motion")], },
+"IL-R11-S05": { command: VITEST_ALL, evidence: [vitest("src/features/player/useImmersiveTransition.test.tsx", "resumes straight to open when reopened mid-exit"), vitest("src/features/player/ImmersivePlayer.test.tsx", "converges to one closed when a track changes during the exit")], },
   // library-experience
 "LE-R01-S01": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::catalog_all_songs_view")], },
 "LE-R01-S02": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::catalog_search_no_results")], },
