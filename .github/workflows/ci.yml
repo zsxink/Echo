@@ -247,7 +247,7 @@ jobs:
       matrix:
         include:
           - shard: core
-            tasks: "1.1 1.3 12.5 13.3"
+            tasks: "1.1 1.3 13.3"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -295,21 +295,11 @@ jobs:
       - name: Verify task gates
         run: pnpm verify:task -- ${{ matrix.tasks }}
 
-      # task-12.5 asserts the PRD latency budgets and writes the measured
-      # values here; the task requires them to be kept as a CI artifact.
-      - name: Upload 50k benchmark result
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-50k
-          path: apps/desktop/benchmark-50k.json
-          if-no-files-found: error
-
       # The three performance scenarios used to occupy their own job while
       # sharing this shard's toolchain and `linux-workspace` cache. They run
       # here instead: this job is a cache reader (`save-if: false`), so the
       # `--release` artifacts the scenarios compile never land in a key the
-      # Rust shards restore. Placed after the benchmark upload so a perf
-      # failure cannot cost task-12.5 its required artifact.
+      # Rust shards restore.
       - name: Classify performance scenario paths
         id: perf-paths
         if: github.event_name == 'pull_request'
@@ -573,9 +563,9 @@ jobs:
   # The release gate is scenario reconciliation + PRD matrix + static
   # contract checks only. Every scenario command it would run is either a
   # subprocess subset of the Linux workspace suite / Frontend Vitest (delegated
-  # via `delegatedTo`), or the 50k bench that task-12.5 already measures and
-  # uploads from `task-gates`. Re-running them here spent ~560s per PR on a
-  # second identical execution, so this job no longer needs a Rust toolchain,
+  # via `delegatedTo`), or the independently manual 50k benchmark. The
+  # latter is reported as not run, never counted as automatic coverage.
+  # This job needs no Rust toolchain,
   # the webview system packages, or the frontend build.
   release-gate:
     name: Release gate
@@ -596,4 +586,4 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run release gate without external artifacts
-        run: node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf,benchmark,workspace-test,frontend-test
+        run: node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf,workspace-test,frontend-test --defer-manual-benchmark

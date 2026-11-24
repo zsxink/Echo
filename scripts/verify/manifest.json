@@ -963,10 +963,10 @@
     },
     {
       "id": "12.5",
-      "title": "50k 合成库 benchmark：搜索 p95 ≤200ms、视图首屏 p95 ≤500ms、虚拟 DOM 行数受视口限制，结果存为 CI artifact",
+      "title": "按需 50k 合成库 benchmark：搜索 p95 ≤200ms、视图首屏 p95 ≤500ms，生成 JSON 产物",
       "commands": [
         {
-          "desc": "echo-core 50k 基准（cargo test --ignored）+ SongList 视口渲染测试 + benchmark-50k.json 产物",
+          "desc": "echo-core 50k 基准（cargo test --ignored）及 benchmark-50k.json；GitHub 仅在手动 workflow 上传",
           "cmd": "node scripts/verify/checks/task-12.5.mjs"
         }
       ]

@@ -27,6 +27,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { allScenarioIds } from "../spec-scenarios.mjs";
+import { MANUAL_BENCHMARK_FLAG, MANUAL_BENCHMARK_SCENARIO } from "../manual-50k-benchmark.mjs";
 
 // `new URL(".", import.meta.url)` is already this file's directory
 // (`scripts/verify/checks/`), so three `..` land on the repository root — an
@@ -38,6 +39,8 @@ const argv = process.argv.slice(2);
 const skipStatic = argv.includes("--skip-static");
 const delegated = argv.find((arg) => arg.startsWith("--delegated="));
 const delegatedArgs = delegated ? [delegated] : [];
+const deferManualBenchmark = argv.includes(MANUAL_BENCHMARK_FLAG);
+const scenarioFlags = [...delegatedArgs, ...(deferManualBenchmark ? [MANUAL_BENCHMARK_FLAG] : [])];
 // Derived from the spec set, not from reconcile: the PRD matrix and the
 // scenario-suite count still need it when the static half runs elsewhere.
 const expectedScenarioCount = allScenarioIds().length;
@@ -115,15 +118,19 @@ mkdirSync(ARTIFACTS, { recursive: true });
 //    runs the governance job separately). Without the flag the whole gate is
 //    executed locally, keeping the strict default.
 const report = resolve(ARTIFACTS, "verify:scenario-report.txt");
-const expectedAutomatedCount = JSON.parse(readFileSync(resolve(ROOT, "scripts", "verify", "manifest.json"), "utf8"))
+const expectedResults = new Map(JSON.parse(readFileSync(resolve(ROOT, "scripts", "verify", "manifest.json"), "utf8"))
   .scenarios
   .filter((scenario) => !(scenario.evidence ?? []).some((e) => e.kind === "attestation"))
-  .length;
+  .map((scenario) => [scenario.id, deferManualBenchmark && scenario.id === MANUAL_BENCHMARK_SCENARIO ? "deferred" : "ok"]));
+if (deferManualBenchmark && !expectedResults.has(MANUAL_BENCHMARK_SCENARIO)) {
+  fail(`manual benchmark scenario ${MANUAL_BENCHMARK_SCENARIO} is missing from the manifest`);
+}
+const expectedAutomatedCount = expectedResults.size - (deferManualBenchmark ? 1 : 0);
 let scenarioOut;
 try {
   const scenarioResult = await runStreaming(
     "node",
-    ["scripts/verify/run-scenario.mjs", "--", "--automated", ...delegatedArgs],
+    ["scripts/verify/run-scenario.mjs", "--", "--automated", ...scenarioFlags],
   );
   if (scenarioResult.status !== 0) {
     fail(`'node scripts/verify/run-scenario.mjs -- --automated' exited ${scenarioResult.status}`);
@@ -133,17 +140,23 @@ try {
   fail(`verify:scenario -- --automated failed; see artifacts/verify:scenario-report.txt\n${e.message}`);
 }
 writeFileSync(report, scenarioOut);
-const okLines = (scenarioOut.match(/^ok: scenario /gm) || []).length;
-if (okLines !== expectedAutomatedCount) {
-  fail(`expected ${expectedAutomatedCount} automated scenario results, got ${okLines} (see ${report})`);
+let okLines = 0;
+let deferredLines = 0;
+for (const [, status, id] of scenarioOut.matchAll(/^(ok|deferred): scenario (\S+) /gm)) {
+  if (expectedResults.get(id) !== status) fail(`unexpected or duplicate ${status} result for ${id} (see ${report})`);
+  expectedResults.delete(id);
+  if (status === "ok") okLines += 1;
+  else deferredLines += 1;
 }
+if (expectedResults.size) fail(`missing scenario result(s): ${[...expectedResults.keys()].join(", ")} (see ${report})`);
 
 // 4. PRD A1–A14 mapping: docs/acceptance/PRD-matrix.md is hand-maintained and
 //    committed — the check validates it in place and never writes, so the
 //    gate cannot dirty the worktree and a stale matrix fails loudly.
 run("node", ["scripts/verify/prd-matrix.mjs"]);
 
+const manualSummary = deferredLines ? `; ${deferredLines} manual benchmark scenario not run` : "";
 const summary = skipStatic
-  ? `ok 13.9: static checks skipped (delegated); automated scenario suite ${okLines}/${expectedAutomatedCount}; PRD A1–A14 matrix verified`
-  : `ok 13.9: specs == traceability == manifest (${expectedScenarioCount} scenarios); automated scenario suite ${okLines}/${expectedAutomatedCount}; PRD A1–A14 matrix verified`;
+  ? `ok 13.9: static checks skipped (delegated); automated scenario suite ${okLines}/${expectedAutomatedCount}${manualSummary}; PRD A1–A14 matrix verified`
+  : `ok 13.9: specs == traceability == manifest (${expectedScenarioCount} scenarios); automated scenario suite ${okLines}/${expectedAutomatedCount}${manualSummary}; PRD A1–A14 matrix verified`;
 process.stdout.write(`${summary}\n`);

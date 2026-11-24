@@ -112,6 +112,7 @@ writeFileSync(
     "    passed=1 ;;\n" +
     "  *one-filter*) printf 'test one_filter_ok ... ok\\n'; name=one; passed=1 ;;\n" +
     "  *two-filter*) printf 'test two_filter_ok ... ok\\n'; name=two; passed=1 ;;\n" +
+    "  *manual-filter*) printf 'test ignored_test_ok ... ok\n'; passed=1 ;;\n" +
     "  *perf-filter*) printf 'test perf_filter_ok ... ok\\n'; passed=1 ;;\n" +
     "  *) passed=0 ;;\n" +
     "esac\n" +
@@ -182,6 +183,13 @@ writeFileSync(
         id: "rust-ignored-test",
         title: "ignored performance test must still execute",
         command: "cargo test -p echo-core --all-features ignored-filter -- --ignored",
+        evidence: [{ kind: "rust", target: "ignored_test_ok" }],
+      },
+      {
+        id: "LE-R07-S01",
+        title: "manual 50k benchmark",
+        command: "cargo test -p echo-core --all-features manual-filter -- --ignored",
+        delegatedTo: "benchmark",
         evidence: [{ kind: "rust", target: "ignored_test_ok" }],
       },
       {
@@ -322,6 +330,59 @@ assert(
 // Lockfiles must be unchanged after a run.
 const before = LOCKFILES.map(hashOf);
 runRunner(fixture, ["ok", "failing", "--all"], taskEnv);
+const skipFixture = resolve(dir, "scenario-automation.json");
+const skipManifest = JSON.parse(readFileSync(scenarioFixture, "utf8"));
+skipManifest.scenarios = skipManifest.scenarios.filter(
+  (scenario) => ["LE-R07-S01", "rust-reused-test", "one-test"].includes(scenario.id),
+);
+writeFileSync(skipFixture, JSON.stringify(skipManifest));
+const deferredBenchmark = runScenarioRunner(
+  skipFixture,
+  ["--automated", "--delegated=governance", "--defer-manual-benchmark"],
+  scenarioEnv,
+);
+assert(
+  deferredBenchmark.status === 0
+    && /^deferred: scenario LE-R07-S01 .+not run/m.test(deferredBenchmark.stdout)
+    && !/^ok: scenario LE-R07-S01 /m.test(deferredBenchmark.stdout)
+    && /scenario batches: 1 commands for 3 scenarios \(1 delegated, 1 manual not run\)/.test(deferredBenchmark.stdout),
+  "manual benchmark deferral is separate from pass evidence and other delegations",
+);
+const explicitBenchmark = runScenarioRunner(scenarioFixture, ["LE-R07-S01"], scenarioEnv);
+assert(
+  explicitBenchmark.status === 0
+    && /^ok: scenario LE-R07-S01 /m.test(explicitBenchmark.stdout)
+    && !/^deferred: scenario /m.test(explicitBenchmark.stdout)
+    && /scenario batches: 1 commands for 1 scenarios/.test(explicitBenchmark.stdout),
+  "local explicit benchmark still executes the actual scenario command",
+);
+for (const mode of [["LE-R07-S01"], ["--all"], ["--automated", "LE-R07-S01"]]) {
+  const invalid = runScenarioRunner(skipFixture, [...mode, "--defer-manual-benchmark"], scenarioEnv);
+  assert(
+    invalid.status !== 0 && /requires --automated/.test(invalid.stderr),
+    `manual deferral refuses mixed or explicit local invocation: ${mode.join(" ")}`,
+  );
+}
+const fullFixture = resolve(dir, "scenario-local.json");
+const fullManifest = {
+  ...skipManifest,
+  scenarios: skipManifest.scenarios.filter((s) => s.id !== "rust-reused-test"),
+};
+writeFileSync(fullFixture, JSON.stringify(fullManifest));
+const fullLocalBenchmarks = runScenarioRunner(fullFixture, ["--all"], scenarioEnv);
+assert(
+  fullLocalBenchmarks.status === 0 && /^ok: scenario LE-R07-S01 /m.test(fullLocalBenchmarks.stdout),
+  "full local verification does not inherit the default CI benchmark deferral",
+);
+const invalidBenchmarkDelegation = runScenarioRunner(
+  scenarioFixture, ["--delegated=benchmark", "LE-R07-S01"], scenarioEnv,
+);
+assert(
+  invalidBenchmarkDelegation.status !== 0
+    && /benchmark has no default CI carrier/.test(invalidBenchmarkDelegation.stderr),
+  "legacy delegation cannot turn a manual benchmark into a false pass",
+);
+
 const after = LOCKFILES.map(hashOf);
 assert(
   JSON.stringify(before) === JSON.stringify(after),

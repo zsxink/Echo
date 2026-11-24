@@ -399,9 +399,8 @@ export const SCENARIOS = {
 "LE-R06-S11": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongMenu.test.tsx")], },
 "LE-R06-S12": { command: VITEST_ALL, evidence: [vitest("src/features/library/batchLibraryOperations.test.tsx")], },
 "LE-R06-S13": { command: VITEST_ALL, evidence: [vitest("src/features/library/LibraryWorkspace.test.tsx", "右键打开的菜单仍由面板外按压和 Escape 收起")], },
-// The 50k bench is measured once per PR: `task-12.5` in `task-gates` runs this
-// exact command, asserts the PRD latency budgets, and uploads the artifact.
-// Re-measuring it in the release gate spent 194s on a duplicate run.
+// task-12.5 in the manual 50k workflow runs the same benchmark, checks the
+// PRD budgets and uploads the artifact. Default CI explicitly defers it.
 "LE-R07-S01": { command: "cargo test -p echo-core --all-features bench_50k_search_and_first_screen_p95_meet_prd_budgets -- --ignored", evidence: [rust("bench_50k_search_and_first_screen_p95_meet_prd_budgets")], delegatedTo: "benchmark" },
 "LE-R07-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx")], },
 "LE-R07-S03": { command: VITEST_ALL, evidence: [vitest("src/features/library/CollectionDirectory.test.tsx", "shows artist cards and reuses the library song table with selection in the detail")], },

@@ -30,6 +30,7 @@ import { fileURLToPath } from "node:url";
 import { scenarioCommands } from "./scenario-commands.mjs";
 import { workspaceTestLists } from "./cargo-test-lists.mjs";
 import { matrixEntries, parseWorkflow } from "./workflow-matrix.mjs";
+import { assertManualBenchmark, MANUAL_BENCHMARK_WORKFLOW, MANUAL_BENCHMARK_SCENARIO } from "./manual-50k-benchmark.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
 // The registry is the source of truth; the generated manifest is drift-locked
@@ -45,7 +46,7 @@ const DELEGATED_GATES = new Set(["governance", "perf", "benchmark", "workspace-t
 const errors = [];
 const fail = (m) => errors.push(m);
 
-// A delegation only means something if the named gate actually runs in CI.
+// Automatic delegations need a default CI carrier; the benchmark is manual.
 const ciWorkflow = readFileSync(resolve(ROOT, ".github", "workflows", "ci.yml"), "utf8");
 // Each gate names the exact command ci.yml must execute. `workspace-test` and
 // `frontend-test` are the full suites the Linux `rust` / `frontend` jobs run;
@@ -62,16 +63,6 @@ try {
   CI_GATES = new Map([
     ["governance", /\bpnpm\s+verify:governance\b/.test(ciWorkflow)],
     ["perf", /\bpnpm\s+verify:perf\b/.test(ciWorkflow)],
-    // The 50k benchmark is carried by task-12.5 in `task-gates`, which runs the
-    // same `--ignored` bench and uploads its measured artifact. Matching the
-    // task id (not a bare "cargo test") keeps a comment or an unrelated cargo
-    // step from satisfying the delegation.
-    [
-      "benchmark",
-      (workflow?.jobs?.["task-gates"]?.strategy?.matrix?.include || []).some((entry) =>
-        String(entry.tasks || "").split(/\s+/).includes("12.5"),
-      ),
-    ],
     [
       "workspace-test",
       linux?.packages === "--workspace" &&
@@ -84,6 +75,18 @@ try {
 }
 for (const [gate, present] of CI_GATES) {
   if (!present) fail(`delegated gate '${gate}' has no matching command in .github/workflows/ci.yml`);
+}
+try {
+  assertManualBenchmark(parseWorkflow(
+    readFileSync(resolve(ROOT, ".github", "workflows", MANUAL_BENCHMARK_WORKFLOW), "utf8"),
+    MANUAL_BENCHMARK_WORKFLOW,
+  ));
+} catch (error) {
+  fail(`manual benchmark carrier: ${error.message}`);
+}
+const benchmarkScenarios = scenarios.filter((s) => s.delegatedTo === "benchmark").map((s) => s.id);
+if (JSON.stringify(benchmarkScenarios) !== JSON.stringify([MANUAL_BENCHMARK_SCENARIO])) {
+  fail(`only '${MANUAL_BENCHMARK_SCENARIO}' must point to the manual 50k benchmark`);
 }
 let delegatedCount = 0;
 

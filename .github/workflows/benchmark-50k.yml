@@ -1,0 +1,37 @@
+name: Benchmark 50k
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: 50k library benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Isolate Linux Rustup home
+        run: bash scripts/verify/isolate-linux-rustup-home.sh
+
+      - name: Install Rust toolchain (pinned)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Run 50k benchmark
+        run: node scripts/verify/checks/task-12.5.mjs
+
+      - name: Upload 50k benchmark result
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-50k
+          path: apps/desktop/benchmark-50k.json
+          if-no-files-found: error

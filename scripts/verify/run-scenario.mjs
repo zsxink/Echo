@@ -13,6 +13,7 @@
 //                                               (the same applies to the
 //                                               `perf`, `workspace-test` and
 //                                               `frontend-test` gates)
+//   --defer-manual-benchmark                  report the manual 50k scenario without running it
 //   pnpm verify:scenario -- --list             print scenario ids from the manifest
 //
 // Scenarios are resolved/validated against scripts/verify/manifest.json's
@@ -26,6 +27,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { MANUAL_BENCHMARK_FLAG, MANUAL_BENCHMARK_SCENARIO } from "./manual-50k-benchmark.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
 const MANIFEST = process.env.ECHO_VERIFY_MANIFEST || resolve(ROOT, "scripts", "verify", "manifest.json");
@@ -190,14 +193,19 @@ function commandLabel(command) {
   return command.length > 120 ? `${command.slice(0, 117)}...` : command;
 }
 
-async function executeScenarios(requested, delegatedGates) {
+async function executeScenarios(requested, delegatedGates, deferManualBenchmark) {
   const resultByCommand = new Map();
   const commands = [];
   const seenCommands = new Set();
   const executionByCommand = new Map();
   const covered = new Set();
+  const deferred = new Set();
   for (const id of requested) {
     const scenario = scenarios.find((entry) => entry.id === id);
+    if (deferManualBenchmark && id === MANUAL_BENCHMARK_SCENARIO && scenario?.delegatedTo === "benchmark") {
+      deferred.add(id);
+      continue;
+    }
     // Only a scenario that explicitly declares `delegatedTo: <gate>` can be
     // covered by a job running elsewhere. Never infer coverage from the shape
     // of the command (e.g. "any cargo test is covered"): after aggregation
@@ -264,14 +272,17 @@ async function executeScenarios(requested, delegatedGates) {
 
   let ok = true;
   for (const id of requested) {
-    if (covered.has(id)) {
+    if (deferred.has(id)) {
+      const scenario = scenarios.find((entry) => entry.id === id);
+      process.stdout.write(`deferred: scenario ${id} (${scenario.title}) — not run; use the manual Benchmark 50k workflow or task 12.5\n`);
+    } else if (covered.has(id)) {
       const scenario = scenarios.find((entry) => entry.id === id);
       process.stdout.write(`ok: scenario ${id} (${scenario.title}) — covered by the ${scenario.delegatedTo} job\n`);
     } else if (!runScenario(id, resultByCommand)) {
       ok = false;
     }
   }
-  process.stdout.write(`scenario batches: ${commands.length} commands for ${requested.length} scenarios (${covered.size} delegated)\n`);
+  process.stdout.write(`scenario batches: ${commands.length} commands for ${requested.length} scenarios (${covered.size} delegated${deferred.size ? `, ${deferred.size} manual not run` : ""})\n`);
   return ok;
 }
 
@@ -285,7 +296,22 @@ if (delegatedFlag && (!delegatedGates || delegatedGates.size === 0)) {
   process.exit(1);
 }
 // The flag selects how declared scenarios are covered; it is never a scenario id.
-const argv = rawArgv.filter((arg) => !arg.startsWith("--delegated="));
+if (delegatedGates?.has("benchmark")) {
+  fail(`benchmark has no default CI carrier; use ${MANUAL_BENCHMARK_FLAG}`);
+  process.exit(1);
+}
+const deferManualBenchmark = rawArgv.includes(MANUAL_BENCHMARK_FLAG);
+const argv = rawArgv.filter(
+  (arg) => !arg.startsWith("--delegated=") && arg !== MANUAL_BENCHMARK_FLAG,
+);
+
+if (deferManualBenchmark) {
+  const mode = argv.filter((arg) => arg !== "--");
+  if (mode.length !== 1 || mode[0] !== "--automated") {
+    fail(`${MANUAL_BENCHMARK_FLAG} requires --automated and cannot skip explicit or full local runs`);
+    process.exit(1);
+  }
+}
 
 if (argv.includes("--list")) {
   for (const s of scenarios) process.stdout.write(`${s.id}\n`);
@@ -308,7 +334,7 @@ if (!requested.length) {
   process.exit(1);
 }
 
-executeScenarios(requested, delegatedGates).then((passed) => {
+executeScenarios(requested, delegatedGates, deferManualBenchmark).then((passed) => {
   process.exitCode = passed ? 0 : 1;
 }).catch((error) => {
   process.stderr.write(`error: scenario runner failed unexpectedly: ${error.message}\n`);

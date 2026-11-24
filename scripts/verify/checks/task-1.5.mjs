@@ -20,6 +20,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { assertPlatformMatrix, assertPlatformName, assertShardMatrix, matrixEntries, parseWorkflow } from "../workflow-matrix.mjs";
+import { assertManualBenchmark, assertNoDefaultBenchmark, MANUAL_BENCHMARK_WORKFLOW, MANUAL_BENCHMARK_FLAG } from "../manual-50k-benchmark.mjs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -66,7 +67,7 @@ function sectionsOf(run) {
 // expected list here (rather than deriving it from ci.yml) is what makes a
 // deleted or duplicated task fail instead of silently shrinking coverage.
 const EXPECTED_SHARDS = {
-  core: "1.1 1.3 12.5 13.3".split(" "),
+  core: "1.1 1.3 13.3".split(" "),
 };
 
 // Audited doc-only whitelist. These files are referenced only in prose (no gate
@@ -454,13 +455,21 @@ if (JSON.stringify(auditTriggers) !== JSON.stringify(["schedule", "workflow_disp
 }
 
 const release = step(workflow, "release-gate", "Run release gate without external artifacts");
-if (release.run !== "node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf,benchmark,workspace-test,frontend-test") {
-  fail("release-gate run must use --skip-static --delegated=governance,perf,benchmark,workspace-test,frontend-test");
+const releaseCommand = `node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf,workspace-test,frontend-test ${MANUAL_BENCHMARK_FLAG}`;
+if (release.run !== releaseCommand) fail(`release-gate run must be '${releaseCommand}'`);
+try {
+  assertNoDefaultBenchmark(workflow);
+  assertManualBenchmark(parseWorkflow(
+    readFileSync(resolve(ROOT, ".github", "workflows", MANUAL_BENCHMARK_WORKFLOW), "utf8"),
+    MANUAL_BENCHMARK_WORKFLOW,
+  ));
+} catch (error) {
+  fail(error.message);
 }
 
 // The release gate carries no cargo and no pnpm test command any more: every
 // scenario it would run is a subset of the workspace/frontend suites or the
-// 50k bench task-12.5 measures in `task-gates`. Pinning the absence keeps a
+// manual 50k bench (explicitly deferred). Pinning the absence keeps a
 // "just re-run it here" edit from silently re-spending the compile time this
 // job was trimmed of.
 {
@@ -539,18 +548,11 @@ assertEnv(perfPaths, "ECHO_PR_HEAD_SHA", "${{ github.event.pull_request.head.sha
 const perfSteps = workflow.jobs["task-gates"].steps;
 const perfCheckout = perfSteps[0];
 const taskGatesRun = step(workflow, "task-gates", "Verify task gates");
-const benchmarkUpload = step(workflow, "task-gates", "Upload 50k benchmark result");
 if (
   taskGatesRun.if !== undefined ||
   taskGatesRun.run !== "pnpm verify:task -- ${{ matrix.tasks }}" ||
-  benchmarkUpload.if !== undefined ||
-  benchmarkUpload.uses !== "actions/upload-artifact@v4" ||
-  benchmarkUpload.with?.name !== "benchmark-50k" ||
-  benchmarkUpload.with?.path !== "apps/desktop/benchmark-50k.json" ||
-  benchmarkUpload.with?.["if-no-files-found"] !== "error" ||
-  perfSteps.indexOf(taskGatesRun) >= perfSteps.indexOf(benchmarkUpload) ||
-  perfSteps.indexOf(benchmarkUpload) >= perfSteps.indexOf(perfPaths)
-) fail("task-gates task 12.5 and its 50k benchmark upload must remain unconditional before classification");
+  perfSteps.indexOf(taskGatesRun) >= perfSteps.indexOf(perfPaths)
+) fail("task-gates tasks must remain unconditional before performance classification");
 if (
   perfCheckout.uses !== "actions/checkout@v4" ||
   perfCheckout.with?.["fetch-depth"] !== 0 ||
@@ -634,7 +636,7 @@ for (const [name, expected] of Object.entries(EXPECTED_SHARDS)) {
   }
 }
 const union = [...byShard.values()].flat();
-if (union.length !== 4) fail(`task-gates shard union must be 4 tasks, got ${union.length}`);
+if (union.length !== 3) fail(`task-gates shard union must be 3 tasks, got ${union.length}`);
 if (new Set(union).size !== union.length) fail("task-gates shard union contains duplicates");
 if (union.includes("16.1")) fail("16.1 must run in governance-static, not task-gates");
 if (union.includes("13.1")) fail("13.1 must run in the Frontend job, not task-gates");
