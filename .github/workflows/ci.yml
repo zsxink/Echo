@@ -250,8 +250,6 @@ jobs:
             tasks: "1.1 1.3 13.3"
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Isolate Linux Rustup home
         run: bash scripts/verify/isolate-linux-rustup-home.sh
@@ -295,55 +293,58 @@ jobs:
       - name: Verify task gates
         run: pnpm verify:task -- ${{ matrix.tasks }}
 
-      # The three performance scenarios used to occupy their own job while
-      # sharing this shard's toolchain and `linux-workspace` cache. They run
-      # here instead: this job is a cache reader (`save-if: false`), so the
-      # `--release` artifacts the scenarios compile never land in a key the
-      # Rust shards restore.
-      - name: Classify performance scenario paths
-        id: perf-paths
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        env:
-          ECHO_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          ECHO_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: node scripts/verify/ci-perf-paths.mjs
-      - name: Run performance scenarios
-        if: github.event_name != 'pull_request' || steps.perf-paths.outcome != 'success' || steps.perf-paths.outputs.skip != 'true'
-        run: pnpm verify:perf
-
   macos-platform-gate:
     name: macOS platform Gate
     runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain (pinned)
-        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.98.1
-
-      - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: macos-desktop
-          save-if: false
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
 
+      - name: Classify macOS packaging paths
+        id: macos-package-paths
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          ECHO_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          ECHO_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/verify/ci-macos-package-paths.mjs
+
+      - name: Report macOS package skip
+        if: github.event_name == 'pull_request' && steps.macos-package-paths.outcome == 'success' && steps.macos-package-paths.outputs.skip == 'true'
+        run: echo "SKIP macOS packaging (not built or verified); audited PR changes affect no package input. Independent macOS native smoke remains."
+
+      - name: Install Rust toolchain (pinned)
+        if: github.event_name != 'pull_request' || steps.macos-package-paths.outcome != 'success' || steps.macos-package-paths.outputs.skip != 'true'
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+
+      - name: Cache Rust build artifacts
+        if: github.event_name != 'pull_request' || steps.macos-package-paths.outcome != 'success' || steps.macos-package-paths.outputs.skip != 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: macos-desktop
+          save-if: false
+
       - name: Install pnpm
+        if: github.event_name != 'pull_request' || steps.macos-package-paths.outcome != 'success' || steps.macos-package-paths.outputs.skip != 'true'
         uses: pnpm/action-setup@v4
         with:
           version: 11.18.0
 
       - name: Install dependencies
+        if: github.event_name != 'pull_request' || steps.macos-package-paths.outcome != 'success' || steps.macos-package-paths.outputs.skip != 'true'
         run: pnpm install --frozen-lockfile
 
       # task-1.9 runs `tauri build --bundles app`, whose generate_context!
       # macro requires the built frontend at apps/desktop/dist.
       - name: Build frontend for Tauri context
+        if: github.event_name != 'pull_request' || steps.macos-package-paths.outcome != 'success' || steps.macos-package-paths.outputs.skip != 'true'
         run: pnpm --dir apps/desktop build
 
       # 9.7 additionally asserts the macOS bundle carries no foreign-platform
@@ -351,6 +352,7 @@ jobs:
       # platform-specific config. It reads the bundle 1.9 leaves behind, so it
       # must run in the same job, after 1.9.
       - name: Build and verify macOS platform Gate
+        if: github.event_name != 'pull_request' || steps.macos-package-paths.outcome != 'success' || steps.macos-package-paths.outputs.skip != 'true'
         run: pnpm verify:task -- 1.9 1.10 9.7
 
       # This job just built the bundle and the dist it embeds, so the
@@ -358,9 +360,11 @@ jobs:
       # moved here from the deleted injection-proofs job, which owned a shell
       # binary solely for this comparison.
       - name: Verify embedded frontend freshness
-        run: node scripts/verify/checks/check-embedded-frontend.mjs --bin target/aarch64-apple-darwin/release/bundle/macos/Echo.app/Contents/MacOS/Echo
+        if: github.event_name != 'pull_request' || steps.macos-package-paths.outcome != 'success' || steps.macos-package-paths.outputs.skip != 'true'
+        run: node scripts/verify/checks/check-embedded-frontend.mjs --strict --bin target/aarch64-apple-darwin/release/bundle/macos/Echo.app/Contents/MacOS/Echo
 
       - name: Upload libmpv Gate report
+        if: github.event_name != 'pull_request' || steps.macos-package-paths.outcome != 'success' || steps.macos-package-paths.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: macos-libmpv-gate-report
@@ -563,7 +567,7 @@ jobs:
   # The release gate is scenario reconciliation + PRD matrix + static
   # contract checks only. Every scenario command it would run is either a
   # subprocess subset of the Linux workspace suite / Frontend Vitest (delegated
-  # via `delegatedTo`), or the independently manual 50k benchmark. The
+  # via `delegatedTo`), or deferred to separate performance workflows. The
   # latter is reported as not run, never counted as automatic coverage.
   # This job needs no Rust toolchain,
   # the webview system packages, or the frontend build.
@@ -586,4 +590,4 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run release gate without external artifacts
-        run: node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf,workspace-test,frontend-test --defer-manual-benchmark
+        run: node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,workspace-test,frontend-test --defer-manual-benchmark --defer-release-edit-latency

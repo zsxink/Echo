@@ -470,11 +470,12 @@
 | LE-R20-S03 | 歌单选择器加载归属状态 | 批量模式说明 | 3.3 | React | `pnpm verify:scenario -- LE-R20-S03` |
 | LE-R20-S04 | 歌单选择器加载归属状态 | 无变化不反馈成功 | 3.3 | React | `pnpm verify:scenario -- LE-R20-S04` |
 | LE-R21-S01 | 收藏与批量操作以音乐库持久结果为反馈 | 收藏已保存而投影失败 | 6.1, 8.2 | Core | `pnpm verify:scenario -- LE-R21-S01` |
-| LE-R21-S02 | 收藏与批量操作以音乐库持久结果为反馈 | 正常投影仍在后台时已保存反馈 | 13.4, 13.5 | Desktop/Release | `pnpm verify:scenario -- LE-R21-S02` |
+| LE-R21-S02 | 收藏与批量操作以音乐库持久结果为反馈 | 收藏命令低延迟验收 | 13.4, 13.5 | Desktop/Release | `pnpm verify:scenario -- LE-R21-S02` |
 | LE-R21-S03 | 收藏与批量操作以音乐库持久结果为反馈 | 收藏未保存 | 6.1, 8.2 | Core | `pnpm verify:scenario -- LE-R21-S03` |
 | LE-R21-S04 | 收藏与批量操作以音乐库持久结果为反馈 | 批量收藏部分已保存 | 6.1, 8.2, 13.4 | React | `pnpm verify:scenario -- LE-R21-S04` |
 | LE-R21-S05 | 收藏与批量操作以音乐库持久结果为反馈 | 已保存待投影不被当作失败重试 | 4.2a, 6.1 | Core | `pnpm verify:scenario -- LE-R21-S05` |
 | LE-R21-S06 | 收藏与批量操作以音乐库持久结果为反馈 | 收藏写入返回后界面已是新值 | issue-152 | React | `pnpm verify:scenario -- LE-R21-S06` |
+| LE-R21-S07 | 收藏与批量操作以音乐库持久结果为反馈 | 收藏保存与即时读模型一致 | issue-174 | Desktop | `pnpm verify:scenario -- LE-R21-S07` |
 | LE-R22-S01 | 收藏计数不得因重复操作重复累加 | 同一首歌连续两次喜欢只计一次 | issue-152 | React | `pnpm verify:scenario -- LE-R22-S01` |
 | LE-R22-S02 | 收藏计数不得因重复操作重复累加 | 取消收藏回退一次增量 | issue-152 | React | `pnpm verify:scenario -- LE-R22-S02` |
 | LE-R23-S01 | 歌曲行与歌曲详情中的歌手/专辑链接 | 点击行内歌手链接 | issue-118 | React | `pnpm verify:scenario -- LE-R23-S01` |
@@ -605,6 +606,7 @@
 | PM-R13-S04 | 歌单与成员以音乐库持久结果反馈 | SQLite 落后时连续编辑歌单 | 13.1, 13.2 | Core | `pnpm verify:scenario -- PM-R13-S04` |
 | PM-R13-S05 | 歌单与成员以音乐库持久结果反馈 | 歌单命令低延迟验收 | 13.5 | Desktop/Release | `pnpm verify:scenario -- PM-R13-S05` |
 | PM-R13-S06 | 歌单与成员以音乐库持久结果反馈 | 删除与取消喜欢不复活 | 6.1, 6.4 | Core | `pnpm verify:scenario -- PM-R13-S06` |
+| PM-R13-S07 | 歌单与成员以音乐库持久结果反馈 | 歌单成员增删投影后保持持久结果 | issue-174 | Desktop | `pnpm verify:scenario -- PM-R13-S07` |
 
 ## portable-library-layout
 

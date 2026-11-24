@@ -279,12 +279,9 @@ function assertReleaseGateStep(text) {
   if (!ifLine.includes("runner.os == 'macOS'") && !ifLine.includes('runner.os == "macOS"')) {
     fail("release.yml 'Gate release bundles' step is not gated on runner.os == 'macOS'");
   }
-  const envMatch = /ECHO_MACOS_BUNDLE:\s*(.+)/.exec(block);
-  if (!envMatch || !/target\/release/.test(envMatch[1])) {
-    fail("release.yml 'Gate release bundles' ECHO_MACOS_BUNDLE must point under target/release");
-  }
-  if (!/run:\s*pnpm verify:task -- 1\.10 9\.7\s*$/m.test(block)) {
-    fail("release.yml 'Gate release bundles' step must run `pnpm verify:task -- 1.10 9.7`");
+  const expected = "node scripts/verify/checks/verify-macos-release-dmg.mjs target/release/bundle/dmg apps/desktop/dist/index.html target/release/bundle/macos/echo-libmpv-report.md";
+  if (!lines.slice(gateIndex, nextStep).some((line) => line.trim() === `run: ${expected}`)) {
+    fail(`release.yml 'Gate release bundles' step must inspect the exact released DMG via ${expected}`);
   }
   return { gateIndex, buildIndex };
 }

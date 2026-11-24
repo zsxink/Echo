@@ -9,15 +9,15 @@
 | **A3** | 外部改名/移动 | 51 | `cargo test -p echo-core --all-features relink` |
 | **A4** | 多文件安全导入 | 44 | `cargo test -p echo-core --all-features recover::` |
 | **A5** | 资料库失联/恢复 | 51 | `node scripts/verify/checks/task-5.8.mjs 2>/dev/null \|\| cargo test -p echo-core --all-features trash::` |
-| **A6** | 搜索/排序/收藏 | 170 | `node scripts/verify/checks/task-10.5.mjs` |
-| **A7** | 歌单 CRUD | 54 | `node scripts/verify/checks/task-10.9.mjs` |
+| **A6** | 搜索/排序/收藏 | 171 | `node scripts/verify/checks/task-10.5.mjs` |
+| **A7** | 歌单 CRUD | 55 | `node scripts/verify/checks/task-10.9.mjs` |
 | **A8** | 播放与队列 | 94 | `node scripts/verify/checks/task-11.2.mjs && cargo test -p echo-desktop --lib runtime::player && cargo test -p echo-desktop --lib player::actor::tests::subscribe_snapshots` |
 | **A9** | 歌词与沉浸模式 | 44 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
 | **A10** | 系统双击文件 | 44 | `cargo test -p echo-core --all-features watch:: && node scripts/verify/checks/task-9.2.mjs` |
 | **A11** | 删除与撤销 | 44 | `cargo test -p echo-core --all-features recover::` |
 | **A12** | 关窗与托盘 | 135 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
-| **A13** | 无障碍与窄屏 | 298 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
-| **A14** | 范围保护 | 254 | `node scripts/verify/checks/task-13.8.mjs` |
+| **A13** | 无障碍与窄屏 | 299 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
+| **A14** | 范围保护 | 255 | `node scripts/verify/checks/task-13.8.mjs` |
 
 ## 逐场景归属
 
@@ -694,6 +694,7 @@
 | A13 | `LE-R21-S04` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A13 | `LE-R21-S05` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A13 | `LE-R21-S06` | 收藏与批量操作以音乐库持久结果为反馈 |
+| A13 | `LE-R21-S07` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A13 | `LE-R22-S01` | 收藏计数不得因重复操作重复累加 |
 | A13 | `LE-R22-S02` | 收藏计数不得因重复操作重复累加 |
 | A13 | `DAS-R24-S01` | 封面缩略图必须解码已声明的图片格式 |
@@ -950,6 +951,7 @@
 | A14 | `LE-R21-S04` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A14 | `LE-R21-S05` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A14 | `LE-R21-S06` | 收藏与批量操作以音乐库持久结果为反馈 |
+| A14 | `LE-R21-S07` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A14 | `LE-R22-S01` | 收藏计数不得因重复操作重复累加 |
 | A14 | `LE-R22-S02` | 收藏计数不得因重复操作重复累加 |
 | A14 | `DAS-R24-S01` | 封面缩略图必须解码已声明的图片格式 |
@@ -1292,6 +1294,7 @@
 | A6 | `LE-R21-S04` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A6 | `LE-R21-S05` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A6 | `LE-R21-S06` | 收藏与批量操作以音乐库持久结果为反馈 |
+| A6 | `LE-R21-S07` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A6 | `LE-R22-S01` | 收藏计数不得因重复操作重复累加 |
 | A6 | `LE-R22-S02` | 收藏计数不得因重复操作重复累加 |
 | A6 | `LL-R01-S01` | 单一资料库根目录与本地持久化 |
@@ -1405,6 +1408,7 @@
 | A7 | `PM-R13-S04` | 歌单与成员以音乐库持久结果反馈 |
 | A7 | `PM-R13-S05` | 歌单与成员以音乐库持久结果反馈 |
 | A7 | `PM-R13-S06` | 歌单与成员以音乐库持久结果反馈 |
+| A7 | `PM-R13-S07` | 歌单与成员以音乐库持久结果反馈 |
 | A8 | `DP-R01-S01` | 桌面音频播放 |
 | A8 | `DP-R01-S02` | 桌面音频播放 |
 | A8 | `DP-R01-S03` | 桌面音频播放 |

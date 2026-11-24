@@ -131,6 +131,7 @@ impl SqliteDatabase {
                 let writer = self.writer.clone();
                 let notify = self.projection_notify.lock().unwrap().clone();
                 let worker = Arc::new(LibraryProjectionWorker::spawn(root, move |root| {
+                    let started = std::time::Instant::now();
                     let durable = control.durability().ok_or_else(|| {
                         Error::unavailable(
                             "library projection",
@@ -146,6 +147,11 @@ impl SqliteDatabase {
                         )
                     });
                     if projected.is_ok() {
+                        super::local_library_edit::trace_local_edit_stage(
+                            root,
+                            "background_projection",
+                            started,
+                        );
                         if let Some(notify) = &notify {
                             notify(root);
                         }

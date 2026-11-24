@@ -12,8 +12,7 @@
 const CORE_ALL = "cargo test -p echo-core --all-features";
 const DESK_ALL = "cargo test -p echo-desktop --all-features";
 const APP_ALL = "cargo test -p echo-app --all-features";
-const PERF_ALL =
-  "cargo test -p echo-desktop --all-features --release --test local_edit_performance -- --ignored --nocapture";
+import { RELEASE_LATENCY_ENTRY, RELEASE_LATENCY_RUN } from "./release-edit-latency.mjs";
 const VITEST_ALL = "pnpm --filter @echo/desktop test -- --run --reporter=verbose";
 const GOVERNANCE = "node scripts/verify/ci-governance.mjs";
 const ATTEST = (id) => `node scripts/verify/checks/check-native-attestation.mjs ${id}`;
@@ -166,7 +165,7 @@ export const SCENARIOS = {
 "SFI-R04-S04": { command: CORE_ALL, evidence: [rust("dedup")], },
 "SFI-R05-S01": { command: CORE_ALL, evidence: [rust("import")], },
 "SFI-R05-S02": { command: CORE_ALL, evidence: [rust("import")], },
-"SFI-R05-S03": { command: PERF_ALL, delegatedTo: "perf", evidence: [rust("completed_local_edit_latency")], },
+"SFI-R05-S03": { command: DESK_ALL, delegatedTo: "workspace-test", evidence: [rust("import_is_visible_without_rescan")], },
 "SFI-R05-S04": { command: CORE_ALL, evidence: [rust("application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice")], },
 "SFI-R05-S05": { command: CORE_ALL, evidence: [rust("sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent")], },
 "SFI-R05-S06": { command: CORE_ALL, evidence: [rust("application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts")], },
@@ -472,11 +471,12 @@ export const SCENARIOS = {
 "LE-R20-S03": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/AddToPlaylistDialog.test.tsx", "runs a multi-song add sequentially and keeps partial failures visible")], },
 "LE-R20-S04": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/AddToPlaylistDialog.test.tsx", "closes unchanged single-song selection without a mutation")], },
 "LE-R21-S01": { command: CORE_ALL, evidence: [rust("library_durability_favorite_failure_is_saved_and_later_false_catches_up")], },
-"LE-R21-S02": { command: PERF_ALL, delegatedTo: "perf", evidence: [rust("completed_local_edit_latency")], },
+"LE-R21-S02": { command: RELEASE_LATENCY_RUN, delegatedTo: "perf", evidence: [node(RELEASE_LATENCY_ENTRY)], },
 "LE-R21-S03": { command: CORE_ALL, evidence: [rust("library_durability_refused_commit_leaves_every_wired_entrypoint_untouched")], },
 "LE-R21-S04": { command: VITEST_ALL, evidence: [vitest("src/features/library/savedPendingFeedback.test.tsx", "reports each batch item's own outcome and retries only the saved ones")], },
 "LE-R21-S05": { command: CORE_ALL, evidence: [rust("library_durability_retry_catches_up_all_saved_operations_without_new_commits")], },
 "LE-R21-S06": { command: VITEST_ALL, evidence: [vitest("src/features/library/libraryNavCounts.test.tsx", "keeps the heart, the favorites view and the count on one click")], },
+"LE-R21-S07": { command: DESK_ALL, evidence: [rust("favorite_success_has_a_durable_after_image_and_visible_new_value")], },
 "LE-R22-S01": { command: VITEST_ALL, evidence: [vitest("src/features/library/favoriteMutation.test.ts", "counts a repeated like once even when the row is still the pre-write value")], },
 "LE-R22-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/favoriteMutation.test.ts", "counts a repeated unlike once even when the row is still the pre-write value")], },
 "LE-R23-S01": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongRow.test.tsx", "navigates to the artist without starting playback")], },
@@ -539,8 +539,9 @@ export const SCENARIOS = {
 "PM-R13-S02": { command: CORE_ALL, evidence: [rust("library_durability_member_append_is_saved_before_failed_projection")], },
 "PM-R13-S03": { command: CORE_ALL, evidence: [rust("library_durability_playlist_rename_saves_before_failed_projection")], },
 "PM-R13-S04": { command: CORE_ALL, evidence: [rust("consecutive_multi_song_add_keeps_every_membership")], },
-"PM-R13-S05": { command: PERF_ALL, delegatedTo: "perf", evidence: [rust("completed_local_edit_latency")], },
+"PM-R13-S05": { command: RELEASE_LATENCY_RUN, delegatedTo: "perf", evidence: [node(RELEASE_LATENCY_ENTRY)], },
 "PM-R13-S06": { command: CORE_ALL, evidence: [rust("final_tombstone_is_never_recovered_but_history_can_be_dismissed")], },
+"PM-R13-S07": { command: DESK_ALL, evidence: [rust("playlist_membership_is_durable_and_projected")], },
   // ci-release-pipeline (CRP)
   // release.yml executes these behaviors end-to-end (per-platform `pnpm echo
   // release`, artifact/SHA256SUMS assertions, upload/download, gh-release); the

@@ -150,15 +150,15 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
     },
     {
       id: "ci-structure/perf-step-dropped",
-      guard: "the performance-scenarios step disappearing from task-gates core, leaving three delegated scenarios with no execution location",
+      guard: "removing the actual command from the scheduled/manual Release latency carrier",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: ci\.yml job 'task-gates' is missing step 'Run performance scenarios'/,
+      expect: /FAIL 1\.5: release-edit-latency\.yml must run .+ unconditionally/,
       baseline: true,
       inject() {
         replaceIn(
-          join(ROOT, ".github", "workflows", "ci.yml"),
-          "      - name: Run performance scenarios\n        if: github.event_name != 'pull_request' || steps.perf-paths.outcome != 'success' || steps.perf-paths.outputs.skip != 'true'\n        run: pnpm verify:perf\n",
-          "",
+          join(ROOT, ".github", "workflows", "release-edit-latency.yml"),
+          "        run: node scripts/verify/run-release-edit-latency.mjs",
+          "        run: echo node scripts/verify/run-release-edit-latency.mjs",
         );
         return {};
       },
@@ -180,16 +180,41 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
     },
     {
       id: "ci-structure/perf-step-narrowed",
-      guard: "the performance-scenarios step being gated off pull requests, so the PR tier loses the perf gate",
+      guard: "reintroducing the heavy measurement on default CI while leaving the separate carrier intact",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: task-gates performance step must run unless a successful PR classifier explicitly skips/,
+      expect: /FAIL 1\.5: default CI job 'task-gates' must not run Release edit latency/,
       baseline: true,
       inject() {
+        const tasks = "        run: pnpm verify:task -- ${{ matrix.tasks }}";
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "      - name: Run performance scenarios\n        if: github.event_name != 'pull_request' || steps.perf-paths.outcome != 'success' || steps.perf-paths.outputs.skip != 'true'\n        run: pnpm verify:perf",
-          "      - name: Run performance scenarios\n        if: github.event_name != 'pull_request'\n        run: pnpm verify:perf",
+          tasks,
+          tasks + "\n      - name: Run performance scenarios\n        run: pnpm verify:perf",
         );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/perf-skip-small-correctness",
+      guard: "retaining a small test symbol while silently ignoring it in the workspace suite",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: default workspace correctness test 'import_is_visible_without_rescan' must remain unconditional and nonignored/,
+      baseline: true,
+      inject() {
+        replaceIn(join(ROOT, "crates", "echo-desktop", "tests", "local_edit_correctness.rs"),
+          "#[test]\nfn import_is_visible_without_rescan()", "#[test]\n#[ignore]\nfn import_is_visible_without_rescan()");
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/perf-report-false-pass",
+      guard: "marking deferred Release timings as passed by a nonexistent daily performance job",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: release-gate run must be/,
+      baseline: true,
+      inject() {
+        replaceIn(join(ROOT, ".github", "workflows", "ci.yml"),
+          "--defer-manual-benchmark --defer-release-edit-latency", "--defer-manual-benchmark");
         return {};
       },
     },
@@ -528,14 +553,40 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       id: "ci-structure/embedded-step-missing",
       guard: "the macOS platform Gate losing the embedded-frontend freshness check, leaving the `embedded` section with no execution location",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
-      expect: /FAIL 1\.5: ci\.yml job 'macos-platform-gate' is missing step 'Verify embedded frontend freshness'/,
+      expect: /FAIL 1\.5: macOS full package steps must run unless/,
       baseline: true,
       inject() {
         replaceIn(
           join(ROOT, ".github", "workflows", "ci.yml"),
-          "      - name: Verify embedded frontend freshness\n        run: node scripts/verify/checks/check-embedded-frontend.mjs --bin target/aarch64-apple-darwin/release/bundle/macos/Echo.app/Contents/MacOS/Echo\n\n",
+          "      - name: Verify embedded frontend freshness\n        if: github.event_name != 'pull_request' || steps.macos-package-paths.outcome != 'success' || steps.macos-package-paths.outputs.skip != 'true'\n        run: node scripts/verify/checks/check-embedded-frontend.mjs --strict --bin target/aarch64-apple-darwin/release/bundle/macos/Echo.app/Contents/MacOS/Echo\n\n",
           "",
         );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/macos-package-no-main",
+      guard: "accidentally make a full macOS package PR-only or make main skip",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: macOS full package steps must run unless/,
+      baseline: true,
+      inject() {
+        replaceIn(join(ROOT, ".github", "workflows", "ci.yml"),
+          "      - name: Build and verify macOS platform Gate\n        if: github.event_name != 'pull_request' || steps.macos-package-paths.outcome != 'success' || steps.macos-package-paths.outputs.skip != 'true'",
+          "      - name: Build and verify macOS platform Gate\n        if: github.event_name == 'pull_request'");
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/macos-package-release-uses-staged-app",
+      guard: "verify a staged sibling instead of the distributed DMG",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: macOS release must validate the exact DMG/,
+      baseline: true,
+      inject() {
+        replaceIn(join(ROOT, ".github", "workflows", "release.yml"),
+          "run: node scripts/verify/checks/verify-macos-release-dmg.mjs target/release/bundle/dmg apps/desktop/dist/index.html target/release/bundle/macos/echo-libmpv-report.md",
+          "run: pnpm verify:task -- 1.10 9.7");
         return {};
       },
     },

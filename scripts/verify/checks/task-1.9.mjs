@@ -4,22 +4,13 @@
 // cold/hot single-instance delivery and explicit exit using only Gate-only
 // environment variables (no frontend privilege is added).
 
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { isPackagedDylibReference } from "../../release/thin-macos-libmpv.mjs";
+import { inspectMacApp } from "./inspect-macos-app.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
-const APP = resolve(ROOT, "apps", "desktop");
-const ARM_BUNDLE = resolve(ROOT, "target", "aarch64-apple-darwin", "release", "bundle", "macos", "Echo.app");
-const BUNDLE = ARM_BUNDLE;
-const MACOS = join(BUNDLE, "Contents", "MacOS");
-const FRAMEWORKS = join(BUNDLE, "Contents", "Frameworks");
-const EXECUTABLE = join(MACOS, "echo");
-const FIXTURE = resolve(ROOT, "fixtures", "audio", "tone-short.mp3");
-const REQUIRED_EXTENSIONS = ["mp3", "flac", "m4a", "ogg", "opus", "wav", "ape"];
+const BUNDLE = resolve(ROOT, "target", "aarch64-apple-darwin", "release", "bundle", "macos", "Echo.app");
 
 function fail(message) {
   process.stderr.write(`FAIL 1.9: ${message}\n`);
@@ -34,14 +25,6 @@ function run(command, args, options = {}) {
   return `${result.stdout || ""}${result.stderr || ""}`;
 }
 
-function wait(milliseconds) {
-  return new Promise((resolveWait) => setTimeout(resolveWait, milliseconds));
-}
-
-function once(child, event) {
-  return new Promise((resolveEvent) => child.once(event, resolveEvent));
-}
-
 if (process.platform !== "darwin") {
   fail("the current Stage 1 Gate is intentionally macOS-local; run it on macOS");
 }
@@ -50,95 +33,10 @@ run("rustup", ["target", "add", "aarch64-apple-darwin"]);
 run("pnpm", ["--filter", "@echo/desktop", "tauri", "build", "--bundles", "app", "--target", "aarch64-apple-darwin"]);
 run("codesign", ["--force", "--deep", "--sign", "-", BUNDLE]);
 
-if (!existsSync(EXECUTABLE)) fail(`missing bundled executable: ${EXECUTABLE}`);
-if (!existsSync(FIXTURE)) fail(`missing guaranteed-format fixture: ${FIXTURE}`);
-
-const plist = run("plutil", ["-p", join(BUNDLE, "Contents", "Info.plist")]);
-for (const ext of REQUIRED_EXTENSIONS) {
-  if (!plist.includes(`"${ext}"`)) fail(`Info.plist is missing the .${ext} file association`);
-}
-
-const manifest = JSON.parse(
-  readFileSync(resolve(ROOT, "apps", "desktop", "src-tauri", "vendor", "libmpv", "macos", "manifest.json"), "utf8"),
-);
-for (const filename of Object.keys(manifest.files)) {
-  const framework = join(FRAMEWORKS, filename);
-  if (!existsSync(framework)) fail(`missing bundled framework: ${framework}`);
-  const architectures = run("lipo", ["-info", framework]);
-  for (const arch of manifest.architectures) {
-    if (!architectures.includes(arch)) fail(`${filename} is missing required architecture ${arch}`);
-  }
-}
-
-const rpaths = run("otool", ["-l", EXECUTABLE]);
-if (!rpaths.includes("@executable_path/../Frameworks")) {
-  fail("application executable lacks @executable_path/../Frameworks rpath");
-}
-
-const executableArchitectures = run("lipo", ["-info", EXECUTABLE]);
-for (const architecture of manifest.architectures) {
-  if (!executableArchitectures.includes(architecture)) {
-    fail(`Echo executable is missing required architecture ${architecture}`);
-  }
-}
-
-const gate = mkdtempSync(join(tmpdir(), "echo-macos-gate-"));
-const openedLog = join(gate, "opened.log");
-const environment = {
-  ...process.env,
-  ECHO_GATE_OPEN_LOG: openedLog,
-  ECHO_GATE_QUIT_AFTER_MS: "15000",
-};
-const first = spawn(EXECUTABLE, [], { cwd: MACOS, env: environment, stdio: "ignore" });
-
 try {
-  // Tauri's WebView and menu-bar registration can take a few seconds on a
-  // cold machine; don't race the single-instance service startup.
-  await wait(4000);
-  if (first.exitCode !== null) fail(`cold start exited early with ${first.exitCode}`);
-
-  const hot = spawnSync(EXECUTABLE, [FIXTURE], { cwd: MACOS, env: environment, encoding: "utf8", timeout: 8000 });
-  if (hot.status !== 0) {
-    fail(`hot start did not hand off to the running instance (${hot.status})\n${hot.stdout || ""}${hot.stderr || ""}`);
-  }
-
-  // Delivery is asynchronous on the first instance's side: the path is handed
-  // to the running instance immediately, but the shell only writes the log
-  // once the frontend has registered its `app://file-open-request` listener
-  // (the path waits in the startup FIFO until then). On a slow or headless
-  // runner the WebView can take several seconds to load, so poll for the log
-  // rather than guessing a fixed delay.
-  const deadline = Date.now() + 10000;
-  let opened = "";
-  for (;;) {
-    if (existsSync(openedLog)) opened = readFileSync(openedLog, "utf8");
-    if (opened.includes(basename(FIXTURE))) break;
-    if (Date.now() > deadline) {
-      fail("hot single-instance launch did not deliver the opened audio path to the first instance");
-    }
-    await wait(200);
-  }
-
-  const exitCode = await once(first, "close");
-  if (exitCode !== 0) fail(`explicit Gate exit returned ${exitCode}`);
-} finally {
-  if (first.exitCode === null) first.kill("SIGTERM");
-  rmSync(gate, { recursive: true, force: true });
-}
-
-const libmpv = join(FRAMEWORKS, "libmpv.dylib");
-const runtimeLinks = run("otool", ["-L", libmpv]);
-// The arm64 slice resolves FFmpeg through @loader_path; older slices used
-// @rpath. Both point into Contents/Frameworks, so accept either placeholder
-// but reject absolute or bare names that escape the bundle.
-const ffmpegDependency = runtimeLinks
-  .split("\n")
-  .map((line) => line.trim().split(" (")[0])
-  .find((reference) => reference.endsWith("/libavcodec.dylib"));
-if (!ffmpegDependency || !isPackagedDylibReference(ffmpegDependency)) {
-  fail(
-    `bundled libmpv does not resolve FFmpeg through a packaged reference (found ${ffmpegDependency || "none"})`,
-  );
+  await inspectMacApp(BUNDLE);
+} catch (error) {
+  fail(error.message);
 }
 
 process.stdout.write("ok 1.9: macOS Tauri app bundles libmpv, file associations, tray and single-instance Gate pass\n");

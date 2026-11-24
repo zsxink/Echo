@@ -304,27 +304,14 @@ assert(
     && reusedRustScenarios.stderr.includes("rust-ignored-test"),
   "only explicitly delegated scenarios are skipped; undeclared Rust scenarios still execute",
 );
-const multiGateScenarios = runScenarioRunner(
+const invalidPerfDelegation = runScenarioRunner(
   scenarioFixture,
   ["--delegated=governance,perf", "rust-reused-test", "rust-perf-test"],
   scenarioEnv,
 );
 assert(
-  multiGateScenarios.status === 0
-    && multiGateScenarios.stdout.includes("covered by the governance job")
-    && multiGateScenarios.stdout.includes("covered by the perf job"),
-  "comma-separated delegated gates cover both scenarios",
-);
-const singlePerfGate = runScenarioRunner(
-  scenarioFixture,
-  ["--delegated=perf", "rust-reused-test", "rust-perf-test"],
-  scenarioEnv,
-);
-assert(
-  singlePerfGate.status !== 0
-    && singlePerfGate.stdout.includes("covered by the perf job")
-    && singlePerfGate.stderr.includes("rust-reused-test"),
-  "a single delegated gate covers only its declared scenarios",
+  invalidPerfDelegation.status !== 0 && /perf has no default CI carrier/.test(invalidPerfDelegation.stderr),
+  "legacy perf delegation cannot claim default CI timing",
 );
 
 // Lockfiles must be unchanged after a run.
@@ -335,18 +322,27 @@ const skipManifest = JSON.parse(readFileSync(scenarioFixture, "utf8"));
 skipManifest.scenarios = skipManifest.scenarios.filter(
   (scenario) => ["LE-R07-S01", "rust-reused-test", "one-test"].includes(scenario.id),
 );
+const latencyTemplate = JSON.parse(readFileSync(scenarioFixture, "utf8")).scenarios
+  .find((scenario) => scenario.id === "rust-perf-test");
+skipManifest.scenarios.push(
+  { ...latencyTemplate, id: "LE-R21-S02", title: "favorite latency" },
+  { ...latencyTemplate, id: "PM-R13-S05", title: "playlist latency" },
+);
 writeFileSync(skipFixture, JSON.stringify(skipManifest));
 const deferredBenchmark = runScenarioRunner(
   skipFixture,
-  ["--automated", "--delegated=governance", "--defer-manual-benchmark"],
+  ["--automated", "--delegated=governance", "--defer-manual-benchmark", "--defer-release-edit-latency"],
   scenarioEnv,
 );
 assert(
   deferredBenchmark.status === 0
     && /^deferred: scenario LE-R07-S01 .+not run/m.test(deferredBenchmark.stdout)
     && !/^ok: scenario LE-R07-S01 /m.test(deferredBenchmark.stdout)
-    && /scenario batches: 1 commands for 3 scenarios \(1 delegated, 1 manual not run\)/.test(deferredBenchmark.stdout),
-  "manual benchmark deferral is separate from pass evidence and other delegations",
+    && /^deferred: scenario LE-R21-S02 .+not run/m.test(deferredBenchmark.stdout)
+    && /^deferred: scenario PM-R13-S05 .+not run/m.test(deferredBenchmark.stdout)
+    && !/^ok: scenario (LE-R21-S02|PM-R13-S05) /m.test(deferredBenchmark.stdout)
+    && /scenario batches: 1 commands for 5 scenarios \(1 delegated, 3 deferred, not run\)/.test(deferredBenchmark.stdout),
+  "both latency carriers are deferred separately from pass evidence and other delegations",
 );
 const explicitBenchmark = runScenarioRunner(scenarioFixture, ["LE-R07-S01"], scenarioEnv);
 assert(
@@ -363,6 +359,14 @@ for (const mode of [["LE-R07-S01"], ["--all"], ["--automated", "LE-R07-S01"]]) {
     `manual deferral refuses mixed or explicit local invocation: ${mode.join(" ")}`,
   );
 }
+const invalidExplicitLatency = runScenarioRunner(skipFixture, ["LE-R21-S02", "--defer-release-edit-latency"], scenarioEnv);
+assert(invalidExplicitLatency.status !== 0 && /requires --automated/.test(invalidExplicitLatency.stderr),
+  "explicit latency invocation cannot be deferred");
+const explicitLatency = runScenarioRunner(skipFixture, ["LE-R21-S02", "PM-R13-S05"], scenarioEnv);
+assert(explicitLatency.status === 0 && /^ok: scenario LE-R21-S02 /m.test(explicitLatency.stdout)
+    && /^ok: scenario PM-R13-S05 /m.test(explicitLatency.stdout)
+    && /scenario batches: 1 commands for 2 scenarios/.test(explicitLatency.stdout),
+  "both explicit latency scenarios share one actual benchmark execution");
 const fullFixture = resolve(dir, "scenario-local.json");
 const fullManifest = {
   ...skipManifest,

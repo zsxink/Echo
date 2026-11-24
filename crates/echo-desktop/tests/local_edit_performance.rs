@@ -13,8 +13,10 @@
 //! contains synthetic metadata originals, not decoded audio: neither measured
 //! command reads audio. The measured interval is the complete production
 //! `AppServices` command, including directory commit and any foreground SQLite
-//! catch-up needed before planning. The background SQLite projection is flushed
-//! after both measured loops, outside the interaction latency interval.
+//! catch-up needed before planning. Each edit waits outside the command interval
+//! for its projection to drain where applicable. Directory commit and SQLite
+//! replay/apply are measured directly. Favorite projects synchronously; for
+//! playlists the additional post-ack wait includes debounce.
 //! `ECHO_PERF_SERVE=1` serves the same fixture through loopback HTTP for a
 //! React integration measurement; the production IPC implementation is not
 //! changed. The server prints its address and stops after `GET /shutdown`.
@@ -47,6 +49,10 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+#[path = "local_edit_performance/phase_timing.rs"]
+mod phase_timing;
+use phase_timing::{CommandSamples, PhaseTiming};
 
 struct Fixture {
     _directory: Option<tempfile::TempDir>,
@@ -570,64 +576,48 @@ fn completed_local_edit_latency() {
         serve(&f, history);
         return;
     }
-    let mut favorites = Vec::with_capacity(samples);
+    f.database
+        .flush_library_projection(f.root, Duration::from_secs(30))
+        .expect("history projection catches up before timed samples");
+    let timing = PhaseTiming::install(f.root);
+    let mut favorites = CommandSamples::foreground();
     for index in 0..samples {
         let song_index = (index * 37) % song_count;
         values[song_index] = !values[song_index];
-        let start = Instant::now();
-        let song = f
-            .app
-            .set_favorite(f.songs[song_index], values[song_index])
-            .expect("completed favorite command");
-        favorites.push(start.elapsed());
+        let song = timing.measure(&f, &mut favorites, || {
+            f.app
+                .set_favorite(f.songs[song_index], values[song_index])
+                .expect("completed favorite command")
+        });
         assert_eq!(song.favorite, values[song_index]);
     }
-    let mut playlists = Vec::with_capacity(samples);
+    let mut playlists = CommandSamples::default();
     let mut last_playlist = None;
     for index in 0..samples {
-        let start = Instant::now();
-        let id = f
-            .app
-            .create_playlist(f.root, &format!("{run_id}-measured-{index:05}"))
-            .expect("completed playlist command");
-        playlists.push(start.elapsed());
+        let name = format!("{run_id}-measured-{index:05}");
+        let id = timing.measure(&f, &mut playlists, || {
+            f.app
+                .create_playlist(f.root, &name)
+                .expect("completed playlist command")
+        });
         last_playlist = Some(id.parse::<PlaylistId>().expect("playlist identity"));
     }
-    // The playlist is a prerequisite fixture for the membership benchmark. Let
-    // its independent read-model projection settle before measuring members.
-    f.database
-        .flush_library_projection(f.root, Duration::from_secs(30))
-        .expect("background playlist projection catches up");
     let member_playlist = last_playlist.expect("playlist for membership measurements");
     let member_song = *f.songs.last().expect("at least one fixture song");
-    let mut additions = Vec::with_capacity(samples);
-    let mut removals = Vec::with_capacity(samples);
+    let mut additions = CommandSamples::default();
+    let mut removals = CommandSamples::default();
     for _ in 0..samples {
-        // Each sample represents a human-paced command whose preceding
-        // projection has had time to finish. A separate stress run can measure
-        // immediately queued edits, which intentionally pay the prior-log
-        // catch-up barrier in the next writer.
-        f.database
-            .flush_library_projection(f.root, Duration::from_secs(30))
-            .expect("projection settles before add sample");
-        let start = Instant::now();
-        f.app
-            .add_to_playlists(member_song, &[member_playlist])
-            .expect("completed add-to-playlist command");
-        additions.push(start.elapsed());
-
-        f.database
-            .flush_library_projection(f.root, Duration::from_secs(30))
-            .expect("projection settles before remove sample");
-        let start = Instant::now();
-        f.app
-            .remove_playlist_song(member_playlist, member_song)
-            .expect("completed remove-from-playlist command");
-        removals.push(start.elapsed());
+        timing.measure(&f, &mut additions, || {
+            f.app
+                .add_to_playlists(member_song, &[member_playlist])
+                .expect("completed add-to-playlist command");
+        });
+        timing.measure(&f, &mut removals, || {
+            f.app
+                .remove_playlist_song(member_playlist, member_song)
+                .expect("completed remove-from-playlist command");
+        });
     }
-    f.database
-        .flush_library_projection(f.root, Duration::from_secs(30))
-        .expect("membership projection catches up before import samples");
     let import_inputs = tempfile::tempdir().expect("private import benchmark inputs");
     let audio_fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/audio");
     let mut imports = Vec::new();
@@ -724,22 +714,24 @@ fn completed_local_edit_latency() {
     assert!(PlaylistRepository::by_id(f.database.as_ref(), playlist)
         .unwrap()
         .is_some());
-    let favorite_distribution = distribution(&favorites);
-    let playlist_distribution = distribution(&playlists);
     let result = serde_json::json!({
         "build": if cfg!(debug_assertions) { "debug" } else { "release" },
         "songs": song_count,
         "initial_operations": initial_operations,
         "history_operations": history,
-        "favorite": favorite_distribution,
-        "create_playlist": playlist_distribution,
-        "add_to_playlist": distribution(&additions),
-        "remove_from_playlist": distribution(&removals),
+        "favorite": favorites.report(),
+        "create_playlist": playlists.report(),
+        "add_to_playlist": additions.report(),
+        "remove_from_playlist": removals.report(),
         "import_small_audio_fixtures": imports,
     });
     println!("ECHO_LOCAL_EDIT_PERF {result}");
     if let Ok(limit) = std::env::var("ECHO_PERF_MAX_P95_MS") {
         let limit: f64 = limit.parse().expect("numeric P95 limit");
+        assert!(
+            limit.is_finite() && limit > 0.0,
+            "positive finite P95 limit"
+        );
         for command in [
             "favorite",
             "create_playlist",
