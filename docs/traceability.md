@@ -5,7 +5,7 @@
 - 本表逐项覆盖 specs 中的全部 Scenario；稳定 ID 不得复用，标题调整时保留原 ID。
 - 场景 ID 由 spec 标题派生；每行必须给出可执行验收命令，且该场景在 `scripts/verify/scenario-commands.mjs` 的 `SCENARIOS` 中声明非空 `evidence`（命令可执行 + 证据可观测）。人工举证由 `docs/native-attestation-playbook.md` 与 `artifacts/native-attestations/<ID>.log` 承担，字段与判定见 `check-native-attestation.mjs`。
 - 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表与场景清单的 ID 集合完全相等，并逐项执行；命令按域聚合后逐条断言 evidence 目标在输出中被观测到，缺失、重复、无命令、无证据、证据未观测或失败均返回非零。
-- 当前基线：153 个 Requirement，630 个 Scenario（#162 Rust 全量复核新增 9 个 Scenario（LL-R01-S06、LL-R02-S08、LL-R03-S06/S07、LL-R05-S03、LL-R07-S05、LL-R08-S04、LD-R06-S03、DP-R01-S04）；#118 歌曲行歌手/专辑链接新增 1 个 Requirement / 6 个 Scenario，壳层导航目标新增 1 个 Requirement / 4 个 Scenario，播放栏与沉浸式播放器各新增 1 个 Scenario；#152 收藏同步投影新增 1 个 Requirement / 6 个 Scenario；#117 窗口文件投放新增 3 个 Requirement / 23 个 Scenario；0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16、封面载荷受控与预览回收 9、内嵌封面解码与 MIME 约束 5、封面原件内容真实性校验 8、封面选图预览受控缩略图 5）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
+- 当前基线：156 个 Requirement，640 个 Scenario（#168 沉浸式播放器展开后歌词定位新增 1 个 Requirement / 5 个 Scenario；#85 沉浸式播放器显隐与歌词专注过渡新增 1 个 Requirement / 5 个 Scenario；#162 Rust 全量复核新增 9 个 Scenario（LL-R01-S06、LL-R02-S08、LL-R03-S06/S07、LL-R05-S03、LL-R07-S05、LL-R08-S04、LD-R06-S03、DP-R01-S04）；#118 歌曲行歌手/专辑链接新增 1 个 Requirement / 6 个 Scenario，壳层导航目标新增 1 个 Requirement / 4 个 Scenario，播放栏与沉浸式播放器各新增 1 个 Scenario；#152 收藏同步投影新增 1 个 Requirement / 6 个 Scenario；#117 窗口文件投放新增 3 个 Requirement / 23 个 Scenario；0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16、封面载荷受控与预览回收 9、内嵌封面解码与 MIME 约束 5、封面原件内容真实性校验 8、封面选图预览受控缩略图 5）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
 
 ## ci-release-pipeline
 
@@ -297,6 +297,16 @@
 | IL-R10-S02 | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 | 信息块高度事后变化时重算偏移 | fix-lyrics-start-offset-remeasure 1.1, 2.1 | React/E2E | `pnpm verify:scenario -- IL-R10-S02` |
 | IL-R10-S03 | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 | 窗口缩放后重算偏移 | fix-lyrics-start-offset-remeasure 1.1, 2.1 | React/E2E | `pnpm verify:scenario -- IL-R10-S03` |
 | IL-R10-S04 | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 | 旧偏移尚未重新布局时重算偏移 | fix-lyrics-offset-stale-measurement 1.1, 1.3 | React/E2E | `pnpm verify:scenario -- IL-R10-S04` |
+| IL-R11-S01 | 沉浸式播放器显隐与歌词专注切换必须连续且可降级 | 展开时从当前播放区连续入场 | issue-85 | React/E2E | `pnpm verify:scenario -- IL-R11-S01` |
+| IL-R11-S02 | 沉浸式播放器显隐与歌词专注切换必须连续且可降级 | 收起时延迟卸载并恢复触发点 | issue-85 | React/E2E | `pnpm verify:scenario -- IL-R11-S02` |
+| IL-R11-S03 | 沉浸式播放器显隐与歌词专注切换必须连续且可降级 | 歌词专注阅读连续切换 | issue-85 | React/E2E | `pnpm verify:scenario -- IL-R11-S03` |
+| IL-R11-S04 | 沉浸式播放器显隐与歌词专注切换必须连续且可降级 | 减少动画下即时显隐 | issue-85 | React/E2E | `pnpm verify:scenario -- IL-R11-S04` |
+| IL-R11-S05 | 沉浸式播放器显隐与歌词专注切换必须连续且可降级 | 过渡中切歌或反向操作 | issue-85 | React/E2E | `pnpm verify:scenario -- IL-R11-S05` |
+| IL-R12-S01 | 沉浸式播放器展开后的歌词定位必须基于稳定几何 | 宽屏展开后定位当前行 | issue-168 | React/E2E | `pnpm verify:scenario -- IL-R12-S01` |
+| IL-R12-S02 | 沉浸式播放器展开后的歌词定位必须基于稳定几何 | 暂停状态下展开同样定位 | issue-168 | React/E2E | `pnpm verify:scenario -- IL-R12-S02` |
+| IL-R12-S03 | 沉浸式播放器展开后的歌词定位必须基于稳定几何 | 入场期间歌词到达 | issue-168 | React/E2E | `pnpm verify:scenario -- IL-R12-S03` |
+| IL-R12-S04 | 沉浸式播放器展开后的歌词定位必须基于稳定几何 | 切歌、重新展开与退出专注后重新对齐 | issue-168 | React/E2E | `pnpm verify:scenario -- IL-R12-S04` |
+| IL-R12-S05 | 沉浸式播放器展开后的歌词定位必须基于稳定几何 | 减少动画下立即定位 | issue-168 | React/E2E | `pnpm verify:scenario -- IL-R12-S05` |
 
 ## library-durability
 

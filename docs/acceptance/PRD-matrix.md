@@ -12,11 +12,11 @@
 | **A6** | 搜索/排序/收藏 | 170 | `node scripts/verify/checks/task-10.5.mjs` |
 | **A7** | 歌单 CRUD | 54 | `node scripts/verify/checks/task-10.9.mjs` |
 | **A8** | 播放与队列 | 89 | `node scripts/verify/checks/task-11.2.mjs && cargo test -p echo-desktop --lib runtime::player && cargo test -p echo-desktop --lib player::actor::tests::subscribe_snapshots` |
-| **A9** | 歌词与沉浸模式 | 34 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
+| **A9** | 歌词与沉浸模式 | 44 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
 | **A10** | 系统双击文件 | 44 | `cargo test -p echo-core --all-features watch:: && node scripts/verify/checks/task-9.2.mjs` |
 | **A11** | 删除与撤销 | 44 | `cargo test -p echo-core --all-features recover::` |
 | **A12** | 关窗与托盘 | 135 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
-| **A13** | 无障碍与窄屏 | 288 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
+| **A13** | 无障碍与窄屏 | 298 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
 | **A14** | 范围保护 | 254 | `node scripts/verify/checks/task-13.8.mjs` |
 
 ## 逐场景归属
@@ -573,6 +573,16 @@
 | A13 | `IL-R10-S02` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
 | A13 | `IL-R10-S03` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
 | A13 | `IL-R10-S04` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
+| A13 | `IL-R11-S01` | 沉浸式播放器显隐与歌词专注切换必须连续且可降级 |
+| A13 | `IL-R11-S02` | 沉浸式播放器显隐与歌词专注切换必须连续且可降级 |
+| A13 | `IL-R11-S03` | 沉浸式播放器显隐与歌词专注切换必须连续且可降级 |
+| A13 | `IL-R11-S04` | 沉浸式播放器显隐与歌词专注切换必须连续且可降级 |
+| A13 | `IL-R11-S05` | 沉浸式播放器显隐与歌词专注切换必须连续且可降级 |
+| A13 | `IL-R12-S01` | 沉浸式播放器展开后的歌词定位必须基于稳定几何 |
+| A13 | `IL-R12-S02` | 沉浸式播放器展开后的歌词定位必须基于稳定几何 |
+| A13 | `IL-R12-S03` | 沉浸式播放器展开后的歌词定位必须基于稳定几何 |
+| A13 | `IL-R12-S04` | 沉浸式播放器展开后的歌词定位必须基于稳定几何 |
+| A13 | `IL-R12-S05` | 沉浸式播放器展开后的歌词定位必须基于稳定几何 |
 | A13 | `LE-R01-S01` | 资料库视图 |
 | A13 | `LE-R01-S02` | 资料库视图 |
 | A13 | `LE-R01-S03` | 资料库视图 |
@@ -1516,5 +1526,15 @@
 | A9 | `IL-R10-S02` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
 | A9 | `IL-R10-S03` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
 | A9 | `IL-R10-S04` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
+| A9 | `IL-R11-S01` | 沉浸式播放器显隐与歌词专注切换必须连续且可降级 |
+| A9 | `IL-R11-S02` | 沉浸式播放器显隐与歌词专注切换必须连续且可降级 |
+| A9 | `IL-R11-S03` | 沉浸式播放器显隐与歌词专注切换必须连续且可降级 |
+| A9 | `IL-R11-S04` | 沉浸式播放器显隐与歌词专注切换必须连续且可降级 |
+| A9 | `IL-R11-S05` | 沉浸式播放器显隐与歌词专注切换必须连续且可降级 |
+| A9 | `IL-R12-S01` | 沉浸式播放器展开后的歌词定位必须基于稳定几何 |
+| A9 | `IL-R12-S02` | 沉浸式播放器展开后的歌词定位必须基于稳定几何 |
+| A9 | `IL-R12-S03` | 沉浸式播放器展开后的歌词定位必须基于稳定几何 |
+| A9 | `IL-R12-S04` | 沉浸式播放器展开后的歌词定位必须基于稳定几何 |
+| A9 | `IL-R12-S05` | 沉浸式播放器展开后的歌词定位必须基于稳定几何 |
 | A9 | `IL-R01-S04` | 常驻播放栏必须始终提供当前播放与基础控制 |
 | A9 | `IL-R03-S04` | 沉浸式播放器必须展示封面、元信息并保持基础控制 |

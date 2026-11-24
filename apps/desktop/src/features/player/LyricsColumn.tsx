@@ -1,9 +1,10 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 
 import { bridge } from "../../bridge";
 import type { LyricsLine, SongLyrics } from "./useLyrics";
 import { isWideLayout } from "./useLyricsStartOffset";
+import { IMMERSIVE_OPEN_MS, prefersReducedMotion } from "./useImmersiveTransition";
 
 /**
  * The lyrics area of the immersive surface — the prototype's `.lyrics` block:
@@ -34,21 +35,70 @@ export function LyricsColumn(props: {
   focusOpen: boolean;
   autoScroll: boolean;
   currentPosition: number;
+  /**
+   * False while the immersive surface is opening or closing. `getBoundingClientRect()`
+   * then reports the entry/exit `transform`, not final layout — the cover is
+   * still scaled down towards the 常驻播放栏, so aligning against it would put
+   * the current line near the player bar (issue #168). The alignment waits for
+   * the transition to finish instead of writing a scroll position it would have
+   * to correct later.
+   */
+  geometrySettled: boolean;
   onResume: () => void;
   onToggleFocus: () => void;
 }) {
-  const { lyrics, focusOpen, autoScroll, currentPosition, onResume, onToggleFocus } = props;
+  const {
+    lyrics,
+    focusOpen,
+    autoScroll,
+    currentPosition,
+    geometrySettled,
+    onResume,
+    onToggleFocus,
+  } = props;
   const trackRef = useRef<HTMLDivElement>(null);
+
+  // 歌词专注切换 is a reflow of the same grid; the one-shot settle hides that
+  // single-frame change behind a short opacity/4px move. It is added a frame
+  // after the layout switch so a rapid toggle restarts it rather than reusing a
+  // finished animation, and it is absent under reduced motion (the CSS also
+  // guards, in case the preference changes mid-flight).
+  const [refocusing, setRefocusing] = useState(false);
+  const lastFocusRef = useRef(focusOpen);
+  useLayoutEffect(() => {
+    if (lastFocusRef.current === focusOpen) return;
+    lastFocusRef.current = focusOpen;
+    if (prefersReducedMotion()) {
+      setRefocusing(false);
+      return;
+    }
+    setRefocusing(false);
+    let timer = 0;
+    const frame = requestAnimationFrame(() => {
+      setRefocusing(true);
+      timer = window.setTimeout(() => setRefocusing(false), IMMERSIVE_OPEN_MS);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [focusOpen]);
 
   const currentLineIdx = lyrics?.timed ? findCurrentLine(lyrics.lines, currentPosition) : -1;
 
   // Align the active line with the record's centre, including at either end
   // of the song. Focus and stacked layouts use the lyrics viewport centre.
+  //
+  // While the surface is opening/closing the cover and shell carry the entry or
+  // exit `transform`; measuring them would target the 常驻播放栏 instead of the
+  // settled record (issue #168). Skipping the whole effect also means no
+  // observer or frame is left behind for geometry that is about to change.
   useLayoutEffect(() => {
     const track = trackRef.current;
     const viewport = track?.closest<HTMLElement>(".lyrics");
     const shell = track?.closest<HTMLElement>(".now-playing-popover");
-    if (!track || !viewport || !shell || !autoScroll || currentLineIdx < 0) return;
+    if (!geometrySettled || !track || !viewport || !shell || !autoScroll || currentLineIdx < 0)
+      return;
 
     const align = () => {
       const current = track.querySelector<HTMLElement>(`[data-line-idx="${currentLineIdx}"]`);
@@ -90,13 +140,33 @@ export function LyricsColumn(props: {
     observer?.observe(viewport);
     observer?.observe(track);
     observer?.observe(shell);
+    // `useLyricsStartOffset` writes the column's inline `margin-top` after it
+    // measures the metadata block, and `fonts.ready` can resolve well after the
+    // entry has settled. That write moves every line without resizing any box
+    // the ResizeObserver watches, so watch the viewport's inline style too —
+    // otherwise the column keeps a scroll position measured against the
+    // pre-offset layout.
+    const styleObserver =
+      typeof MutationObserver === "undefined" ? null : new MutationObserver(schedule);
+    styleObserver?.observe(viewport, { attributes: true, attributeFilter: ["style"] });
+    // The settle timer mirrors the CSS duration, but an occluded window can
+    // pause the compositor and finish the entry transform later than the timer.
+    // Its own `transitionend` is then the only signal left; the re-run is
+    // idempotent, so the ordinary path only pays one cheap re-read.
+    const onTransitionEnd = (event: TransitionEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target === shell || target?.classList.contains("playing-cover")) schedule();
+    };
+    shell.addEventListener("transitionend", onTransitionEnd);
     window.addEventListener("resize", schedule);
     return () => {
       cancelAnimationFrame(frame);
       observer?.disconnect();
+      styleObserver?.disconnect();
+      shell.removeEventListener("transitionend", onTransitionEnd);
       window.removeEventListener("resize", schedule);
     };
-  }, [currentLineIdx, autoScroll, focusOpen, lyrics]);
+  }, [currentLineIdx, autoScroll, focusOpen, lyrics, geometrySettled]);
 
   if (!lyrics || (!lyrics.timed && !lyrics.plainText)) {
     return (
@@ -130,7 +200,7 @@ export function LyricsColumn(props: {
 
   return (
     <div
-      className={`lyrics${focusOpen ? " is-focus" : ""}`}
+      className={`lyrics${focusOpen ? " is-focus" : ""}${refocusing ? " is-refocusing" : ""}`}
       data-testid="lyrics"
       // Named like the prototype's card so the reading toggle is announced
       // without ever being labelled a button it is not.

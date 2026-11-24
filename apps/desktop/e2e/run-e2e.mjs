@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "node:http";
 
 import { assertCoverPreviewScenarios } from "./a133-cover-preview.mjs";
+import { assertImmersiveTransitionScenarios } from "./a85-immersive-transition.mjs";
 import { assertLyricsFocusRoundTrip } from "./a9-lyrics-focus.mjs";
 import { assertLyricsGapSettles, assertLyricsOffsetAfterTrackChange } from "./a9-lyrics-offset.mjs";
 import { assertWindowControlsScenarios } from "./a76-window-controls.mjs";
@@ -583,6 +584,24 @@ async function main() {
     abort("A9", e);
   }
   await cdp.call("Emulation.clearDeviceMetricsOverride");
+
+  // ---------- Issue #85: immersive entry/exit transitions ----------
+  // First painted frame, FLIP geometry against the 当前播放区, delayed unmount,
+  // inert/aria-hidden during the exit, focus restoration and reduced motion.
+  try {
+    await assertImmersiveTransitionScenarios({
+      cdp,
+      goto,
+      evalJs,
+      waitFor,
+      assert,
+      sleep,
+      fail,
+      pass,
+    });
+  } catch (e) {
+    abort("#85 immersive transitions", e);
+  }
 
   // ---------- A13: Escape + transport controls present ----------
   await evalJs(
