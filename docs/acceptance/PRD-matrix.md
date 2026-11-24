@@ -11,7 +11,7 @@
 | **A5** | 资料库失联/恢复 | 51 | `node scripts/verify/checks/task-5.8.mjs 2>/dev/null \|\| cargo test -p echo-core --all-features trash::` |
 | **A6** | 搜索/排序/收藏 | 170 | `node scripts/verify/checks/task-10.5.mjs` |
 | **A7** | 歌单 CRUD | 54 | `node scripts/verify/checks/task-10.9.mjs` |
-| **A8** | 播放与队列 | 89 | `node scripts/verify/checks/task-11.2.mjs && cargo test -p echo-desktop --lib runtime::player && cargo test -p echo-desktop --lib player::actor::tests::subscribe_snapshots` |
+| **A8** | 播放与队列 | 94 | `node scripts/verify/checks/task-11.2.mjs && cargo test -p echo-desktop --lib runtime::player && cargo test -p echo-desktop --lib player::actor::tests::subscribe_snapshots` |
 | **A9** | 歌词与沉浸模式 | 44 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
 | **A10** | 系统双击文件 | 44 | `cargo test -p echo-core --all-features watch:: && node scripts/verify/checks/task-9.2.mjs` |
 | **A11** | 删除与撤销 | 44 | `cargo test -p echo-core --all-features recover::` |
@@ -1488,6 +1488,11 @@
 | A8 | `DP-R22-S01` | 队列投影的初始同步与漂移恢复 |
 | A8 | `DP-R22-S02` | 队列投影的初始同步与漂移恢复 |
 | A8 | `DP-R22-S03` | 队列投影的初始同步与漂移恢复 |
+| A8 | `DP-R23-S01` | 桌面播放中的定位过渡 |
+| A8 | `DP-R23-S02` | 桌面播放中的定位过渡 |
+| A8 | `DP-R23-S03` | 桌面播放中的定位过渡 |
+| A8 | `DP-R23-S04` | 桌面播放中的定位过渡 |
+| A8 | `DP-R23-S05` | 桌面播放中的定位过渡 |
 | A8 | `DP-R03-S05` | 播放队列面板展示 |
 | A8 | `DP-R03-S06` | 播放队列面板展示 |
 | A8 | `DP-R07-S05` | 临时播放项边界 |
