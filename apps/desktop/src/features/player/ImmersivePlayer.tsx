@@ -82,7 +82,7 @@ export function ImmersivePlayer() {
   // close is continuous. `phase` is the only mount authority; the overlay stack
   // and focus trap keep reading the authoritative flag, so Escape/pointer/focus
   // semantics end the moment the user closes, not when the animation ends.
-  const { phase } = useImmersiveTransition(ui.immersiveOpen);
+  const { phase, settled } = useImmersiveTransition(ui.immersiveOpen);
 
   // 歌词专注阅读 is cleared together with `immersiveOpen`, but the exiting
   // surface must not reflow into the ordinary layout first: remember whether the
@@ -160,6 +160,7 @@ export function ImmersivePlayer() {
       shellRef={shellRef}
       dismissSlotRef={dismissSlotRef}
       phase={phase}
+      geometrySettled={settled}
       focusLayout={focusLayout}
       onClose={() => playerStore.setImmersiveOpen(false)}
     />
@@ -175,10 +176,13 @@ function ImmersiveBody(props: {
   shellRef: RefObject<HTMLDivElement>;
   dismissSlotRef: MutableRefObject<HTMLDivElement | null>;
   phase: ImmersivePhase;
+  /** True once the entry transform has finished (issue #168). */
+  geometrySettled: boolean;
   focusLayout: boolean;
   onClose: () => void;
 }) {
-  const { snapshot, onClose, shellRef, dismissSlotRef, phase, focusLayout } = props;
+  const { snapshot, onClose, shellRef, dismissSlotRef, phase, geometrySettled, focusLayout } =
+    props;
   const ui = usePlayerUi();
   const hasCurrent = snapshot.currentQueueEntryId !== null;
 
@@ -452,6 +456,7 @@ function ImmersiveBody(props: {
             lyrics={lyrics}
             focusOpen={focusLayout}
             autoScroll={autoScroll}
+            geometrySettled={geometrySettled}
             onResume={resumeFollow}
             onToggleFocus={() => playerStore.setFocusOpen(!ui.focusOpen)}
           />
@@ -471,6 +476,7 @@ function SmoothLyricsColumn(props: {
   readonly lyrics: Parameters<typeof LyricsColumn>[0]["lyrics"];
   readonly focusOpen: boolean;
   readonly autoScroll: boolean;
+  readonly geometrySettled: boolean;
   readonly onResume: () => void;
   readonly onToggleFocus: () => void;
 }) {

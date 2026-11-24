@@ -17,7 +17,14 @@ export function buildPlaybackHandlers(state: E2EState): Partial<Record<Command, 
     player_control: ({ action }, st) => {
       const cur = st.nowPlaying;
       if (cur) {
+        // The real `player_control` command takes explicit `play` / `pause` as
+        // well as `toggle` (apps/desktop/src-tauri/src/commands.rs). The bar's
+        // button sends the explicit form, so a mock that only understood
+        // `toggle` accepted the command and stayed playing — A85's paused-expand
+        // step then ran against a playing player.
         if (action === "toggle") cur.playing = !cur.playing;
+        if (action === "play") cur.playing = true;
+        if (action === "pause") cur.playing = false;
         // next/prev are track changes, like the runtime's auto-advance: the
         // queue entry id changes, the position restarts and the snapshot is
         // republished (PLAYER_COMMANDS) so the UI remounts per-track

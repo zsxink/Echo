@@ -57,6 +57,9 @@ describe("useImmersiveTransition", () => {
     expect(frames.size).toBeGreaterThan(0);
     flushFrame();
     flushFrame();
+    // `open` is reached on the second frame; geometry is only stable after the
+    // entry transition's full duration.
+    act(() => vi.advanceTimersByTime(IMMERSIVE_OPEN_MS));
   };
 
   it("advances closed → opening → open on the second frame", () => {
@@ -173,5 +176,87 @@ describe("useImmersiveTransition", () => {
   it("uses the documented entry/exit durations", () => {
     expect(IMMERSIVE_OPEN_MS).toBe(220);
     expect(IMMERSIVE_EXIT_MS).toBe(180);
+  });
+
+  it("settles only after the entry transition duration", () => {
+    const { result, rerender } = renderHook(
+      ({ open }: { open: boolean }) => useImmersiveTransition(open),
+      { initialProps: { open: false } },
+    );
+    expect(result.current.settled).toBe(false);
+
+    act(() => rerender({ open: true }));
+    expect(result.current.settled).toBe(false);
+    flushFrame();
+    flushFrame();
+    expect(result.current.phase).toBe("open");
+    expect(result.current.settled).toBe(false);
+
+    act(() => vi.advanceTimersByTime(IMMERSIVE_OPEN_MS - 1));
+    expect(result.current.settled).toBe(false);
+    act(() => vi.advanceTimersByTime(1));
+    expect(result.current.settled).toBe(true);
+  });
+
+  it("settles immediately under prefers-reduced-motion", () => {
+    stubReducedMotion(true);
+    const { result, rerender } = renderHook(
+      ({ open }: { open: boolean }) => useImmersiveTransition(open),
+      { initialProps: { open: false } },
+    );
+
+    act(() => rerender({ open: true }));
+    expect(result.current.phase).toBe("open");
+    expect(result.current.settled).toBe(true);
+  });
+
+  it("starts settled when mounted open under prefers-reduced-motion", () => {
+    stubReducedMotion(true);
+    const { result } = renderHook(() => useImmersiveTransition(true));
+    expect(result.current.phase).toBe("open");
+    expect(result.current.settled).toBe(true);
+  });
+
+  it("un-settles on exit and re-waits after an interrupted exit", () => {
+    const { result, rerender } = renderHook(
+      ({ open }: { open: boolean }) => useImmersiveTransition(open),
+      { initialProps: { open: false } },
+    );
+    openToSettled(rerender);
+    expect(result.current.settled).toBe(true);
+
+    act(() => rerender({ open: false }));
+    expect(result.current.phase).toBe("closing");
+    expect(result.current.settled).toBe(false);
+
+    // The surface never unmounted, but it is transitioning back from the exit
+    // transform, so the new `open` still has to wait a full entry duration.
+    act(() => rerender({ open: true }));
+    expect(result.current.phase).toBe("open");
+    expect(result.current.settled).toBe(false);
+
+    act(() => vi.advanceTimersByTime(IMMERSIVE_OPEN_MS - 1));
+    expect(result.current.settled).toBe(false);
+    act(() => vi.advanceTimersByTime(1));
+    expect(result.current.settled).toBe(true);
+  });
+
+  it("never settles when the entry is interrupted by a close", () => {
+    const { result, rerender } = renderHook(
+      ({ open }: { open: boolean }) => useImmersiveTransition(open),
+      { initialProps: { open: false } },
+    );
+    act(() => rerender({ open: true }));
+    expect(result.current.settled).toBe(false);
+    flushFrame();
+
+    act(() => rerender({ open: false }));
+    expect(result.current.phase).toBe("closing");
+    expect(result.current.settled).toBe(false);
+
+    act(() => vi.advanceTimersByTime(IMMERSIVE_EXIT_MS));
+    expect(result.current.phase).toBe("closed");
+    expect(result.current.settled).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

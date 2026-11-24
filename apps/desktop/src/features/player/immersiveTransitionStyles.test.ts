@@ -15,12 +15,26 @@ import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { IMMERSIVE_EXIT_MS, IMMERSIVE_OPEN_MS } from "./useImmersiveTransition";
+
 const read = (file: string) => readFileSync(resolve(process.cwd(), "src/styles", file), "utf8");
+
+const tokenMs = (css: string, name: string) => {
+  const match = css.match(new RegExp(`${name}:\\s*(\\d+)ms`));
+  expect(match, `${name} must be declared in ms`).not.toBeNull();
+  return Number(match?.[1]);
+};
 
 describe("immersive transition styles", () => {
   it("publishes the exit token in the generated tokens", () => {
     expect(read("tokens.css")).toMatch(/--motion-exit:\s*180ms/);
     expect(read("tokens.css")).toMatch(/--motion-base:\s*220ms/);
+  });
+
+  it("keeps the JS phase durations equal to the generated motion tokens", () => {
+    const tokens = read("tokens.css");
+    expect(IMMERSIVE_OPEN_MS).toBe(tokenMs(tokens, "--motion-base"));
+    expect(IMMERSIVE_EXIT_MS).toBe(tokenMs(tokens, "--motion-exit"));
   });
 
   it("styles both painted phases and both FLIP variable families", () => {
