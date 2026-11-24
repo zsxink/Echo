@@ -56,6 +56,7 @@ mod backend;
 mod handle;
 mod harden_options;
 mod mpv_backend;
+mod seek_transition;
 #[cfg(test)]
 mod test_backend;
 
@@ -293,6 +294,7 @@ struct ActorLoop<B: Backend> {
     /// A seek received during asynchronous file loading. mpv resets its
     /// position as `loadfile` completes, so this is applied on `FileLoaded`.
     pending_seek: Option<f64>,
+    seek_transition: seek_transition::SeekTransition,
     effects: effects::Engine,
     effects_held: bool,
     /// Independent of the snapshot: a rejected hold cannot count as silence.
@@ -341,6 +343,7 @@ impl<B: Backend> ActorLoop<B> {
             // intent that can be true once a file actually loads.
             intended_paused: false,
             pending_seek: None,
+            seek_transition: seek_transition::SeekTransition::default(),
             effects: effects::Engine::new(effects::Shared::default()),
             effects_held: false,
             effects_pause_confirmed: false,
@@ -441,12 +444,16 @@ impl<B: Backend> ActorLoop<B> {
     #[allow(clippy::too_many_lines)] // The actor loop keeps command, effects, and event ordering visible in one place.
     fn run(&mut self, rx: mpsc::Receiver<PlayerCommand>) {
         loop {
-            // Drain bounded commands first.
-            while let Ok(cmd) = rx.try_recv() {
+            // Drain no more than one command-buffer's worth before pumping
+            // native events and monotonic seek timers. Scrub events can keep
+            // refilling the producer side while the actor drains.
+            for _ in 0..COMMAND_CAPACITY {
+                let Ok(cmd) = rx.try_recv() else { break };
                 if !self.handle_command(cmd) {
                     return; // Shutdown
                 }
             }
+            self.tick_seek_transition();
             // A rejected pause never becomes a confirmed hold merely because
             // FileLoaded or a UI snapshot calls this track paused. Retry before
             // pumping a queued load or releasing the first-sample barrier.
@@ -477,10 +484,16 @@ impl<B: Backend> ActorLoop<B> {
                 self.publish(self.generation);
             }
             // Pump one backend event (or none → brief idle sleep).
-            match self.backend.pump() {
+            match self.pump_seek_backend() {
                 Some(BackendEvent::Shutdown) => return,
+                Some(BackendEvent::SeekStarted) => self.seek_transition.started(),
+                Some(BackendEvent::PlaybackRestart) => self.restart_seek_transition(),
                 Some(BackendEvent::FileLoaded) => {
+                    if self.seek_transition.restoration_fault() {
+                        continue;
+                    }
                     self.load_completed = true;
+                    self.seek_transition.file_loaded();
                     // A loaded file is the first moment `time-pos`/`duration`
                     // exist, so this is where the actor subscribes. Skipping it
                     // leaves the actor with no property events at all and the
@@ -509,7 +522,16 @@ impl<B: Backend> ActorLoop<B> {
                         );
                     }
                     if let Some(position) = self.pending_seek.take() {
-                        if self.backend.write_property(BackendProperty::Seek(position)) {
+                        if self
+                            .seek_transition
+                            .request(
+                                std::time::Instant::now(),
+                                position,
+                                false,
+                                &mut self.backend,
+                            )
+                            .is_some()
+                        {
                             self.position = Some(position);
                         } else {
                             tracing::warn!(
@@ -546,12 +568,15 @@ impl<B: Backend> ActorLoop<B> {
                         self.effects_pause_confirmed =
                             self.backend.write_property(BackendProperty::Pause(true));
                         if self.effects_pause_confirmed && self.state == PlaybackState::Playing {
+                            // This is a temporary native effects hold, not user
+                            // pause intent; keep the in-flight seek fenced.
                             self.state = PlaybackState::Paused;
                             self.publish(self.generation);
                         }
                     }
                 }
                 Some(BackendEvent::Ended) => {
+                    self.seek_transition.cancel(&mut self.backend);
                     self.effects_held = false;
                     self.state = PlaybackState::Ended;
                     self.position = None;
@@ -604,6 +629,9 @@ impl<B: Backend> ActorLoop<B> {
                             // actually did.
                             if let Some(next) = Self::transport_from_pause(self.state, value != 0.0)
                             {
+                                if next == PlaybackState::Paused {
+                                    self.seek_transition.cancel(&mut self.backend);
+                                }
                                 self.state = next;
                                 discrete = true;
                             }
@@ -620,7 +648,9 @@ impl<B: Backend> ActorLoop<B> {
                     // No event: brief sleep to bound CPU. The real backend
                     // already blocks in wait_event briefly; this keeps the
                     // test backend from spinning when its events drain.
-                    std::thread::sleep(std::time::Duration::from_millis(2));
+                    if !self.seek_transition.fading() {
+                        std::thread::sleep(std::time::Duration::from_millis(2));
+                    }
                 }
             }
         }
@@ -629,8 +659,14 @@ impl<B: Backend> ActorLoop<B> {
     /// Handle a command; returns false to exit the loop (Shutdown).
     #[allow(clippy::too_many_lines)] // Command variants share one state-transition boundary; task 5 splits the actor module.
     fn handle_command(&mut self, cmd: PlayerCommand) -> bool {
+        if !self.allow_seek_transport_command(&cmd) {
+            return true;
+        }
         match cmd {
-            PlayerCommand::Shutdown => return false,
+            PlayerCommand::Shutdown => {
+                self.seek_transition.cancel(&mut self.backend);
+                return false;
+            }
             PlayerCommand::LoadLibrarySong {
                 song_id,
                 session_id: _session,
@@ -708,7 +744,9 @@ impl<B: Backend> ActorLoop<B> {
             }
             PlayerCommand::Pause => {
                 self.intended_paused = true;
-                if self.backend.write_property(BackendProperty::Pause(true))
+                let pause_applied = self.backend.write_property(BackendProperty::Pause(true));
+                self.seek_transition.cancel(&mut self.backend);
+                if pause_applied
                     && (self.state == PlaybackState::Paused
                         || self.state.can_transition_to(PlaybackState::Paused))
                 {
@@ -735,6 +773,9 @@ impl<B: Backend> ActorLoop<B> {
                         .write_property(BackendProperty::Pause(pause || !ready));
                     self.effects_pause_confirmed = pause_applied && !ready;
                     if pause_applied {
+                        if pause {
+                            self.seek_transition.cancel(&mut self.backend);
+                        }
                         // The user's latest transport choice is the intent a
                         // pending load must not override when it lands.
                         self.intended_paused = pause;
@@ -744,6 +785,7 @@ impl<B: Backend> ActorLoop<B> {
                 }
             }
             PlayerCommand::Next | PlayerCommand::Previous => {
+                self.seek_transition.cancel(&mut self.backend);
                 // The coordinator advances the queue and issues a new load; mpv
                 // reaches natural EOF and reports Ended. We surface Ended so
                 // the coordinator knows to advance.
@@ -752,18 +794,7 @@ impl<B: Backend> ActorLoop<B> {
                 self.position = None;
                 self.publish(self.generation);
             }
-            PlayerCommand::Seek(pos) => {
-                if self.state == PlaybackState::Loading {
-                    self.pending_seek = Some(pos);
-                    return true;
-                }
-                // Seek publishes immediately on success; on backend rejection
-                // the snapshot is untouched (authoritative rollback, task 8.8).
-                if self.backend.write_property(BackendProperty::Seek(pos)) {
-                    self.position = Some(pos);
-                    self.publish(self.generation);
-                }
-            }
+            PlayerCommand::Seek(pos) => self.request_seek(pos),
             PlayerCommand::SetMode(mode) => {
                 self.mode = mode;
                 self.publish(self.generation);
@@ -860,6 +891,7 @@ impl<B: Backend> ActorLoop<B> {
                 // concern; on macOS unlink works on an open file and pausing
                 // is the honest transport stop.
                 let _ = self.backend.write_property(BackendProperty::Pause(true));
+                self.seek_transition.cancel(&mut self.backend);
                 self.intended_paused = true;
                 self.state = PlaybackState::Stopped;
                 self.position = None;
@@ -894,6 +926,7 @@ impl<B: Backend> ActorLoop<B> {
     }
 
     fn begin_load(&mut self) -> u64 {
+        self.seek_transition.new_file(&mut self.backend);
         self.effects_pause_confirmed = self.effects.begin_load(&mut self.backend);
         self.load_completed = false;
         self.effects_held = self.effects.requested();

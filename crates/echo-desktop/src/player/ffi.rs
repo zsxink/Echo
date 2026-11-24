@@ -142,6 +142,8 @@ pub mod event_id {
     pub const START_FILE: i32 = 6;
     pub const END_FILE: i32 = 7;
     pub const FILE_LOADED: i32 = 8;
+    pub const SEEK: i32 = 20;
+    pub const PLAYBACK_RESTART: i32 = 21;
     pub const PROPERTY_CHANGE: i32 = 22;
     pub const ERROR: i32 = 26;
 }
@@ -448,6 +450,68 @@ impl Handle {
             raw,
             terminated: false,
         })
+    }
+
+    /// Set a fixed runtime property using the native property API.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own the live handle on its actor thread.
+    pub(super) unsafe fn set_property_value(
+        &self,
+        sys: &MpvSys,
+        name: &CStr,
+        value: &CStr,
+    ) -> bool {
+        // SAFETY: both C strings and the actor-owned handle are live.
+        (unsafe { (sys.set_property_string)(self.raw, name.as_ptr(), value.as_ptr()) })
+            == err_::SUCCESS
+    }
+
+    /// Read native seek state / current media position.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own the live handle on its actor thread.
+    pub(super) unsafe fn seek_settled_at(&self, sys: &MpvSys, target: f64) -> bool {
+        let mut seeking = 1_i32;
+        let mut position = 0.0_f64;
+        let mut duration = 0.0_f64;
+        // SAFETY: FLAG writes an int; DOUBLE writes a double. All C strings
+        // are static and each result buffer has the corresponding ABI type.
+        unsafe {
+            if (sys.get_property)(
+                self.raw,
+                c"seeking".as_ptr(),
+                format_::FLAG,
+                std::ptr::from_mut(&mut seeking).cast(),
+            ) != err_::SUCCESS
+                || seeking != 0
+            {
+                return false;
+            }
+            if (sys.get_property)(
+                self.raw,
+                c"time-pos".as_ptr(),
+                format_::DOUBLE,
+                std::ptr::from_mut(&mut position).cast(),
+            ) != err_::SUCCESS
+            {
+                return false;
+            }
+            let target = if (sys.get_property)(
+                self.raw,
+                c"duration".as_ptr(),
+                format_::DOUBLE,
+                std::ptr::from_mut(&mut duration).cast(),
+            ) == err_::SUCCESS
+            {
+                target.max(0.0).min(duration)
+            } else {
+                target.max(0.0)
+            };
+            (position - target).abs() <= 0.125
+        }
     }
 
     /// An ABI sanity check: the client API version, exposed for the 1.10/8.12

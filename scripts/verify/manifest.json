@@ -4230,6 +4230,70 @@
       "delegatedTo": "frontend-test"
     },
     {
+      "id": "DP-R23-S01",
+      "title": "正在播放时定位",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::actor::seek_transition::tests::keeps_gain_low_until_the_started_seek_restarts_and_coalesces_latest"
+        }
+      ],
+      "delegatedTo": "workspace-test"
+    },
+    {
+      "id": "DP-R23-S02",
+      "title": "过渡中再次定位",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::actor::seek_transition::tests::paused_scrub_rearms_after_latest_real_timeline_then_protects_audible_seek"
+        }
+      ],
+      "delegatedTo": "workspace-test"
+    },
+    {
+      "id": "DP-R23-S03",
+      "title": "暂停或静音时定位",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::actor::seek_transition::tests::paused_seek_is_immediate_and_ignores_unrelated_restart_before_seek_start"
+        }
+      ],
+      "delegatedTo": "workspace-test"
+    },
+    {
+      "id": "DP-R23-S04",
+      "title": "过渡中改变播放意图或音量",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::actor::seek_transition::tests::actor_mute_and_volume_properties_are_orthogonal_to_seek_gain"
+        }
+      ],
+      "delegatedTo": "workspace-test"
+    },
+    {
+      "id": "DP-R23-S05",
+      "title": "定位或保护失败",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::actor::seek_transition::tests::failed_seek_does_not_commit_position_and_recovers_gain"
+        },
+        {
+          "kind": "rust",
+          "target": "player::actor::seek_transition::tests::unrecoverable_native_gain_reports_failure_instead_of_silent_playback"
+        }
+      ],
+      "delegatedTo": "workspace-test"
+    },
+    {
       "id": "IL-R01-S01",
       "title": "开始播放歌曲",
       "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",

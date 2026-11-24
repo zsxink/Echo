@@ -1,0 +1,387 @@
+use super::*;
+use std::path::Path;
+use std::sync::{Arc, Mutex, RwLock};
+
+#[derive(Debug, PartialEq)]
+enum Write {
+    Property(BackendProperty),
+    Gain(f64),
+    Reset,
+}
+
+#[derive(Default)]
+#[allow(clippy::struct_excessive_bools)] // Independently injected command failures.
+struct Probe {
+    writes: Vec<Write>,
+    reject_seek: bool,
+    reject_gain: bool,
+    reject_unity: bool,
+    reject_reset: bool,
+    unsettled_target: Option<f64>,
+}
+
+impl Backend for Probe {
+    fn pump(&mut self) -> Option<BackendEvent> {
+        None
+    }
+
+    fn queue_load(&mut self, _: &Path) {}
+
+    fn observe_continuous(&mut self) {}
+
+    fn write_property(&mut self, prop: BackendProperty) -> bool {
+        self.writes.push(Write::Property(prop));
+        !self.reject_seek || !matches!(prop, BackendProperty::Seek(_))
+    }
+
+    fn supports_seek_gain(&self) -> bool {
+        true
+    }
+
+    fn set_seek_gain_db(&mut self, db: f64) -> bool {
+        self.writes.push(Write::Gain(db));
+        !self.reject_gain && (!self.reject_unity || db < 0.0)
+    }
+
+    fn direct_seek_settled(&self, target: f64) -> bool {
+        self.unsettled_target != Some(target)
+    }
+
+    fn reset_seek_gain(&mut self) -> bool {
+        self.writes.push(Write::Reset);
+        !self.reject_reset
+    }
+
+    fn terminate(&mut self) {}
+}
+
+fn ready(now: Instant, probe: &mut Probe) -> SeekTransition {
+    let mut transition = SeekTransition::default();
+    transition.file_loaded();
+    assert_eq!(transition.restarted(now, probe), None);
+    transition
+}
+
+fn ms(now: Instant, offset: u64) -> Instant {
+    now + Duration::from_millis(offset)
+}
+
+fn millis(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).expect("test durations fit in u64")
+}
+
+/// Drives the whole fade-out, the floor hold and the seek dispatch; returns
+/// the position committed by the seek (if the backend accepted it).
+fn fade_out(transition: &mut SeekTransition, now: Instant, probe: &mut Probe) -> Option<f64> {
+    let fade = millis(FADE);
+    let hold = millis(FLOOR_HOLD);
+    for offset in (0..=fade + hold + 6).step_by(3) {
+        if let Some(position) = transition.tick(ms(now, offset), true, probe) {
+            return Some(position);
+        }
+    }
+    None
+}
+
+/// Drives a fade-in that started at `start` until unity is restored.
+fn fade_in(transition: &mut SeekTransition, start: Instant, probe: &mut Probe) {
+    let fade = millis(FADE);
+    for offset in (0..=fade + 6).step_by(3) {
+        assert_eq!(transition.tick(ms(start, offset), true, probe), None);
+    }
+    assert_eq!(probe.writes.last(), Some(&Write::Gain(0.0)));
+    assert!(!transition.fading());
+}
+
+#[test]
+fn keeps_gain_low_until_the_started_seek_restarts_and_coalesces_latest() {
+    let now = Instant::now();
+    let mut probe = Probe::default();
+    let mut transition = ready(now, &mut probe);
+    assert_eq!(transition.request(now, 1.0, true, &mut probe), None);
+    assert_eq!(transition.request(now, 2.0, true, &mut probe), None);
+    assert_eq!(fade_out(&mut transition, now, &mut probe), Some(2.0));
+    assert!(probe.writes.windows(2).any(|pair| matches!(
+        pair,
+        [Write::Gain(db), Write::Property(BackendProperty::Seek(2.0))] if *db <= -90.0
+    )));
+    assert_eq!(
+        transition.request(ms(now, 172), 3.0, true, &mut probe),
+        None
+    );
+    assert_eq!(
+        transition.request(ms(now, 173), 4.0, true, &mut probe),
+        None
+    );
+
+    let writes = probe.writes.len();
+    assert_eq!(transition.restarted(ms(now, 175), &mut probe), None);
+    assert_eq!(probe.writes.len(), writes, "stray restart must not fade in");
+    transition.started();
+    assert_eq!(transition.restarted(ms(now, 176), &mut probe), Some(4.0));
+    assert_eq!(
+        probe.writes.last(),
+        Some(&Write::Property(BackendProperty::Seek(4.0)))
+    );
+    transition.started();
+    assert_eq!(transition.restarted(ms(now, 177), &mut probe), None);
+    fade_in(&mut transition, ms(now, 177), &mut probe);
+}
+
+#[test]
+fn failed_seek_does_not_commit_position_and_recovers_gain() {
+    let now = Instant::now();
+    let mut probe = Probe {
+        reject_seek: true,
+        ..Probe::default()
+    };
+    let mut transition = ready(now, &mut probe);
+    assert_eq!(transition.request(now, 2.0, true, &mut probe), None);
+    let dispatched = millis(FADE) + millis(FLOOR_HOLD);
+    assert_eq!(fade_out(&mut transition, now, &mut probe), None);
+    assert!(probe
+        .writes
+        .contains(&Write::Property(BackendProperty::Seek(2.0))));
+    fade_in(&mut transition, ms(now, dispatched), &mut probe);
+}
+
+#[test]
+fn unsupported_gain_downgrades_to_the_normal_seek_path_across_loads() {
+    let now = Instant::now();
+    let mut probe = Probe {
+        reject_gain: true,
+        ..Probe::default()
+    };
+    let mut transition = ready(now, &mut probe);
+    assert_eq!(transition.request(now, 1.0, true, &mut probe), None);
+    assert_eq!(transition.tick(now, true, &mut probe), Some(1.0));
+    transition.new_file(&mut probe);
+    transition.file_loaded();
+    assert_eq!(transition.restarted(now, &mut probe), None);
+    assert_eq!(transition.request(now, 2.0, true, &mut probe), Some(2.0));
+    assert_eq!(
+        probe.writes,
+        [
+            Write::Gain(0.0),
+            Write::Property(BackendProperty::Seek(1.0)),
+            Write::Property(BackendProperty::Seek(2.0)),
+        ]
+    );
+}
+
+#[test]
+fn lost_restart_falls_open_until_an_ordered_new_file_fence() {
+    let now = Instant::now();
+    let mut probe = Probe::default();
+    let mut transition = ready(now, &mut probe);
+    transition.request(now, 1.0, true, &mut probe);
+    assert_eq!(fade_out(&mut transition, now, &mut probe), Some(1.0));
+    transition.request(ms(now, 172), 2.0, true, &mut probe);
+    assert_eq!(transition.tick(ms(now, 700), true, &mut probe), Some(2.0));
+    assert_eq!(
+        probe.writes[probe.writes.len() - 2..],
+        [
+            Write::Gain(0.0),
+            Write::Property(BackendProperty::Seek(2.0))
+        ]
+    );
+    transition.started();
+    assert_eq!(transition.restarted(ms(now, 701), &mut probe), None);
+    assert_eq!(
+        transition.request(ms(now, 702), 3.0, true, &mut probe),
+        Some(3.0)
+    );
+    transition.new_file(&mut probe);
+    assert_eq!(transition.restarted(ms(now, 703), &mut probe), None);
+    assert!(matches!(transition.readiness, Readiness::BeforeFileLoaded));
+    transition.file_loaded();
+    assert_eq!(transition.restarted(ms(now, 704), &mut probe), None);
+    assert_eq!(
+        transition.request(ms(now, 705), 4.0, true, &mut probe),
+        None
+    );
+    assert!(transition.fading());
+}
+
+#[test]
+fn paused_seek_is_immediate_and_ignores_unrelated_restart_before_seek_start() {
+    let now = Instant::now();
+    let mut probe = Probe::default();
+    let mut transition = ready(now, &mut probe);
+    assert_eq!(transition.request(now, 1.0, false, &mut probe), Some(1.0));
+    assert_eq!(probe.writes, [Write::Property(BackendProperty::Seek(1.0))]);
+    assert_eq!(transition.restarted(now, &mut probe), None);
+    assert!(matches!(
+        transition.readiness,
+        Readiness::DirectSeek { started: false, .. }
+    ));
+    transition.started();
+    assert_eq!(transition.restarted(now, &mut probe), None);
+    transition.backend_quiet(now + DIRECT_QUIET, &probe);
+    assert_eq!(
+        transition.request(now + DIRECT_QUIET, 2.0, true, &mut probe),
+        None
+    );
+    assert!(transition.fading());
+}
+
+#[test]
+fn cancellation_bounds_unity_retries_and_drops_queued_seek() {
+    let now = Instant::now();
+    let mut probe = Probe::default();
+    let mut transition = ready(now, &mut probe);
+    transition.request(now, 1.0, true, &mut probe);
+    assert_eq!(fade_out(&mut transition, now, &mut probe), Some(1.0));
+    transition.request(ms(now, 172), 2.0, true, &mut probe);
+    probe.reject_unity = true;
+    transition.cancel(&mut probe);
+    for offset in 20..26 {
+        transition.cancel(&mut probe); // must not reset the retry budget
+        assert_eq!(transition.tick(ms(now, offset), true, &mut probe), None);
+    }
+    assert!(probe.writes.contains(&Write::Reset));
+    assert!(!probe
+        .writes
+        .contains(&Write::Property(BackendProperty::Seek(2.0))));
+    assert!(!transition.gain_may_be_lowered);
+}
+
+#[test]
+fn actor_mute_and_volume_properties_are_orthogonal_to_seek_gain() {
+    let now = Instant::now();
+    let mut backend = Probe::default();
+    let transition = ready(now, &mut backend);
+    let mut actor = ActorLoop::new(
+        backend,
+        Arc::new(RwLock::new(super::super::PlayerSnapshot::default())),
+        Arc::new(Mutex::new(Vec::new())),
+    );
+    actor.seek_transition = transition;
+    actor.state = PlaybackState::Playing;
+    actor
+        .seek_transition
+        .request(now, 2.0, true, &mut actor.backend);
+    actor
+        .seek_transition
+        .tick(ms(now, 6), true, &mut actor.backend);
+    actor.handle_command(super::super::PlayerCommand::SetVolume(0.4));
+    actor.handle_command(super::super::PlayerCommand::ToggleMute);
+    assert!((actor.volume - 0.4).abs() < f64::EPSILON && actor.muted);
+    actor.handle_command(super::super::PlayerCommand::Stop);
+    assert!(actor.muted);
+    assert!(actor.backend.writes.ends_with(&[
+        Write::Property(BackendProperty::Pause(true)),
+        Write::Gain(0.0),
+    ]));
+    assert!(!actor
+        .backend
+        .writes
+        .contains(&Write::Property(BackendProperty::Seek(2.0))));
+}
+
+#[test]
+fn unrecoverable_native_gain_reports_failure_instead_of_silent_playback() {
+    let now = Instant::now();
+    let mut backend = Probe::default();
+    let mut transition = ready(now, &mut backend);
+    transition.request(now, 1.0, true, &mut backend);
+    assert_eq!(fade_out(&mut transition, now, &mut backend), Some(1.0));
+    backend.reject_unity = true;
+    backend.reject_reset = true;
+    transition.cancel(&mut backend);
+    let mut actor = ActorLoop::new(
+        backend,
+        Arc::new(RwLock::new(super::super::PlayerSnapshot::default())),
+        Arc::new(Mutex::new(Vec::new())),
+    );
+    actor.seek_transition = transition;
+    actor.state = PlaybackState::Playing;
+    for _ in 0..=UNITY_RETRIES {
+        actor.tick_seek_transition();
+    }
+    assert_eq!(actor.state, PlaybackState::Failed);
+    assert_eq!(
+        actor.backend.writes.last(),
+        Some(&Write::Property(BackendProperty::Pause(true)))
+    );
+    assert!(actor.seek_transition.gain_may_be_lowered);
+    let generation = actor.generation;
+    actor.handle_command(PlayerCommand::Play);
+    actor.handle_command(PlayerCommand::LoadTemporary {
+        display_name: "next".into(),
+        path: "/tmp/next.flac".into(),
+        session_id: echo_core::domain::ids::PlaybackSessionId::new(),
+    });
+    assert_eq!(
+        actor.generation, generation,
+        "unrestored gain blocks a new load"
+    );
+    assert_eq!(actor.state, PlaybackState::Failed);
+    assert!(!actor
+        .backend
+        .writes
+        .contains(&Write::Property(BackendProperty::Pause(false))));
+    actor.backend.reject_reset = false;
+    actor.handle_command(PlayerCommand::LoadTemporary {
+        display_name: "next".into(),
+        path: "/tmp/next.flac".into(),
+        session_id: echo_core::domain::ids::PlaybackSessionId::new(),
+    });
+    assert_eq!(actor.generation, generation + 1);
+    assert!(!actor.seek_transition.gain_may_be_lowered);
+}
+
+#[test]
+fn paused_scrub_rearms_after_latest_real_timeline_then_protects_audible_seek() {
+    let now = Instant::now();
+    let mut probe = Probe::default();
+    let mut transition = ready(now, &mut probe);
+    assert_eq!(transition.request(now, 1.0, false, &mut probe), Some(1.0));
+    assert_eq!(
+        transition.request(ms(now, 1), 5.0, false, &mut probe),
+        Some(5.0)
+    );
+    // Resume then seek while old direct commands may still be acknowledged.
+    assert_eq!(transition.request(ms(now, 2), 7.0, true, &mut probe), None);
+    probe.unsettled_target = Some(5.0);
+    transition.started();
+    assert_eq!(transition.restarted(ms(now, 3), &mut probe), None);
+    transition.backend_quiet(ms(now, 20), &probe);
+    assert_eq!(transition.tick(ms(now, 21), true, &mut probe), None);
+    assert!(!transition.fading(), "old restart cannot arm latest intent");
+    probe.unsettled_target = None;
+    transition.started();
+    assert_eq!(transition.restarted(ms(now, 22), &mut probe), None);
+    transition.backend_quiet(ms(now, 38), &probe);
+    assert_eq!(transition.tick(ms(now, 39), true, &mut probe), None);
+    assert!(transition.fading());
+    assert_eq!(
+        fade_out(&mut transition, ms(now, 39), &mut probe),
+        Some(7.0)
+    );
+}
+
+#[test]
+fn direct_seek_confirmation_is_bounded_and_latest_request_falls_open() {
+    let now = Instant::now();
+    let mut probe = Probe::default();
+    let mut transition = ready(now, &mut probe);
+    assert_eq!(transition.request(now, 1.0, false, &mut probe), Some(1.0));
+    assert_eq!(transition.request(ms(now, 1), 2.0, true, &mut probe), None);
+    transition.started();
+    assert_eq!(transition.restarted(ms(now, 2), &mut probe), None);
+    // Even a matching native read is too late to re-arm this direct seek.
+    transition.backend_quiet(now + RESTART_LIMIT, &probe);
+    assert!(matches!(transition.readiness, Readiness::DirectSeek { .. }));
+    assert_eq!(
+        transition.tick(now + RESTART_LIMIT, true, &mut probe),
+        Some(2.0)
+    );
+    assert_eq!(
+        probe.writes,
+        [
+            Write::Property(BackendProperty::Seek(1.0)),
+            Write::Property(BackendProperty::Seek(2.0))
+        ]
+    );
+}

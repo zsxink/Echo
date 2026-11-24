@@ -312,6 +312,11 @@ export const SCENARIOS = {
 "DP-R22-S01": { command: VITEST_ALL, evidence: [vitest("src/player/playerStore.test.ts", "asks the desktop to re-publish the queue and effects on startup")] },
 "DP-R22-S02": { command: VITEST_ALL, evidence: [vitest("src/player/playerStore.test.ts", "ignores a queue projection that is not newer than the applied one")] },
 "DP-R22-S03": { command: VITEST_ALL, evidence: [vitest("src/player/playerStore.test.ts", "applies a newer queue projection as a whole")] },
+"DP-R23-S01": { command: DESK_ALL, evidence: [rust("player::actor::seek_transition::tests::keeps_gain_low_until_the_started_seek_restarts_and_coalesces_latest")] },
+"DP-R23-S02": { command: DESK_ALL, evidence: [rust("player::actor::seek_transition::tests::paused_scrub_rearms_after_latest_real_timeline_then_protects_audible_seek")] },
+"DP-R23-S03": { command: DESK_ALL, evidence: [rust("player::actor::seek_transition::tests::paused_seek_is_immediate_and_ignores_unrelated_restart_before_seek_start")] },
+"DP-R23-S04": { command: DESK_ALL, evidence: [rust("player::actor::seek_transition::tests::actor_mute_and_volume_properties_are_orthogonal_to_seek_gain")] },
+"DP-R23-S05": { command: DESK_ALL, evidence: [rust("player::actor::seek_transition::tests::failed_seek_does_not_commit_position_and_recovers_gain"), rust("player::actor::seek_transition::tests::unrecoverable_native_gain_reports_failure_instead_of_silent_playback")] },
 
   // immersive-lyrics
 "IL-R01-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },

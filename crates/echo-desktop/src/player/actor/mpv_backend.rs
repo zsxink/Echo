@@ -64,7 +64,7 @@ impl MpvBackend {
     }
 
     /// Issue the queued `loadfile` (if any) and then read one event.
-    fn pump(&mut self) -> Option<BackendEvent> {
+    fn poll(&mut self, timeout: f64) -> Option<BackendEvent> {
         if !self.load_pause_rejected {
             if let Some(path) = self.pending_load.take() {
                 let cpath = ffi::path_to_cstring(&path).ok()?;
@@ -83,7 +83,7 @@ impl MpvBackend {
         if let Some(event) = self.events.pop_front() {
             return Some(event);
         }
-        self.read_event(0.005).1
+        self.read_event(timeout).1
     }
 
     fn read_event(&mut self, timeout: f64) -> (bool, Option<BackendEvent>) {
@@ -123,6 +123,8 @@ impl MpvBackend {
             }
             ffi::event_id::SHUTDOWN => Some(BackendEvent::Shutdown),
             ffi::event_id::FILE_LOADED => Some(BackendEvent::FileLoaded),
+            ffi::event_id::SEEK => Some(BackendEvent::SeekStarted),
+            ffi::event_id::PLAYBACK_RESTART => Some(BackendEvent::PlaybackRestart),
             // MPV_EVENT_AUDIO_RECONFIG is stable event ID 18 in client.h.
             18 => Some(BackendEvent::AudioReconfigured),
             ffi::event_id::END_FILE => {
@@ -225,7 +227,11 @@ fn c(s: &str) -> std::ffi::CString {
 
 impl Backend for MpvBackend {
     fn pump(&mut self) -> Option<BackendEvent> {
-        self.pump()
+        self.poll(0.005)
+    }
+
+    fn pump_seek_fade(&mut self) -> Option<BackendEvent> {
+        self.poll(0.001)
     }
 
     fn queue_load(&mut self, path: &Path) {
@@ -308,6 +314,38 @@ impl Backend for MpvBackend {
             tracing::warn!(?prop, "mpv actor: runtime property write rejected");
         }
         ok
+    }
+
+    fn supports_seek_gain(&self) -> bool {
+        true
+    }
+
+    fn set_seek_gain_db(&mut self, db: f64) -> bool {
+        // mpv v0.36 applies ReplayGain fallback even with its ReplayGain mode
+        // disabled (the default). That makes it independent of user volume,
+        // mute, and Echo's separate native EQ/normalization filter graph.
+        let value = c(&format!("{db:.6}"));
+        // SAFETY: actor owns the live handle and all arguments are NUL-clean.
+        unsafe {
+            self.handle
+                .command(&self.sys, &[c("set"), c("replaygain-fallback"), value])
+        }
+        .is_ok()
+    }
+
+    fn direct_seek_settled(&self, target: f64) -> bool {
+        // SAFETY: actor owns the live handle.
+        unsafe { self.handle.seek_settled_at(&self.sys, target) }
+    }
+
+    fn reset_seek_gain(&mut self) -> bool {
+        // Recovery falls back to the native property API if the generic
+        // command path rejected restoring unity.
+        // SAFETY: actor owns the live handle and both C strings.
+        unsafe {
+            self.handle
+                .set_property_value(&self.sys, c"replaygain-fallback", c"0")
+        }
     }
 
     fn apply_effects(

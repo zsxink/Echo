@@ -258,6 +258,11 @@
 | DP-R22-S01 | 队列投影的初始同步与漂移恢复 | 前端就绪后获得完整队列 | 4.6, 6.2 | React | `pnpm verify:scenario -- DP-R22-S01` |
 | DP-R22-S02 | 队列投影的初始同步与漂移恢复 | 过期修订号被忽略 | 6.1, 6.2 | React | `pnpm verify:scenario -- DP-R22-S02` |
 | DP-R22-S03 | 队列投影的初始同步与漂移恢复 | 同步与事件先后到达不产生回退 | 6.2 | React | `pnpm verify:scenario -- DP-R22-S03` |
+| DP-R23-S01 | 桌面播放中的定位过渡 | 正在播放时定位 | issue-102 | Desktop/Native | `pnpm verify:scenario -- DP-R23-S01` |
+| DP-R23-S02 | 桌面播放中的定位过渡 | 过渡中再次定位 | issue-102 | Desktop/Native | `pnpm verify:scenario -- DP-R23-S02` |
+| DP-R23-S03 | 桌面播放中的定位过渡 | 暂停或静音时定位 | issue-102 | Desktop/Native | `pnpm verify:scenario -- DP-R23-S03` |
+| DP-R23-S04 | 桌面播放中的定位过渡 | 过渡中改变播放意图或音量 | issue-102 | Desktop/Native | `pnpm verify:scenario -- DP-R23-S04` |
+| DP-R23-S05 | 桌面播放中的定位过渡 | 定位或保护失败 | issue-102 | Desktop/Native | `pnpm verify:scenario -- DP-R23-S05` |
 
 ## immersive-lyrics
 
