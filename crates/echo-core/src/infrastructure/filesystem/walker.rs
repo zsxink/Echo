@@ -187,29 +187,44 @@ mod tests {
     /// never-follow guarantees meaningfully, and a hard failure would just turn
     /// every such environment red.
     fn symlink(target: &std::path::Path, link: &std::path::Path) -> Option<()> {
-        let status = if std::env::consts::OS == "windows" {
-            std::process::Command::new("cmd")
-                .args(["/C", "mklink"])
-                .arg(link)
-                .arg(target)
-                .status()
+        let target_type = std::fs::metadata(target)
+            .expect("symlink fixture target")
+            .file_type();
+        assert!(target_type.is_dir() || target_type.is_file());
+        #[cfg(windows)]
+        let result = if target_type.is_dir() {
+            std::os::windows::fs::symlink_dir(target, link)
         } else {
-            std::process::Command::new("ln")
-                .arg("-s")
-                .arg(target)
-                .arg(link)
-                .status()
+            std::os::windows::fs::symlink_file(target, link)
         };
-        match status {
-            Ok(s) if s.success() => Some(()),
-            Ok(_) => {
-                eprintln!("skipping symlink-dependent test: symlink creation not permitted");
-                None
+        #[cfg(unix)]
+        let result = std::os::unix::fs::symlink(target, link);
+
+        match result {
+            Ok(()) => {
+                assert!(
+                    std::fs::symlink_metadata(link)
+                        .expect("created fixture link")
+                        .file_type()
+                        .is_symlink(),
+                    "{link:?} must be a symbolic link"
+                );
+                let resolved_type = std::fs::metadata(link)
+                    .expect("fixture link should resolve to its target")
+                    .file_type();
+                assert_eq!(resolved_type.is_dir(), target_type.is_dir(), "{link:?}");
+                assert_eq!(resolved_type.is_file(), target_type.is_file(), "{link:?}");
+                Some(())
             }
-            Err(error) => {
+            Err(error)
+                if error.kind() == std::io::ErrorKind::PermissionDenied
+                    // Windows ERROR_PRIVILEGE_NOT_HELD (without symlink privileges).
+                    || (cfg!(windows) && error.raw_os_error() == Some(1314)) =>
+            {
                 eprintln!("skipping symlink-dependent test: {error}");
                 None
             }
+            Err(error) => panic!("cannot create symlink fixture {link:?} to {target:?}: {error}"),
         }
     }
 
