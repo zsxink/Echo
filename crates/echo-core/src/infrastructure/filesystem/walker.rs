@@ -191,22 +191,17 @@ mod tests {
             .expect("symlink fixture target")
             .file_type();
         assert!(target_type.is_dir() || target_type.is_file());
-        let status = if std::env::consts::OS == "windows" {
-            let mut command = std::process::Command::new("cmd");
-            command.args(["/C", "mklink"]);
-            if target_type.is_dir() {
-                command.arg("/D");
-            }
-            command.arg(link).arg(target).status()
+        #[cfg(windows)]
+        let result = if target_type.is_dir() {
+            std::os::windows::fs::symlink_dir(target, link)
         } else {
-            std::process::Command::new("ln")
-                .arg("-s")
-                .arg(target)
-                .arg(link)
-                .status()
+            std::os::windows::fs::symlink_file(target, link)
         };
-        match status {
-            Ok(s) if s.success() => {
+        #[cfg(unix)]
+        let result = std::os::unix::fs::symlink(target, link);
+
+        match result {
+            Ok(()) => {
                 assert!(
                     std::fs::symlink_metadata(link)
                         .expect("created fixture link")
@@ -221,14 +216,15 @@ mod tests {
                 assert_eq!(resolved_type.is_file(), target_type.is_file(), "{link:?}");
                 Some(())
             }
-            Ok(_) => {
-                eprintln!("skipping symlink-dependent test: symlink creation not permitted");
-                None
-            }
-            Err(error) => {
+            Err(error)
+                if error.kind() == std::io::ErrorKind::PermissionDenied
+                    // Windows ERROR_PRIVILEGE_NOT_HELD (without symlink privileges).
+                    || (cfg!(windows) && error.raw_os_error() == Some(1314)) =>
+            {
                 eprintln!("skipping symlink-dependent test: {error}");
                 None
             }
+            Err(error) => panic!("cannot create symlink fixture {link:?} to {target:?}: {error}"),
         }
     }
 
