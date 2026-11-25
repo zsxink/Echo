@@ -41,6 +41,15 @@ export function assertMacosPackaging(ci, release) {
   ];
   verify(order.every((s) => s?.if === fullIf && s["continue-on-error"] === undefined),
     "macOS full package steps must run unless the successful PR classifier says to skip");
+  // The Gate builds the release profile, so it MUST restore the release-profile
+  // cache key. The debug-profile `macos-desktop` key holds a different target
+  // directory and shortens nothing — restoring it left every release build
+  // cold. The release key is written on `main` only; PRs never save.
+  const gateCache = named("Cache Rust build artifacts");
+  verify(gateCache?.uses === "Swatinem/rust-cache@v2" &&
+    gateCache.with?.["shared-key"] === "macos-desktop-release" &&
+    gateCache.with?.["save-if"] === "${{ github.ref == 'refs/heads/main' }}",
+    "macOS packaging must restore the release-profile cache key, written on main only");
   const positions = [checkout, node, classifier, note, ...order].map((s) => steps.indexOf(s));
   verify(positions.every((position, idx) => idx === 0 || position > positions[idx - 1]),
     "macOS packaging check and artifact steps must be ordered after checkout and classification");

@@ -139,14 +139,23 @@ try {
 {
   const CACHE_STEP = "Cache Rust build artifacts";
   const MAIN_ONLY = "${{ github.ref == 'refs/heads/main' }}";
-  const CACHE_WRITERS = ["governance-static", "linux-workspace", "macos-desktop", "windows-desktop"];
+  const CACHE_WRITERS = ["governance-static", "linux-workspace", "macos-desktop", "macos-desktop-release", "windows-desktop"];
   // rust/rust-desktop 的 shared-key 是模板表达式，必须各自展开成该 job 实际写入
   // 的 key，否则写者集合永远等于 ["${{ matrix.cache }}", "governance-static"]。
   // 按 job 展开而不是合并两个矩阵：两个 job 都写入时合并会对同一批 key 重复计数。
   const writerKeys = [];
   const readerKeys = [];
   for (const [jobId, job] of Object.entries(workflow.jobs)) {
-    const cacheStep = (job.steps || []).find((s) => s.name === CACHE_STEP);
+    const cacheSteps = (job.steps || []).filter((s) => s.name === CACHE_STEP);
+    // A second cache step in the same job is not free: `Swatinem/rust-cache`
+    // archives the whole `target/` tree under each of its keys, so two steps
+    // would store the same bytes twice and blow the repository quota. The
+    // `.find()` below used to hide the second step from this gate entirely.
+    if (cacheSteps.length > 1) {
+      fail(`ci.yml job '${jobId}' must have at most one ${CACHE_STEP} step, got ${cacheSteps.length}; ` +
+        "each extra step archives the same target/ tree under another key and doubles quota usage");
+    }
+    const cacheStep = cacheSteps[0];
     if (!cacheStep) continue;
     const sharedKey = String(cacheStep.with?.["shared-key"] || "");
     const saveIf = String(cacheStep.with?.["save-if"] ?? "");
@@ -159,6 +168,26 @@ try {
     } else {
       readerKeys.push(sharedKey);
     }
+  }
+  // `macos-desktop-release` holds the release-profile tree the macOS platform
+  // Gate builds; `macos-desktop` holds the debug-profile tree `cargo test`
+  // produces. Their target directories and profiles differ, so restoring one
+  // in place of the other yields a cold build. Pin the split: the Gate writes
+  // and reads only the release key, and nobody else touches it.
+  //
+  // These run *before* the writer-set comparison: a key swap breaks both, and
+  // the ownership rule names the actual cause instead of only reporting that
+  // the set no longer matches.
+  const releaseKeyReaders = Object.entries(workflow.jobs)
+    .filter(([, job]) => (job.steps || []).some((s) => s.name === CACHE_STEP && String(s.with?.["shared-key"] || "") === "macos-desktop-release"))
+    .map(([jobId]) => jobId);
+  if (JSON.stringify(releaseKeyReaders) !== JSON.stringify(["macos-platform-gate"])) {
+    fail(`ci.yml cache key 'macos-desktop-release' must be used only by job 'macos-platform-gate', got [${releaseKeyReaders.join(", ")}]`);
+  }
+  const gateCacheStep = (workflow.jobs["macos-platform-gate"]?.steps || []).find((s) => s.name === CACHE_STEP);
+  if (gateCacheStep && String(gateCacheStep.with?.["shared-key"] || "") === "macos-desktop") {
+    fail("ci.yml job 'macos-platform-gate' must not restore the debug-profile 'macos-desktop' cache; " +
+      "it builds the release profile and needs the 'macos-desktop-release' key");
   }
   if (JSON.stringify(writerKeys.sort()) !== JSON.stringify(CACHE_WRITERS)) {
     fail(`ci.yml cache writers must be exactly [${CACHE_WRITERS.join(", ")}], got [${writerKeys.join(", ")}]`);

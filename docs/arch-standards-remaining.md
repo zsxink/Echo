@@ -448,15 +448,20 @@ job / platform Gate）；`run-task --all` 跳过它们，单独点名仍可运�
 | `Rust desktop (macOS/Windows)`（2，仅 main） | fmt / clippy / 全量 workspace 测试 | main-only；`--workspace` 包集，是 macOS/Windows fmt/clippy 的唯一承载者 |
 | `Frontend (Linux)`（1） | format / lint / typecheck / 全量 Vitest / build / 13.1 headless E2E | 单腿；13.1 用 `--no-build`，复用前一步 `Build` 的 dist |
 | `macOS native Gate`（1） | 8.12 / 13.2 | 自行 stage `target/Frameworks` 的 vendored dylib；13.2 不再裸跑 `player_smoke` |
-| `macOS platform Gate`（1） | 1.9 / 1.10 / 9.7 + embedded-frontend 新鲜度 | 用 `tauri build` 产出的 bundle 二进制做嵌入检查，不额外编译 |
+| `macOS platform Gate`（1） | 1.9 / 1.10 / 9.7 + embedded-frontend 新鲜度 | 用 `tauri build` 产出的 bundle 二进制做嵌入检查，不额外编译；release 形态缓存键 `macos-desktop-release` 独占 |
 | `Windows platform Gate`（1） | 9.7 / 9.8 / 17.1 / 18.1 | vendored libmpv 由 LFS 提供 |
 | `Task gates (core)`（1） | 4 个独有 gate + `pnpm verify:perf` | `save-if: false`，`--release` 产物不落缓存 |
 | `Governance static gates`（1） | purity / registry / static / 16.1 静态契约 / 依赖审计；main 上另跑 coverage | coverage 与其工具安装在 PR 上跳过 |
 | `Dependency audit`（独立 workflow，定时） | 1.7 在线半 | 每日 03:00 UTC + 手动触发 |
 | `Release gate`（1） | 13.9 自动化场景 + PRD 矩阵 | `--skip-static --delegated=governance,perf,workspace-test,frontend-test` |
 
-缓存只有 4 个写者 key（`linux-workspace`、`macos-desktop`、`windows-desktop`、`governance-static`），
+缓存只有 5 个写者 key（`linux-workspace`、`macos-desktop`、`macos-desktop-release`、`windows-desktop`、`governance-static`），
 且只在 main 写入；其余 job 只恢复不写入。
+
+`macos-desktop-release` 由 `macOS platform Gate` 独占：它存 release profile（`tauri build --target
+aarch64-apple-darwin`）的产物，与 `macos-desktop` 的 debug 形态（`cargo test`）目录与 profile 都不同，
+互相顶替只会得到一次冷构建。同一个 job 内至多一个 Rust 缓存步骤——`Swatinem/rust-cache` 会把整个
+`target/` 按每个键各存一遍，两个步骤等于同一份字节存两次，直接吃掉 10 GB 配额。
 
 注入证明套件不再是 CI job：`node scripts/verify/injection-suite.mjs` 作为本地命令保留，
 `task-1.5` 断言 `ci.yml` 中没有任何 job 执行它。

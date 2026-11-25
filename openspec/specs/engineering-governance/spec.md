@@ -395,7 +395,7 @@
 
 Windows / macOS 的全量 workspace 测试 MAY 按包分片执行；各分片所覆盖包的并集 MUST 等于全部 workspace 包，MUST NOT 因分片遗漏或删除任何包。分片引入的跳过 MUST 遵守与整段测试相同的分层规则：分片 MAY 仅在 Pull Request 上跳过，在 `main` 上 MUST 全部真实执行，且结构门禁 MUST 断言分片并集与各分片在 `main` 上的执行条件。将 macOS / Windows 的多个分片合并为一个 `--workspace` 分片 MUST NOT 改变包并集。
 
-`clippy` MUST 在三平台以 workspace 形态执行，MUST NOT 收窄到单个 crate 或包子集：Linux 在 `rust` job 的 `workspace` 分片执行，macOS / Windows 在 main-only 的 `rust-desktop` job 执行。写入共享缓存的 rust 矩阵分片（`rust` 与 `rust-desktop` 两个 job 的分片），其最后一条构建型 cargo 调用 MUST 是该缓存 key 对应的固定 cargo 形态：Linux `workspace` 分片为 `cargo test --workspace --all-targets --all-features`，macOS / Windows 的 `desktop` 分片为 `cargo test --workspace --all-targets --all-features`；其后 MAY 执行同形态的 `-- --list`，MUST NOT 在缓存保存之前执行不同 feature、不同 target 选择或 check 形态的 cargo 调用，使缓存内容与后续读取者的构建形态不符。`governance-static` 的缓存 key 是 job 私有的：只有该 job 与定时依赖审计 workflow 读取它，其 coverage 插桩形态不会污染任何其他读者，因此不受上述 cargo 形态约束。缓存写入 MUST 只发生在 `main`；Pull Request 上的任何 job MUST NOT 保存缓存。
+`clippy` MUST 在三平台以 workspace 形态执行，MUST NOT 收窄到单个 crate 或包子集：Linux 在 `rust` job 的 `workspace` 分片执行，macOS / Windows 在 main-only 的 `rust-desktop` job 执行。写入共享缓存的 rust 矩阵分片（`rust` 与 `rust-desktop` 两个 job 的分片），其最后一条构建型 cargo 调用 MUST 是该缓存 key 对应的固定 cargo 形态：Linux `workspace` 分片为 `cargo test --workspace --all-targets --all-features`，macOS / Windows 的 `desktop` 分片为 `cargo test --workspace --all-targets --all-features`；其后 MAY 执行同形态的 `-- --list`，MUST NOT 在缓存保存之前执行不同 feature、不同 target 选择或 check 形态的 cargo 调用，使缓存内容与后续读取者的构建形态不符。`governance-static` 的缓存 key 是 job 私有的：只有该 job 与定时依赖审计 workflow 读取它，其 coverage 插桩形态不会污染任何其他读者，因此不受上述 cargo 形态约束。缓存写入 MUST 只发生在 `main`；Pull Request 上的任何 job MUST NOT 保存缓存。macOS 完整打包的 release 产物 MUST 使用独立的缓存 key `macos-desktop-release`，其固定构建形态为 release profile 的 `tauri build --bundles app --target aarch64-apple-darwin`；该 key MUST NOT 与 debug 形态的 workspace 测试缓存 key 混用，MUST NOT 在同一 job 内由多个缓存步骤重复归档 `target/`，且 MUST 遵循与其它共享缓存相同的 main-only 写入规则。结构门禁 MUST 断言该 key 的写者、读者与形态。
 
 Linux 的 `linux-workspace` 与 `governance-static` Rust 缓存组 MUST 使用只包含项目钉住工具链的专用 Rustup home。每组读写方 MUST 在安装工具链和恢复缓存之前使用同一配置；runner 预装工具链不参与缓存身份。缓存 MUST 继续区分真实的工具链、编译环境及依赖变化，且 MUST 仅由 `main` 写入。结构门禁 MUST 验证共享配置与步骤顺序。
 
@@ -600,3 +600,29 @@ CI 的验证结构 MUST 可被静态校验：task 分片的并集 MUST 覆盖全
 
 - **WHEN** 归档清理完成后，无法用可复跑检查证明待移除资产无执行引用、保留例外有消费者或清单无悬空路径
 - **THEN** 该清理不被视为完成，治理验证失败并指出未证明的项
+
+### Requirement: macOS 完整打包使用独立的 release 形态缓存
+
+macOS 完整打包 MUST 使用与 debug 形态隔离的 release 缓存 key 保存构建产物。该 key MUST 只由 macOS 平台 Gate 读写，MUST 只在 `main` 上写入；Pull Request MUST 只读取 `main` 写入的条目，MUST NOT 保存任何条目。缓存命中 MUST NOT 改变门禁语义：release 构建步骤、1.9、1.10、9.7 与严格嵌入前端校验 MUST 每次真实执行，MUST NOT 以「产物来自缓存」为由跳过。
+
+仓库缓存总量 MUST 保持低于平台上限。缓存键中环境哈希已非当前环境的条目不可达，MUST 在写入新条目前清理，MUST NOT 依赖平台的自动淘汰来腾出空间：淘汰是全仓库最久未访问优先，可能连带删除仍被读取的条目。
+
+#### Scenario: Pull Request 命中 release 缓存
+
+- **WHEN** 一个 Pull Request 运行 macOS 平台 Gate，且 `main` 已写入对应的 release 缓存条目
+- **THEN** Gate 恢复依赖产物并只重编工作区 crate 与最终链接，1.9、1.10、9.7 与严格嵌入前端校验仍然真实执行
+
+#### Scenario: Pull Request 不写缓存
+
+- **WHEN** 任意 Pull Request 运行 macOS 平台 Gate
+- **THEN** 该 job 不保存任何缓存条目，只读取 `main` 写入的 release 缓存条目
+
+#### Scenario: release 缓存被改回 debug 形态
+
+- **WHEN** macOS 平台 Gate 的缓存步骤被改回 debug 形态的 workspace 测试 key，或该 key 被其它 job 读写，或同一 job 内出现第二个 Rust 缓存步骤
+- **THEN** 结构门禁失败并指出该 job 或该 key，而不是让 release 构建继续每次从零开始
+
+#### Scenario: 缓存配额逼近上限
+
+- **WHEN** 仓库缓存条目总量逼近平台上限
+- **THEN** 过期且不可达的条目被清理后再写入新条目，而不是让平台自动淘汰仍被读取的条目
