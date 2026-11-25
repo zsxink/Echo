@@ -48,10 +48,10 @@ members (`echo-app`, `echo-core`, `echo-desktop`) report
 
 | Crate | Version | License | Source |
 | --- | --- | --- | --- |
-| `echo-app` | 0.3.1 | LicenseRef-Echo-Personal-Study-1.0* | https://github.com/zsxink/Echo |
-| `echo-core` | 0.3.1 | LicenseRef-Echo-Personal-Study-1.0* | https://github.com/zsxink/Echo |
-| `echo-desktop` | 0.3.1 | LicenseRef-Echo-Personal-Study-1.0* | https://github.com/zsxink/Echo |
-| `echo-sync` | 0.3.1 | LicenseRef-Echo-Personal-Study-1.0* | https://github.com/zsxink/Echo |
+| `echo-app` | 0.3.2 | LicenseRef-Echo-Personal-Study-1.0* | https://github.com/zsxink/Echo |
+| `echo-core` | 0.3.2 | LicenseRef-Echo-Personal-Study-1.0* | https://github.com/zsxink/Echo |
+| `echo-desktop` | 0.3.2 | LicenseRef-Echo-Personal-Study-1.0* | https://github.com/zsxink/Echo |
+| `echo-sync` | 0.3.2 | LicenseRef-Echo-Personal-Study-1.0* | https://github.com/zsxink/Echo |
 
 \* Echo Personal Study License 1.0 — an independent custom license, see root `LICENSE`.
 
