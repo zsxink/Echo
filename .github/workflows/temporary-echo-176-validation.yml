@@ -1,0 +1,44 @@
+name: Temporary Windows symlink regression
+on:
+  push:
+    branches: [validate/windows-media-symlink-176]
+permissions:
+  contents: read
+jobs:
+  walker:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.1'
+      - name: Enable Developer Mode for symlink fixtures
+        run: |
+          reg add "HKLM\Software\Microsoft\Windows\CurrentVersion\AppModelUnlock" /v AllowDevelopmentWithoutDevLicense /t REG_DWORD /d 1 /f
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Report exact candidate, runner and fixture volumes
+        run: |
+          Write-Host "Run: $env:GITHUB_RUN_ID attempt $env:GITHUB_RUN_ATTEMPT; runner: $env:RUNNER_OS $env:RUNNER_ARCH $env:ImageOS $env:ImageVersion"
+          $head = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $head -ne $env:GITHUB_SHA) { throw "Candidate checkout does not match GITHUB_SHA" }
+          git log -1 --format="tested %H; parents %P"
+          foreach ($p in @($env:GITHUB_WORKSPACE, [System.IO.Path]::GetTempPath())) {
+            $volume = [System.IO.DriveInfo]::new([System.IO.Path]::GetPathRoot($p))
+            Write-Host "Volume: $($volume.Name) FS: $($volume.DriveFormat)"
+          }
+          rustc --version --verbose
+      - name: Run real walker fixtures and reject skipped symlink creation
+        run: |
+          $out = & cargo test --locked -p echo-core --lib --all-features infrastructure::filesystem::walker::tests -- --nocapture 2>&1
+          $status = $LASTEXITCODE
+          $out | Write-Output
+          if ($status -ne 0) { exit $status }
+          if ($out -match 'skipping symlink-dependent test') { throw "A fixture skipped; no native evidence" }
+          if (-not ($out -match 'enumerate_files_rejects_a_symlinked_media_dir \.\.\. ok')) { throw "Missing media symlink evidence" }
+          if (-not ($out -match 'walker_does_not_follow_directory_symlinks \.\.\. ok')) { throw "Missing nested symlink evidence" }
+          if (-not ($out -match '7 passed; 0 failed; 0 ignored')) { throw "Incomplete walker suite" }
