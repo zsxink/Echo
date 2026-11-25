@@ -1046,7 +1046,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "echo-app"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1080,7 +1080,7 @@ dependencies = [
 
 [[package]]
 name = "echo-core"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "blake3",
  "dunce",
@@ -1106,7 +1106,7 @@ dependencies = [
 
 [[package]]
 name = "echo-desktop"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "chrono",
  "echo-core",
@@ -1127,7 +1127,7 @@ dependencies = [
 
 [[package]]
 name = "echo-sync"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "axum",
  "blake3",
