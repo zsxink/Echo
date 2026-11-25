@@ -187,12 +187,17 @@ mod tests {
     /// never-follow guarantees meaningfully, and a hard failure would just turn
     /// every such environment red.
     fn symlink(target: &std::path::Path, link: &std::path::Path) -> Option<()> {
+        let target_type = std::fs::metadata(target)
+            .expect("symlink fixture target")
+            .file_type();
+        assert!(target_type.is_dir() || target_type.is_file());
         let status = if std::env::consts::OS == "windows" {
-            std::process::Command::new("cmd")
-                .args(["/C", "mklink"])
-                .arg(link)
-                .arg(target)
-                .status()
+            let mut command = std::process::Command::new("cmd");
+            command.args(["/C", "mklink"]);
+            if target_type.is_dir() {
+                command.arg("/D");
+            }
+            command.arg(link).arg(target).status()
         } else {
             std::process::Command::new("ln")
                 .arg("-s")
@@ -201,7 +206,21 @@ mod tests {
                 .status()
         };
         match status {
-            Ok(s) if s.success() => Some(()),
+            Ok(s) if s.success() => {
+                assert!(
+                    std::fs::symlink_metadata(link)
+                        .expect("created fixture link")
+                        .file_type()
+                        .is_symlink(),
+                    "{link:?} must be a symbolic link"
+                );
+                let resolved_type = std::fs::metadata(link)
+                    .expect("fixture link should resolve to its target")
+                    .file_type();
+                assert_eq!(resolved_type.is_dir(), target_type.is_dir(), "{link:?}");
+                assert_eq!(resolved_type.is_file(), target_type.is_file(), "{link:?}");
+                Some(())
+            }
             Ok(_) => {
                 eprintln!("skipping symlink-dependent test: symlink creation not permitted");
                 None
