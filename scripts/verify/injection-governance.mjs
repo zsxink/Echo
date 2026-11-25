@@ -410,6 +410,73 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       },
     },
     {
+      id: "ci-cache/gate-restores-debug-key",
+      guard: "the macOS platform Gate restoring the debug-profile 'macos-desktop' key, which holds a different target directory and leaves every release build cold",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci\.yml cache key 'macos-desktop-release' must be used only by job 'macos-platform-gate'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "          shared-key: macos-desktop-release\n",
+          "          shared-key: macos-desktop\n",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-cache/release-key-shared-with-native-gate",
+      guard: "another job reading the release-profile cache key, so the key's contents would no longer describe one fixed build shape",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci\.yml cache key 'macos-desktop-release' must be used only by job 'macos-platform-gate'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "          shared-key: macos-desktop\n",
+          "          shared-key: macos-desktop-release\n",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-cache/second-cache-step-in-job",
+      guard: "a second Rust cache step in one job, which archives the same target/ tree under a second key and doubles repository quota usage",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci\.yml job 'macos-platform-gate' must have at most one Cache Rust build artifacts step/,
+      baseline: true,
+      inject() {
+        const cacheBlock =
+          "      - name: Cache Rust build artifacts\n" +
+          "        if: github.event_name != 'pull_request' || steps.macos-package-paths.outcome != 'success' || steps.macos-package-paths.outputs.skip != 'true'\n" +
+          "        uses: Swatinem/rust-cache@v2\n" +
+          "        with:\n" +
+          "          shared-key: macos-desktop-release\n" +
+          "          save-if: ${{ github.ref == 'refs/heads/main' }}\n";
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          cacheBlock,
+          `${cacheBlock}\n${cacheBlock}`,
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-cache/gate-cache-not-main-only",
+      guard: "the macOS platform Gate's release cache becoming writable on Pull Requests, which would let PR caches consume the repository quota",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci\.yml cache writers must be exactly/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "          shared-key: macos-desktop-release\n          save-if: ${{ github.ref == 'refs/heads/main' }}\n",
+          "          shared-key: macos-desktop-release\n          save-if: false\n",
+        );
+        return {};
+      },
+    },
+    {
       id: "ci-structure/purity-section-removed",
       guard: "governance-static keeping the purity step name while dropping the purity section",
       check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],

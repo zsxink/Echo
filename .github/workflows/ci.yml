@@ -324,12 +324,22 @@ jobs:
         with:
           toolchain: 1.98.1
 
+      # This job builds the *release* profile (`tauri build --target
+      # aarch64-apple-darwin`), so the `macos-desktop` key — whose writer is
+      # the debug-profile `cargo test` in `rust-desktop` — restores a tree this
+      # job cannot reuse: different profile, different target directory. The
+      # release build therefore ran cold (~11 min) on every run.
+      #
+      # Give the Gate its own release-profile key instead. It is written on
+      # `main` only; PRs restore what `main` wrote and never save. Keep this
+      # the single Rust cache step in the job: a second one would archive the
+      # whole `target/` tree again under a second key, doubling quota usage.
       - name: Cache Rust build artifacts
         if: github.event_name != 'pull_request' || steps.macos-package-paths.outcome != 'success' || steps.macos-package-paths.outputs.skip != 'true'
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: macos-desktop
-          save-if: false
+          shared-key: macos-desktop-release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install pnpm
         if: github.event_name != 'pull_request' || steps.macos-package-paths.outcome != 'success' || steps.macos-package-paths.outputs.skip != 'true'
